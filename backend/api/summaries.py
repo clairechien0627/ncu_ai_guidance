@@ -1,0 +1,387 @@
+import asyncio
+import json
+import logging
+import os
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from config import settings
+from database import get_db, Document, SessionLocal
+from rag import process_pdf
+from services import job_service
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+@router.get("/api/prompts")
+def list_prompts():
+    """列出所有 prompt 檔案的名稱、版本、字數、最後修改時間。"""
+    import datetime
+    from prompting import registry
+    from prompting.loader import PROMPT_STACKS
+    prompts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts")
+    result = []
+    for name in registry.list_known_names():
+        source = registry.source_name(name)
+        fpath = os.path.join(prompts_dir, f"{source}.txt")
+        try:
+            content = registry.get(name)
+            ver = registry.version(name)
+            size = len(content)
+            if os.path.exists(fpath):
+                mtime = os.path.getmtime(fpath)
+                last_modified = datetime.datetime.fromtimestamp(
+                    mtime, tz=datetime.timezone.utc
+                ).isoformat() + "Z"
+            else:
+                last_modified = None
+        except Exception:
+            ver, size, last_modified = "unknown", 0, None
+        result.append({
+            "name": name,
+            "source_name": source,
+            "version": ver,
+            "size_chars": size,
+            "last_modified": last_modified,
+        })
+    return {"prompts": result, "stacks": PROMPT_STACKS}
+
+
+@router.post("/api/prompts/reload")
+async def reload_prompts():
+    """Hot-reload all prompt files without restarting the backend.
+    Call this after editing any file in backend/prompts/*.txt.
+    """
+    try:
+        from prompting.registry import reload_all
+        from prompting.loader import PROMPT_STACKS, load_stack
+        reload_all()
+        stacks = {
+            name: [
+                {
+                    "name": prompt.name,
+                    "source_name": prompt.source_name,
+                    "version": prompt.version,
+                }
+                for prompt in load_stack(name).prompts
+            ]
+            for name in PROMPT_STACKS
+        }
+        return {"reloaded": True, "stacks": stacks}
+    except Exception as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=str(e))
+
+_DEFAULT_BATCH_FOLDER = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "各系大專生計畫(104-114)"))
+BATCH_FOLDER = settings.batch_folder or _DEFAULT_BATCH_FOLDER
+
+
+@router.post("/api/documents/{doc_id}/extract")
+async def extract_summary(doc_id: int, db: Session = Depends(get_db)):
+    doc = db.query(Document).filter(
+        Document.id == doc_id,
+        Document.status == "ready",
+        Document.deleted_at.is_(None),
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found or not ready")
+    if job_service.jobs_has_active(doc_id):
+        return {"id": doc_id, "filename": doc.filename, "queued": True}
+
+    on_failure = "restore_summarized" if doc.summary_json else "error"
+    doc.batch_status = "processing"
+    db.commit()
+
+    job_service.jobs_enqueue([(doc_id, doc.filename)], job_type="extract")
+    await job_service.run_extraction_batch([(doc_id, doc.filename)], on_failure)
+    await job_service.push_jobs()
+
+    return {"id": doc_id, "filename": doc.filename, "queued": True}
+
+
+@router.post("/api/documents/{doc_id}/extract-step/{step}")
+async def extract_summary_step(step: str, doc_id: int, db: Session = Depends(get_db)):
+    if step not in {"step1", "step2", "step3"}:
+        raise HTTPException(status_code=400, detail="step must be step1, step2, or step3")
+    doc = db.query(Document).filter(
+        Document.id == doc_id,
+        Document.status == "ready",
+        Document.deleted_at.is_(None),
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found or not ready")
+    if step in {"step2", "step3"} and not doc.raw_research_answer:
+        raise HTTPException(status_code=400, detail="請先執行 Step 1，才能重跑 Step 2 或 Step 3")
+    if job_service.jobs_has_active(doc_id):
+        return {"id": doc_id, "filename": doc.filename, "queued": True}
+
+    on_failure = "restore_summarized" if doc.summary_json else "error"
+    doc.batch_status = "processing"
+    db.commit()
+
+    job_service.jobs_enqueue([(doc_id, doc.filename)], job_type=f"extract_{step}")
+    await job_service.run_extraction_step_batch([(doc_id, doc.filename)], step, on_failure)
+    await job_service.push_jobs()
+
+    return {"id": doc_id, "filename": doc.filename, "queued": True}
+
+
+@router.get("/api/summaries")
+def list_summaries(db: Session = Depends(get_db)):
+    from rag import _pymupdf_cache_path, _azure_di_cache_path, _llamaparse_cache_path
+    docs = db.query(Document).filter(
+        Document.deleted_at.is_(None),
+        Document.status.in_(["ready", "processing", "error"])
+    ).order_by(Document.created_at.asc()).all()
+    return [
+        {
+            "id": d.id,
+            "filename": d.filename,
+            "department": d.department_hint or "其他",
+            "status": d.status,
+            "batch_status": d.batch_status or "pending",
+            "summary": json.loads(d.summary_json) if d.summary_json else None,
+            "langsmith_run_id": d.langsmith_run_id,
+            "raw_research_answer": d.raw_research_answer,
+            "raw_research_sources": json.loads(d.raw_research_sources) if d.raw_research_sources else [],
+            "raw_research_run_id": d.raw_research_run_id,
+            "created_at": d.created_at,
+            "abstract_text": d.abstract_text,
+            "quality_issue": d.quality_issue,
+            "parser_used": d.parser_used,
+            "needs_reindex": d.needs_reindex,
+            "caches": {
+                "pymupdf4llm": os.path.exists(_pymupdf_cache_path(d.id)),
+                "azure_di": os.path.exists(_azure_di_cache_path(d.id)),
+                "llamaparse": os.path.exists(_llamaparse_cache_path(d.id)),
+            },
+        }
+        for d in docs
+    ]
+
+
+@router.post("/api/summaries/batch-import")
+async def batch_import(db: Session = Depends(get_db)):
+    if not os.path.isdir(BATCH_FOLDER):
+        raise HTTPException(status_code=404, detail=f"找不到資料夾: {BATCH_FOLDER}")
+
+    all_pdfs = []
+    for root, _dirs, files in os.walk(BATCH_FOLDER):
+        for fname in sorted(files):
+            if fname.lower().endswith(".pdf"):
+                dept = os.path.basename(root) if root != BATCH_FOLDER else "未分類"
+                all_pdfs.append((os.path.join(root, fname), fname, dept))
+
+    existing_docs = {
+        d.filename: d
+        for d in db.query(Document).filter(Document.deleted_at.is_(None)).all()
+    }
+
+    updated = 0
+    for _path, fname, dept in all_pdfs:
+        doc = existing_docs.get(fname)
+        if doc and not doc.department_hint:
+            doc.department_hint = dept
+            updated += 1
+    if updated:
+        db.commit()
+
+    new_pdfs = [(p, f, d) for p, f, d in all_pdfs if f not in existing_docs]
+    error_pdfs = [(p, f, d) for p, f, d in all_pdfs
+                  if f in existing_docs and existing_docs[f].status == "error"]
+
+    to_queue = new_pdfs + error_pdfs
+    if not to_queue:
+        return {"queued": 0, "already_imported": len(all_pdfs) - len(error_pdfs), "dept_updated": updated}
+
+    doc_records: list[tuple[int, str]] = []
+    for file_path, fname, dept in new_pdfs:
+        doc = Document(filename=fname, file_path=file_path, status="processing", department_hint=dept)
+        db.add(doc)
+        db.flush()
+        doc_records.append((doc.id, file_path))
+    for file_path, fname, _dept in error_pdfs:
+        doc = existing_docs[fname]
+        doc.status = "processing"
+        doc_records.append((doc.id, file_path))
+    db.commit()
+
+    names = [fname for _, fname, _ in to_queue]
+    job_service.jobs_enqueue(list(zip([did for did, _ in doc_records], names)), job_type="reindex")
+    for doc_id, file_path in doc_records:
+        job_service._reindex_work_queue.append({"doc_id": doc_id, "file_path": file_path, "tmp_path": None, "parser": "auto"})
+    job_service._reindex_event.set()
+    await job_service.push_jobs()
+    return {"queued": len(new_pdfs), "retried": len(error_pdfs), "already_imported": len(all_pdfs) - len(to_queue), "dept_updated": updated}
+
+
+@router.post("/api/summaries/batch-extract")
+async def batch_extract_all(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    pending = db.query(Document).filter(
+        Document.status == "ready",
+        Document.batch_status == "pending",
+        Document.deleted_at.is_(None),
+    ).all()
+
+    if not pending:
+        return {"queued": 0}
+
+    pairs = []
+    for doc in pending:
+        doc.batch_status = "processing"
+        pairs.append((doc.id, doc.filename))
+    db.commit()
+    job_service.jobs_enqueue(pairs, job_type="extract")
+    await job_service.push_jobs()
+    await job_service.run_extraction_batch(pairs, "error")
+    return {"queued": len(pairs)}
+
+
+@router.post("/api/summaries/batch-reextract")
+async def batch_reextract(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    broken = db.query(Document).filter(
+        Document.status == "ready",
+        Document.batch_status == "error",
+        Document.summary_json.isnot(None),
+        Document.deleted_at.is_(None),
+    ).all()
+    for doc in broken:
+        doc.batch_status = "summarized"
+    if broken:
+        db.commit()
+
+    docs = db.query(Document).filter(
+        Document.status == "ready",
+        Document.batch_status == "summarized",
+        Document.deleted_at.is_(None),
+    ).all()
+
+    if not docs:
+        return {"queued": 0}
+
+    pairs = []
+    for doc in docs:
+        doc.batch_status = "processing"
+        pairs.append((doc.id, doc.filename))
+    db.commit()
+    job_service.jobs_enqueue(pairs, job_type="extract")
+    await job_service.push_jobs()
+    await job_service.run_extraction_batch(pairs, "restore_summarized")
+    return {"queued": len(pairs)}
+
+
+@router.post("/api/summaries/batch-reextract-all")
+async def batch_reextract_all_docs(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    docs = db.query(Document).filter(
+        Document.status == "ready",
+        Document.batch_status == "summarized",
+        Document.deleted_at.is_(None),
+    ).all()
+
+    if not docs:
+        return {"queued": 0}
+
+    pairs = []
+    for doc in docs:
+        doc.batch_status = "processing"
+        pairs.append((doc.id, doc.filename))
+    db.commit()
+    job_service.jobs_enqueue(pairs, job_type="extract")
+    await job_service.push_jobs()
+    await job_service.run_extraction_batch(pairs, "restore_summarized")
+    return {"queued": len(pairs)}
+
+
+class BatchExtractSelectedRequest(BaseModel):
+    doc_ids: list[int]
+    force: bool = False
+
+
+@router.post("/api/summaries/batch-extract-selected")
+async def batch_extract_selected(req: BatchExtractSelectedRequest, db: Session = Depends(get_db)):
+    query = db.query(Document).filter(
+        Document.id.in_(req.doc_ids),
+        Document.status == "ready",
+        Document.deleted_at.is_(None),
+    )
+    if not req.force:
+        query = query.filter(Document.batch_status.in_(["pending", "error"]))
+    docs = query.all()
+
+    if not docs:
+        return {"queued": 0}
+
+    pairs = []
+    for doc in docs:
+        doc.batch_status = "processing"
+        pairs.append((doc.id, doc.filename))
+    db.commit()
+
+    job_service.jobs_enqueue(pairs, job_type="extract")
+    await job_service.push_jobs()
+    await job_service.run_extraction_batch(pairs, "restore_summarized" if req.force else "error")
+    return {"queued": len(pairs)}
+
+
+class BatchReparseRequest(BaseModel):
+    parser: str
+    doc_ids: list[int] | None = None
+
+
+@router.post("/api/summaries/batch-reparse")
+async def batch_reparse(req: BatchReparseRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    if req.parser not in ("pymupdf4llm", "azure_di", "llamaparse"):
+        raise HTTPException(status_code=400, detail="parser 必須是 pymupdf4llm / azure_di / llamaparse")
+
+    if req.doc_ids:
+        docs = db.query(Document).filter(
+            Document.id.in_(req.doc_ids),
+            Document.status == "ready",
+            Document.deleted_at.is_(None),
+        ).all()
+    else:
+        docs = db.query(Document).filter(
+            Document.status == "ready",
+            Document.deleted_at.is_(None),
+        ).all()
+
+    if not docs:
+        return {"queued": 0}
+
+    parser_label = {"pymupdf4llm": "本地解析", "azure_di": "Azure DI", "llamaparse": "LlamaParse"}.get(req.parser, req.parser)
+    records = [
+        (doc.id, doc.filename, doc.file_path)
+        for doc in docs
+        if not job_service.jobs_has_active_parse(doc.id, req.parser)
+    ]
+
+    if not records:
+        return {"queued": 0}
+
+    import uuid as _uuid
+    job_ids = {}
+    for doc_id, filename, _ in records:
+        job_id = _uuid.uuid4().hex[:12]
+        job_ids[doc_id] = job_id
+        job_service.jobs_append({
+            "doc_id": doc_id,
+            "filename": filename,
+            "status": "queued",
+            "job_type": f"parse_{req.parser}",
+            "stage": parser_label,
+            "job_id": job_id,
+        })
+    await job_service.enqueue_parse_jobs([
+        {
+            "doc_id": doc_id,
+            "filename": filename,
+            "file_path": raw_path,
+            "parser": req.parser,
+            "job_id": job_ids[doc_id],
+        }
+        for doc_id, filename, raw_path in records
+    ])
+    return {"queued": len(records)}

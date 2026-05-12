@@ -1,0 +1,100 @@
+[
+  {
+    "id": "route-research-1",
+    "message": "請整理這篇研究的動機、方法和成果",
+    "document_ids": [1],
+    "expected_mode": "research",
+    "note": "明確研究摘要意圖 + 有文件"
+  },
+  {
+    "id": "route-research-2",
+    "message": "幫我做這篇的一分鐘看研究",
+    "document_ids": [1],
+    "expected_mode": "research",
+    "note": "懶人包關鍵字"
+  },
+  {
+    "id": "route-research-3",
+    "message": "幫我整理這份報告的摘要",
+    "document_ids": [1],
+    "expected_mode": "research",
+    "note": "摘要關鍵字 + 有文件"
+  },
+  {
+    "id": "route-question-1",
+    "message": "幫我出 3 題興趣量表題目",
+    "document_ids": [1],
+    "expected_mode": "question",
+    "note": "question 關鍵字 + 有文件 → question_agent 直接路由"
+  },
+  {
+    "id": "route-question-2",
+    "message": "給高中生看的導讀問題",
+    "document_ids": [1],
+    "expected_mode": "question",
+    "note": "導讀關鍵字 + 有文件 → question_agent"
+  },
+  {
+    "id": "route-question-3",
+    "message": "請出一些關於這份研究的題目",
+    "document_ids": [1],
+    "expected_mode": "question",
+    "note": "題目關鍵字 + 有文件 → question_agent"
+  },
+  {
+    "id": "route-retrieval-1",
+    "message": "這篇論文用了什麼統計方法？",
+    "document_ids": [1],
+    "expected_mode": "retrieval",
+    "note": "內容問答 + 有文件"
+  },
+  {
+    "id": "route-retrieval-2",
+    "message": "實驗的結論是什麼？",
+    "document_ids": [1],
+    "expected_mode": "retrieval",
+    "note": "結論查詢 + 有文件"
+  },
+  {
+    "id": "route-retrieval-3",
+    "message": "這份文件的作者是誰？",
+    "document_ids": [1],
+    "expected_mode": "retrieval",
+    "note": "文件內容查詢"
+  },
+  {
+    "id": "route-chat-1",
+    "message": "你好，請問你是什麼系統？",
+    "document_ids": null,
+    "expected_mode": "chat",
+    "note": "無文件 + 閒聊"
+  },
+  {
+    "id": "route-chat-2",
+    "message": "大語言模型的原理是什麼？",
+    "document_ids": null,
+    "expected_mode": "chat",
+    "note": "無文件 + 知識問答"
+  },
+  {
+    "id": "route-chat-3",
+    "message": "你能做什麼？",
+    "document_ids": null,
+    "expected_mode": "chat",
+    "note": "無文件 + 系統問答"
+  },
+  {
+    "id": "route-edge-1",
+    "message": "幫我出題",
+    "document_ids": null,
+    "expected_mode": "chat",
+    "note": "question 關鍵字但無文件 → chat"
+  },
+  {
+    "id": "route-edge-2",
+    "message": "幫我整理摘要",
+    "document_ids": null,
+    "expected_mode": "chat",
+    "note": "research 關鍵字但無文件 → chat"
+  }
+]

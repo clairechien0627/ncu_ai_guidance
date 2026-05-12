@@ -1,0 +1,57 @@
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+logs/
+*.log
+uploads/
+chroma_db/
+qdrant_storage/
+llamacache/
+azuredicache/
+pymupdfcache/
+
+# Local databases / exports
+*.db
+*.sqlite
+*.sqlite3
+*.zip
+data-package/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+AGENTS.md
+CACHE.md
+
+docs/
+_reference/
+.claude/
+各系大專生計畫(104-114)/
