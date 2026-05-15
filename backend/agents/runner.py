@@ -13,6 +13,7 @@ from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from langgraph.store.postgres.aio import AsyncPostgresStore
 from langgraph.types import Command
 from langfuse import observe, propagate_attributes
 from .request_context import get_user_id
@@ -54,6 +55,7 @@ def _get_abstracts(document_ids: list[int] | None) -> list[dict]:
 
 
 _checkpointer: AsyncPostgresSaver | None = None
+_store: AsyncPostgresStore | None = None
 _tool_agent = None
 _tool_agent_mini = None
 
@@ -121,9 +123,10 @@ def _trim_messages(state: dict, runtime) -> dict | None:
 
 
 async def setup_checkpointer():
-    """Initialize AsyncPostgresSaver and build the agent. Called once at startup."""
-    global _checkpointer, _tool_agent, _tool_agent_mini
+    """Initialize AsyncPostgresSaver, AsyncPostgresStore, and build the agent. Called once at startup."""
+    global _checkpointer, _store, _tool_agent, _tool_agent_mini
     from psycopg_pool import AsyncConnectionPool
+    from langchain_openai import AzureOpenAIEmbeddings
     pool = AsyncConnectionPool(
         conninfo=settings.database_url,
         kwargs={"autocommit": True},
@@ -139,6 +142,21 @@ async def setup_checkpointer():
     )
     await _checkpointer.setup()
 
+    _store = AsyncPostgresStore(
+        pool,
+        index={
+            "embed": AzureOpenAIEmbeddings(
+                azure_deployment=settings.azure_embedding_deployment,
+                azure_endpoint=settings.azure_openai_endpoint,
+                api_key=settings.azure_openai_api_key.get_secret_value(),
+                api_version=settings.azure_openai_api_version,
+            ),
+            "dims": 3072,
+            "fields": ["$"],
+        },
+    )
+    await _store.setup()
+
     def _make_agent(llm, tools):
         return create_agent(
             llm,
@@ -150,6 +168,7 @@ async def setup_checkpointer():
             ],
             response_format=ProviderStrategy(AgentResponse, strict=True),
             checkpointer=_checkpointer,
+            store=_store,
             context_schema=AgentContext,
         )
 
@@ -163,6 +182,10 @@ def _get_tool_agent(mini: bool = False):
 
 def get_checkpointer() -> AsyncPostgresSaver | None:
     return _checkpointer
+
+
+def get_store() -> AsyncPostgresStore | None:
+    return _store
 
 
 # ── Human-in-the-loop helpers ─────────────────────────────────────────────────
@@ -476,12 +499,13 @@ async def run_tool_agent(
     _long_term: list[str] = []
     if include_research_context and get_user_id():
         _intent = metadata.get("route_intent", "")
-        if _intent in ("chat", "research"):
-            try:
-                from services.memory_service import search_research_memories
-                _long_term = await search_research_memories(get_user_id(), user_message)
-            except Exception as _mem_exc:
-                logger.debug("Long-term memory search failed: %s", _mem_exc)
+        try:
+            from services.memory_service import search_long_term_memory
+            from services.agent_memory import MEMORY_READ_POLICY
+            if MEMORY_READ_POLICY.get(_intent, None) and MEMORY_READ_POLICY[_intent].long_term:
+                _long_term = await search_long_term_memory(get_user_id(), user_message)
+        except Exception as _mem_exc:
+            logger.debug("Long-term memory search failed: %s", _mem_exc)
 
     async def _invoke():
         with propagate_attributes(session_id=thread_id, user_id=get_user_id()):

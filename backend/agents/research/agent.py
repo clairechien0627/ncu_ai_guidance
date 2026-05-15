@@ -16,7 +16,7 @@ from db import Document, db_session, Trace
 from prompting.registry import resolve
 from tools.rag_tool import set_query_expander_llm
 
-from .research_graph import _hard_max_searches, _merge_stream_patch, _seed_keywords, cbq_from_result, final_rs_from_result, research_graph, get_or_build_research_graph
+from .research_graph import _hard_max_searches, _merge_stream_patch, _seed_keywords, cbq_from_result, final_rs_from_result, research_graph, get_or_build_research_graph  # noqa: F401
 from .runtime_prompts import RESEARCH_BASE_STACK, research_base_stack_metadata
 from .state import ResearchGraphState, ResearchState, SearchStep
 from .task_planner import create_research_plan, fallback_research_plan
@@ -843,11 +843,13 @@ async def run_research_task(
             logger.debug("document research cache load failed: %s", exc)
 
     try:
-        from agents.runner import get_checkpointer as _get_checkpointer
+        from agents.runner import get_checkpointer as _get_checkpointer, get_store as _get_store
         _cp = _get_checkpointer()
+        _st = _get_store()
     except Exception:
         _cp = None
-    _graph = get_or_build_research_graph(checkpointer=_cp)
+        _st = None
+    _graph = get_or_build_research_graph(checkpointer=_cp, store=_st)
     graph_config = {
         "configurable": {
             "llm": llm,

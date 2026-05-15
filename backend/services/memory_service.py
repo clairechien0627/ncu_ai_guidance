@@ -193,7 +193,61 @@ def get_context_summary_text(thread_id: str) -> str | None:
         return None
 
 
-# ── Long-term: Qdrant research_memories ──────────────────────────────────────
+# ── Long-term: LangGraph Store (AsyncPostgresStore + pgvector) ────────────────
+
+async def store_long_term_memory(
+    user_id: str,
+    thread_id: str,
+    document_ids: list[int] | None,
+    question: str,
+    result: AgentResult,
+) -> None:
+    """Store a research finding in LangGraph Store for semantic retrieval."""
+    if not user_id:
+        return
+    try:
+        from agents.runner import get_store
+        store = get_store()
+        if store is None:
+            return
+        namespace = (user_id, "research_memories")
+        await store.aput(namespace, str(uuid.uuid4()), {
+            "question": question[:300],
+            "summary": result.response[:1000],
+            "sources": result.sources[:5],
+            "document_ids": document_ids or [],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as exc:
+        logger.warning("store_long_term_memory failed: %s", exc)
+
+
+async def search_long_term_memory(
+    user_id: str,
+    query: str,
+    limit: int = LONG_TERM_LIMIT,
+) -> list[str]:
+    """Return relevant past research findings via semantic search in LangGraph Store."""
+    if not user_id:
+        return []
+    try:
+        from agents.runner import get_store
+        store = get_store()
+        if store is None:
+            return []
+        namespace = (user_id, "research_memories")
+        results = await store.asearch(namespace, query=query, limit=limit)
+        return [
+            f"（過去研究）{r.value.get('question', '')}：{r.value.get('summary', '')[:200]}"
+            for r in results
+            if r.value.get("summary")
+        ]
+    except Exception as exc:
+        logger.warning("search_long_term_memory failed: %s", exc)
+        return []
+
+
+# ── Backward-compat aliases (used by runner.py before agent_memory migration) ─
 
 async def store_research_memory(
     user_id: str,
@@ -202,67 +256,11 @@ async def store_research_memory(
     question: str,
     result: AgentResult,
 ) -> None:
-    """Embed and store a research finding in long-term memory. Fire-and-forget safe."""
-    if not user_id:
-        return
-    try:
-        text_to_embed = f"問題：{question}\n重點：{result.response[:1500]}"
-        emb = _embeddings()
-        vector = await emb.aembed_query(text_to_embed)
-
-        from rag.store import get_qdrant_client
-        from qdrant_client.models import PointStruct
-        client = get_qdrant_client()
-        point = PointStruct(
-            id=str(uuid.uuid4()),
-            vector=vector,
-            payload={
-                "user_id": user_id,
-                "thread_id": thread_id,
-                "document_ids": document_ids or [],
-                "question": question[:300],
-                "summary": result.response[:1000],
-                "sources": result.sources[:5],
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-        client.upsert(collection_name=MEMORY_COLLECTION, points=[point])
-    except Exception as exc:
-        logger.warning("store_research_memory failed: %s", exc)
+    await store_long_term_memory(user_id, thread_id, document_ids, question, result)
 
 
-async def search_research_memories(
-    user_id: str,
-    query: str,
-    limit: int = LONG_TERM_LIMIT,
-) -> list[str]:
-    """Return relevant past research findings for the current question."""
-    if not user_id:
-        return []
-    try:
-        emb = _embeddings()
-        vector = await emb.aembed_query(query)
-
-        from rag.store import get_qdrant_client
-        from qdrant_client.models import Filter, FieldCondition, MatchValue
-        client = get_qdrant_client()
-        results = client.search(
-            collection_name=MEMORY_COLLECTION,
-            query_vector=vector,
-            query_filter=Filter(must=[
-                FieldCondition(key="user_id", match=MatchValue(value=user_id))
-            ]),
-            limit=limit,
-            score_threshold=0.75,
-        )
-        return [
-            f"（過去研究）{r.payload.get('question', '')}：{r.payload.get('summary', '')[:200]}"
-            for r in results
-            if r.payload.get("summary")
-        ]
-    except Exception as exc:
-        logger.warning("search_research_memories failed: %s", exc)
-        return []
+async def search_research_memories(user_id: str, query: str, limit: int = LONG_TERM_LIMIT) -> list[str]:
+    return await search_long_term_memory(user_id, query, limit)
 
 
 # ── Document research cache ────────────────────────────────────────────────────

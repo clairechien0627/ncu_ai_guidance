@@ -460,23 +460,23 @@ async def classify_intent(
 
 
 async def _update_memory(
+    intent: str,
     thread_id: str,
     user_id: str | None,
     document_ids: list[int] | None,
     question: str,
     result,
 ) -> None:
-    """Fire-and-forget: update short-term summary and (if user_id) long-term memory."""
-    from services.memory_service import update_context_summary, store_research_memory
-    try:
-        await update_context_summary(thread_id, question, result)
-    except Exception as exc:
-        logger.warning("update_context_summary failed: %s", exc)
-    if user_id:
-        try:
-            await store_research_memory(user_id, thread_id, document_ids, question, result)
-        except Exception as exc:
-            logger.warning("store_research_memory failed: %s", exc)
+    """Fire-and-forget: write memory per intent policy via agent_memory contract."""
+    from services.agent_memory import record_agent_memory
+    await record_agent_memory(
+        intent=intent,
+        thread_id=thread_id,
+        user_id=user_id,
+        question=question,
+        result=result,
+        document_ids=document_ids,
+    )
 
 
 @observe(as_type="agent")
@@ -723,10 +723,10 @@ async def route_agent_message(
                 exclude_run_id=result.trace_run_id,
             ))
 
-        # Update memory after research completes
-        if route_intent == "research":
+        # Update memory per intent policy
+        if route_intent in ("research", "summary"):
             _fire_and_forget(_update_memory(
-                thread_id, get_user_id(), document_ids, user_message, result
+                route_intent, thread_id, get_user_id(), document_ids, user_message, result
             ))
 
         return result
@@ -797,7 +797,7 @@ async def route_agent_stream(
                 resolved_intent=route.resolved_intent,
             )
             _fire_and_forget(_update_memory(
-                thread_id, get_user_id(), document_ids, user_message, result
+                route_intent, thread_id, get_user_id(), document_ids, user_message, result
             ))
             yield result.response, False, []
             last_sources = result.sources

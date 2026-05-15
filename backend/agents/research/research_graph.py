@@ -1009,7 +1009,7 @@ def _writer_error_handler(state: ResearchGraphState, error: NodeError) -> dict:
     }
 
 
-def _build(checkpointer=False) -> object:
+def _build(checkpointer=False, store=None) -> object:
     builder = StateGraph(ResearchGraphState)
     builder.add_node(
         "orchestrator", orchestrator_node,
@@ -1043,7 +1043,7 @@ def _build(checkpointer=False) -> object:
     builder.add_conditional_edges("batch_complete", should_continue, _continue_map)
     builder.add_conditional_edges("verification", should_continue, _continue_map)
     builder.add_edge("writer", END)
-    return builder.compile(checkpointer=checkpointer)
+    return builder.compile(checkpointer=checkpointer, store=store)
 
 
 research_graph = _build()
@@ -1051,12 +1051,12 @@ research_graph = _build()
 _research_graph_checkpointed: object | None = None
 
 
-def get_or_build_research_graph(checkpointer=None) -> object:
+def get_or_build_research_graph(checkpointer=None, store=None) -> object:
     global _research_graph_checkpointed
     if checkpointer is None:
         return research_graph
     if _research_graph_checkpointed is None:
-        _research_graph_checkpointed = _build(checkpointer=checkpointer)
+        _research_graph_checkpointed = _build(checkpointer=checkpointer, store=store)
     return _research_graph_checkpointed
 
 
