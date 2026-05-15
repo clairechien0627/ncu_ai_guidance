@@ -12,6 +12,7 @@ from langchain.agents.middleware import (
     ClearToolUsesEdit,
     HumanInTheLoopMiddleware,
     ModelCallLimitMiddleware,
+    ModelFallbackMiddleware,
     ModelRetryMiddleware,
     SummarizationMiddleware,
     ToolCallLimitMiddleware,
@@ -231,6 +232,7 @@ async def setup_checkpointer():
                     exit_behavior="end",
                 ),
                 # ── Resilience ───────────────────────────────────────────
+                ModelFallbackMiddleware(_mini_llm),     # fallback to mini when primary Azure OpenAI fails
                 ModelRetryMiddleware(                   # replaces manual StructuredOutputValidationError retry
                     max_retries=2,
                     retry_on=lambda e: any(
