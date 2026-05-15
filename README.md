@@ -1,17 +1,21 @@
 # Report Agent
 
-RAG-based research PDF assistant for academic report analysis. Users upload PDFs, the backend parses and chunks documents, stores embeddings in Qdrant, and a multi-agent system answers questions, synthesizes research, and generates student-facing guidance.
+學術 PDF 分析用 RAG 研究助理。使用者上傳 PDF 後，系統解析並切割文件、將 embedding 存入 Qdrant，多代理人系統負責回答問題、合成研究、生成學習導讀。
 
-## Start
+詳細多代理人架構請參閱 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
-### PostgreSQL (with pgvector)
+---
+
+## 啟動
+
+### PostgreSQL（含 pgvector）
 
 ```powershell
 cd D:\try
 docker-compose up -d
 ```
 
-After first start, enable pgvector (one-time):
+首次啟動後執行一次：
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -21,7 +25,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 ```powershell
 cd backend
-.venv\Scripts\python.exe -m uvicorn main:app --reload --host 127.0.0.1 --port 8200
+.venv\Scripts\python.exe .\run_dev_server.py
 ```
 
 ### Frontend
@@ -31,383 +35,54 @@ cd frontend
 npm run dev
 ```
 
-- Frontend: <http://localhost:5173>
-- Backend docs: <http://localhost:8200/docs>
-- Health check: <http://localhost:8200/health>
-
-## Architecture
-
-### Agent Roles
-
-The system uses a router plus task agents.
-
-```text
-router_agent
-  - owns request coordination
-  - writes the root router trace
-  - classifies user intent
-  - uses route_coordinator as an internal fallback prompt
-  - builds an ExecutionPlan for the selected task-agent step
-  - dispatches to chat_agent, retrieval_agent, question_agent, research_agent, or evaluation_agent
-  - handles explicit handoff through next_intent
-  - can trigger post-run evaluation only when deterministic policy allows evaluate_after
-
-chat_agent
-  - default chat agent
-  - has no RAG tools
-  - answers pure chat turns and formats final responses
-  - exposes compose_final_response for router-controlled final response formatting without tools
-  - does not own agent-to-agent routing
-
-retrieval_agent
-  - focused document Q&A over attached PDFs
-  - owns ordinary RAG tool access
-
-question_agent
-  - student-facing tutoring and question generation
-  - has no RAG tools
-  - uses evidence supplied by router when documents are involved
-
-research_agent
-  - multi-step LangGraph research workflow
-  - also used by Extraction Pipeline Step 1
-
-evaluation_agent
-  - general output and trace evaluation
-  - routed only for explicit evaluation requests or deterministic post-run evaluation policy
-```
-
-### Request Flow
-
-```text
-POST /api/chat or POST /api/chat/stream
-  -> api/chat.py
-     -> agents/router_agent.py
-        -> router trace root
-        -> ExecutionPlan
-        -> intent = chat
-           -> chat_agent (streaming tokens)
-        -> intent = retrieval
-           -> retrieval_agent (streaming tokens)
-        -> intent = question
-           -> if documents attached
-              -> retrieval_agent
-              -> question_agent
-           -> else
-              -> question_agent (streaming tokens)
-        -> intent = research
-           -> research_agent
-        -> intent = evaluation
-           -> evaluation_agent
-        -> optional evaluate_after
-           -> evaluation_agent runs in the background
-```
-
-```mermaid
-flowchart TD
-  U["User request"] --> API["api/chat.py"]
-  API --> Router["router_agent.classify_intent"]
-  Router -->|chat| Chat["chat_agent"]
-  Router -->|retrieval| Ret["retrieval_agent"]
-  Router -->|question| QA["question_agent"]
-  Router -->|research| Res["research_agent"]
-  Router -->|evaluation| Eval["evaluation_agent"]
-  Ret -->|direct RAG tools| RAG
-  Ret -->|evidence for document questions| QA
-  Res --> Graph["research_graph"]
-  Graph --> TP["task_planner"]
-  TP --> Orch["orchestrator"]
-  Orch -->|Send API parallel| W1["slot_worker A"]
-  Orch -->|Send API parallel| W2["slot_worker B"]
-  W1 --> BC["batch_complete"]
-  W2 --> BC
-  BC -->|more slots needed| Orch
-  BC -->|done| Writer["research_writer"]
-```
-
-### Intent Classification
-
-```text
-1. keyword fast path
-   -> question keywords => question
-   -> research or summary keywords => research
-   -> retrieval, source, or PDF keywords => retrieval
-   -> no documents => chat
-   -> otherwise => uncertain
-
-2. uncertain intent
-   -> short follow-up after research/retrieval inherits the previous route_intent
-   -> otherwise router_agent calls route_coordinator
-```
-
-`route_coordinator` is not an agent. It is an internal prompt used by `router_agent`.
-
-### Router Execution Plan
-
-`router_agent` owns an explicit execution plan for each user request.
-
-```text
-ExecutionPlan
-  router_run_id
-  route
-  steps
-    -> ExecutionStep(intent, agent_name, run_id, parent_run_id, kind)
-    -> optional evidence_collection step handled by retrieval_agent
-    -> primary task-agent step
-    -> optional final composition step handled by chat_agent without tools
-  evaluate_after
-```
-
-The default routes use one primary task-agent step per request, except document-backed question generation, which runs `retrieval_agent -> question_agent`. If a route explicitly sets `compose_after`, router runs `chat_agent.compose_final_response()` after the task result. That composition step has no RAG tools and is only for final user-facing formatting.
-
-Background evaluation is gated by deterministic policy. `evaluate_after` is honored only for document-grounded `research`, `retrieval`, and `question` outputs. Explicit evaluation requests route directly to `evaluation_agent`. Extraction Pipeline Step 4 remains `summary_quality` and does not use `evaluation_agent`.
-
-### Research Pipeline
-
-Used by chat-triggered research tasks and Extraction Pipeline Step 1.
-
-```text
-research_agent.run_research_task()
-  -> task_planner
-  -> research_graph (AsyncPostgresSaver checkpointer + AsyncPostgresStore)
-     -> orchestrator (LLM decides which slots are ready to search)
-     -> slot_worker × N in parallel (plan + search + reflect per slot)
-     -> batch_complete (merge results, update consecutive_no_new)
-     -> repeat until coverage is sufficient or budget exhausted
-     -> research_writer
-```
-
-| Node | File | Purpose |
-| ---- | ---- | ------- |
-| task_planner | `agents/research/task_planner.py` | Creates coverage items and output contract |
-| orchestrator | `agents/research/orchestrator.py` | LLM decides which slots have enough context to search now; dispatches workers via Send API |
-| slot_worker | `agents/research/graph_nodes.py` | Per-slot worker: plan query → retrieve → reflect (combined into one node) |
-| batch_complete | `agents/research/graph_nodes.py` | Merges parallel worker results; updates `consecutive_no_new` |
-| research_planner | `agents/research/planner.py` | Per-slot query planning (`plan_query_for_slot`) |
-| retriever | `agents/research/retriever.py` | Runs `search_report` |
-| research_reflector | `agents/research/reflector.py` | Evaluates chunks and updates slot status |
-| research_writer | `agents/research/writer.py` | Writes final answer per output contract |
-| state | `agents/research/state.py` | Tracks coverage items, evidence, slot status; merge reducers for parallel writes |
-
-#### Parallel Execution
-
-The research graph uses LangGraph's `Send` API to dispatch multiple `slot_worker` nodes in parallel. The orchestrator (an LLM call) decides which coverage slots have sufficient context to search in the current batch. Each worker independently runs plan → retrieve → reflect and returns a delta patch. Merge reducers on `ResearchGraphState` handle concurrent writes to `evidence`, `slot_status`, `known_keywords`, and related fields.
-
-#### Fault Tolerance
-
-Every graph node has a `RetryPolicy`, `TimeoutPolicy`, and `error_handler`. On exhausting retries, error handlers return a minimal state patch so the graph continues rather than crashing. The `slot_worker` checks `runtime.drain_requested` and skips expensive work on graceful shutdown, allowing the checkpoint to be saved before the process exits.
-
-#### Document Research Cache
-
-Research results are cached per document set and coverage template (`document_research_cache` table). The cache key is `(document_set_hash, coverage_hash)` where `document_set_hash = MD5(sorted doc IDs)`. Pre-filled slots are loaded before the graph starts, allowing the graph to skip already-covered items.
-
-### Memory System
-
-Three-layer memory with policy-based read/write:
-
-```text
-Short-term  context_summary column (per-thread)
-            Structured v2 format: coverage status + evidence notes per slot.
-            Updated after each research run without LLM compression.
-
-Long-term   LangGraph AsyncPostgresStore (per-user, pgvector semantic search)
-            Past research findings embedded and retrieved for new questions.
-            Stored under namespace (user_id, "research_memories").
-
-Document    document_research_cache table (per-document-set, per-coverage-template)
-            Pre-loads filled slots on subsequent runs to avoid redundant searches.
-```
-
-`services/agent_memory.py` owns the MemoryPolicy abstraction:
-
-| Intent | Read context_summary | Read long-term | Read doc cache | Write context_summary | Write long-term |
-| ------ | -------------------- | -------------- | -------------- | --------------------- | --------------- |
-| research | ✓ | ✓ | ✓ | ✓ | ✓ |
-| retrieval | ✓ | — | ✓ | — | — |
-| question | ✓ | — | — | — | — |
-| chat | ✓ | ✓ | — | — | — |
-
-### Tool Agent Middleware Stack
-
-`runner.py` builds the tool agent with a layered middleware stack:
-
-```text
-@dynamic_prompt _memory_prompt   dynamic system prompt + memory context per MemoryPolicy (cached per run)
-@after_model _track_model_cost   log token usage per call (intent / thread / model)
-@before_model _trim_messages     safety message-count cap (20 messages)
-SummarizationMiddleware          compress old messages instead of dropping
-ContextEditingMiddleware         clear stale tool results at token limit
-ModelCallLimitMiddleware         per-request model call hard cap (run_limit=15)
-ModelFallbackMiddleware          fallback to mini model when primary Azure OpenAI fails
-ModelRetryMiddleware             retry StructuredOutputValidationError
-ToolRetryMiddleware              retry transient tool failures (ConnectionError, TimeoutError)
-HumanInTheLoopMiddleware         interrupt_on={} — no interrupts (all tools are read-only RAG)
-```
-
-HITL is infrastructure-ready. Enable per-tool when write operations are added: `interrupt_on={"tool_name": True}`. SSE resume endpoint: `POST /api/conversations/{conv_id}/resume`.
-
-### Extraction Pipeline
-
-Summary Page extraction runs as a background job.
-
-```text
-Step 1: research_agent.run_research_summary() -> raw research summary
-Step 2: summary_structure (extract_step2 stack) -> structured summary fields
-Step 3: question_generator (extract_step3 stack) -> intro and questions
-Step 4: summary_quality (extract_step4 stack) -> extraction quality score
-```
-
-Step 2 and Step 3 run in parallel. Step 3 uses Step 1's raw summary as input.
-
-`summary_quality` is an extraction step, not a standalone agent.
-
-## Key Backend Files
-
-| File | Role |
-| ---- | ---- |
-| `main.py` | FastAPI app entry, startup, routers, job workers |
-| `agents/router_agent.py` | Intent classification and request routing |
-| `agents/chat_agent.py` | No-tool chat and final response composition |
-| `agents/runner.py` | Tool-enabled LangGraph runner (middleware stack, checkpointer, store) |
-| `agents/retrieval_agent.py` | Focused document Q&A task agent |
-| `agents/question_agent.py` | Question and tutoring task agent |
-| `agents/research/agent.py` | Research pipeline entry point (`run_research_task`, `run_research_summary`) |
-| `agents/research/orchestrator.py` | Batch orchestrator: slot readiness decision and candidate filtering |
-| `agents/research/graph_nodes.py` | LangGraph node functions: orchestrator, slot_worker, batch_complete, verification, writer |
-| `agents/research/graph_utils.py` | Research graph utility helpers: query planning, slot routing, evidence merge |
-| `agents/research/research_graph.py` | Graph routing, error handlers, graph construction, public API |
-| `agents/research/planner.py` | Per-slot query planner (`plan_query_for_slot`) |
-| `agents/research/state.py` | ResearchGraphState with merge reducers; WorkerState |
-| `agents/evaluation_agent.py` | General output and trace evaluation agent |
-| `api/chat.py` | Chat and streaming API; interrupt/resume SSE endpoints |
-| `api/health.py` | GET /health — checks postgres, checkpointer, store, qdrant |
-| `api/summaries.py` | Summary management and extraction endpoints |
-| `api/traces.py` | Local trace monitor API |
-| `services/agent_memory.py` | MemoryPolicy: `build_memory_context`, `record_agent_memory` |
-| `services/memory_service.py` | context_summary, LangGraph Store long-term memory, document research cache |
-| `services/extraction.py` | Summary Page extraction pipeline |
-| `services/extraction_quality.py` | Extraction Step 4 quality scoring |
-| `services/job_service.py` | Background job scheduling |
-| `tools/rag_tool.py` | AgentContext and RAG tools |
-| `rag/` | PDF parsing, chunking, embeddings, Qdrant ingestion and search |
-| `db/` | SQLAlchemy models, DB session (`db_session()`), migrations |
-| `observability/` | Langfuse tracing, `ainvoke_traced_generation()` |
-| `eval/runner.py` | Routing accuracy evaluation |
-| `eval/dataset.json` | Routing eval test cases |
-
-## Prompt System
-
-Prompt files: `backend/prompts/`
-
-Prompt infrastructure: `backend/prompting/registry.py`, `backend/prompting/loader.py`
-
-| Prompt | Used in |
-| ------ | ------- |
-| `core.txt` | Shared base prompt in main stacks |
-| `retrieval_capability.txt` | retrieval_default |
-| `chat_mode.txt` | chat_default |
-| `question_skill.txt` | question_default |
-| `route_coordinator.txt` | router_agent internal fallback classification and evaluation-policy prompt |
-| `evaluation_agent.txt` | evaluation_default |
-| `task_planner.txt` | research_runtime task planning |
-| `research_orchestrator.txt` | research_runtime orchestrator node (slot readiness) |
-| `research_planner.txt` | research_runtime per-slot query planning |
-| `research_reflector.txt` | research_runtime evidence reflection node |
-| `research_writer.txt` | research_runtime final writing node |
-| `summary_structure.txt` | extract_step2 |
-| `question_generator.txt` | extract_step3 |
-| `summary_quality.txt` | extract_step4 |
-
-Prompt stacks:
-
-```text
-chat_default:       core + chat_mode
-question_default:   core + question_skill
-retrieval_default:  core + retrieval_capability
-evaluation_default: core + evaluation_agent
-router_default:     core + route_coordinator
-research_runtime:   core + task_planner + research_orchestrator + research_planner + research_reflector + research_writer
-extract_step2:      core + summary_structure
-extract_step3:      core + question_generator
-extract_step4:      core + summary_quality
-```
-
-Hot reload:
-
-```http
-POST /api/prompts/reload
-```
-
-## Trace Metadata
-
-Trace records are stored in PostgreSQL `traces`.
-
-```text
-run_id, parent_run_id, thread_id, task_type, route_intent, agent_name
-prompt_name, prompt_version, prompt_stack_name, prompt_stack_json
-primary_prompt_json, workflow_prompts_json, prompt_stack_tokens
-tool_count, llm_call_count, quality_score, quality_detail, user_feedback, display
-```
-
-`parent_run_id` expresses trace hierarchy in the same table. `router_agent` writes the root trace for chat requests. The selected task agent is written as a child trace by using the router trace `run_id` as `parent_run_id`.
-
-Prompt fields are intentionally additive:
-
-```text
-prompt_name / prompt_version: legacy primary prompt fields
-prompt_stack_json: full loaded prompt stack
-primary_prompt_json: explicit primary prompt object with name and version
-workflow_prompts_json: prompts used by the workflow step
-```
-
-Langfuse generation observations also receive compact prompt metadata:
-
-```text
-prompt_stack_name
-primary_prompt: { name, version }
-prompt_stack_json
-agent_name, task_type, route_intent
-```
-
-This is attached by `observability.ainvoke_traced_generation()` for manual LLM calls such as router classification, extraction steps, no-tool chat/question calls, evaluation, and research graph nodes.
-
-`task_type` describes the work category, for example:
-
-```text
-chat_turn
-response_composition
-retrieval_qa
-question_generation
-research_task
-document_extraction
-evaluation
-routing
-```
-
-`route_intent` describes router intent when the trace came from a chat request:
-
-```text
-chat
-retrieval
-question
-research
-```
-
-## Data Stores
-
-| Store | Purpose | Default |
-| ----- | ------- | ------- |
-| PostgreSQL (pgvector) | Documents, conversations, messages, traces, jobs, checkpoints, long-term memory | `127.0.0.1:5432/reportdb` (Docker, `pgvector/pgvector:pg16`) |
-| Qdrant | Dense + sparse vector search for document RAG | Cloud (`QDRANT_URL` + `QDRANT_API_KEY`) |
-| Disk / Azure Blob | Raw PDF files | `backend/uploads/` or configured blob container |
-
-PostgreSQL also hosts:
-
-- `AsyncPostgresSaver` — LangGraph checkpointer for durable tool-agent runs
-- `AsyncPostgresStore` — LangGraph Store for per-user long-term research memory (pgvector semantic search)
-- `document_research_cache` — per-document-set coverage cache (keyed by `document_set_hash + coverage_hash`)
-
-## Environment
+- 前端：<http://localhost:5173>
+- API 文件：<http://localhost:8200/docs>
+- 健康檢查：<http://localhost:8200/health>
+
+---
+
+## 技術棧
+
+| 層次 | 技術 |
+|------|------|
+| Web 框架 | FastAPI |
+| Agent 框架 | LangGraph + LangChain |
+| LLM | Azure OpenAI (GPT-4.x / GPT-4o-mini) |
+| 向量搜尋 | Qdrant Cloud（dense + sparse hybrid） |
+| 資料庫 | PostgreSQL 16 + pgvector（Docker） |
+| Checkpoint | LangGraph AsyncPostgresSaver |
+| 長期記憶 | LangGraph AsyncPostgresStore（pgvector 語意搜尋） |
+| 可觀測性 | Langfuse（prompt 版本、token、quality） |
+
+---
+
+## 重要目錄
+
+| 目錄/檔案 | 說明 |
+|-----------|------|
+| `agents/` | 各 agent 進入點與工具型 runner |
+| `agents/research/` | Research graph（scheduler → executor → writer） |
+| `api/` | FastAPI 路由（chat、documents、traces、health） |
+| `services/` | 背景任務、記憶服務、文件摘取管線 |
+| `prompts/` | 所有 prompt 文字檔（runtime 熱載入） |
+| `prompting/` | Prompt registry、stack loader、Langfuse 整合 |
+| `rag/` | PDF 解析、切割、embedding、Qdrant 存取 |
+| `db/` | SQLAlchemy models、migration（Alembic） |
+| `tools/` | AgentContext、RAG tool 定義 |
+
+---
+
+## 資料存儲
+
+| 存儲 | 用途 | 預設位置 |
+|------|------|---------|
+| PostgreSQL（pgvector） | 文件、對話、traces、checkpoint、長期記憶 | `127.0.0.1:5432/reportdb`（Docker） |
+| Qdrant | 文件 RAG 向量搜尋（dense + sparse） | Cloud（`QDRANT_URL` + `QDRANT_API_KEY`） |
+| Disk / Azure Blob | PDF 原始檔案 | `backend/uploads/` 或設定的 blob container |
+
+---
+
+## 環境變數
 
 ```text
 AZURE_OPENAI_ENDPOINT
@@ -429,15 +104,43 @@ AZURE_STORAGE_CONTAINER
 CORS_ORIGINS
 ```
 
-## Tests
+---
 
-Syntax check:
+## Prompt 系統
 
-```powershell
-python -m py_compile backend\agents\runner.py backend\agents\router_agent.py backend\agents\chat_agent.py backend\agents\research\agent.py backend\agents\research\research_graph.py backend\agents\research\graph_nodes.py backend\agents\research\graph_utils.py backend\agents\research\orchestrator.py backend\agents\research\planner.py backend\agents\research\reflector.py backend\agents\research\writer.py backend\agents\research\retriever.py backend\agents\research\state.py backend\agents\research\task_planner.py backend\services\extraction.py backend\services\memory_service.py backend\services\agent_memory.py
+Prompt 檔案：`backend/prompts/`  
+Prompt 基礎設施：`backend/prompting/registry.py`、`backend/prompting/loader.py`
+
+```text
+chat_default:       core + chat_mode
+question_default:   core + question_skill
+retrieval_default:  core + retrieval_capability
+evaluation_default: core + evaluation_agent
+router_default:     core + route_coordinator
+research_runtime:   core + task_planner + research_scheduler + research_planner + research_reflector + research_writer
+extract_step2:      core + summary_structure
+extract_step3:      core + question_generator
+extract_step4:      core + summary_quality
 ```
 
-Focused tests:
+Prompt 熱載入：
+
+```http
+POST /api/prompts/reload
+```
+
+---
+
+## 測試
+
+語法檢查：
+
+```powershell
+cd backend
+.venv\Scripts\python.exe -m py_compile agents\runner.py agents\router_agent.py agents\research\agent.py agents\research\research_graph.py agents\research\scheduler.py agents\research\graph_nodes.py agents\research\state.py
+```
+
+單元測試：
 
 ```powershell
 $env:PYTHONPATH='D:\try\backend;D:\try\backend\.venv\Lib\site-packages'
@@ -445,25 +148,29 @@ $env:AZURE_OPENAI_API_KEY='test'
 $env:AZURE_OPENAI_ENDPOINT='https://example.openai.azure.com/'
 $env:AZURE_OPENAI_API_VERSION='2024-02-15-preview'
 $env:AZURE_OPENAI_CHAT_DEPLOYMENT='test'
-D:\try\backend\.venv\Scripts\python.exe -m pytest backend\tests\test_agent_router.py backend\tests\test_prompt_versions.py backend\tests\test_traces_api.py backend\tests\test_chat_attachments.py backend\tests\test_research_graph.py -q
+D:\try\backend\.venv\Scripts\python.exe -m pytest backend\tests\test_agent_router.py backend\tests\test_prompt_versions.py backend\tests\test_traces_api.py backend\tests\test_research_graph.py -q
 ```
 
-Routing accuracy eval:
+路由準確率評估：
 
 ```powershell
 $env:PYTHONPATH='D:\try\backend;D:\try\backend\.venv\Lib\site-packages'
 D:\try\backend\.venv\Scripts\python.exe backend\eval\runner.py
 ```
 
-Or via API: `POST /api/eval/run`
+或透過 API：`POST /api/eval/run`
 
-## Utility Scripts
+---
 
-| Script | Purpose |
-| ------ | ------- |
-| `scripts/extract_abstracts.py` | Extract abstract text from uploaded PDFs |
-| `scripts/import_abstracts.py` | Import extracted abstracts into Document.abstract_text |
-| `scripts/batch_llamaparse.py` | Re-parse PDFs with LlamaParse |
-| `scripts/scan_quality.py` | Scan extraction quality scores |
-| `scripts/debug_chunks.py` | Debug RAG chunk retrieval |
-| `scripts/compare_rrf.py` | Compare equal-weight vs weighted RRF retrieval results |
+## 工具腳本
+
+| 腳本 | 用途 |
+|------|------|
+| `scripts/sync_prompts.py` | 將所有 prompt 上傳到 Langfuse（production label） |
+| `scripts/pull_prompts.py` | 從 Langfuse 拉取最新 prompt 到本地 |
+| `scripts/extract_abstracts.py` | 從上傳 PDF 提取摘要文字 |
+| `scripts/import_abstracts.py` | 匯入摘要文字到 Document.abstract_text |
+| `scripts/batch_llamaparse.py` | 用 LlamaParse 重新解析 PDF |
+| `scripts/scan_quality.py` | 掃描 extraction quality score |
+| `scripts/debug_chunks.py` | 除錯 RAG chunk 檢索 |
+| `scripts/compare_rrf.py` | 比較 equal-weight vs weighted RRF 檢索結果 |
