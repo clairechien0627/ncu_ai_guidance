@@ -203,7 +203,7 @@ def _emit_graph_progress(
                     for item in batch
                     if isinstance(item, dict)
                 )
-                on_stage(f"批次派工：{labels}")
+                on_stage(f"排程搜尋：{labels}")
         elif node_name == "slot_worker":
             steps = patch.get("steps_json") or []
             last_step = steps[-1] if steps else {}
@@ -217,8 +217,7 @@ def _emit_graph_progress(
                 chunk_count = len(chunks[-1].get("chunks") or [])
             on_stage(f"完成搜尋「{_slot_label(state, slot)}」：{quality} / {status}，片段 {chunk_count}")
         elif node_name == "batch_complete":
-            count = int(state.get("search_count") or 0)
-            on_stage(f"批次完成，累計搜尋 {count} 次")
+            pass  # internal merge step, not user-facing
         elif node_name == "writer":
             on_stage("產生研究整理")
     except Exception:

@@ -105,6 +105,12 @@ async def slot_worker_node(state: WorkerState, config: RunnableConfig, runtime: 
         logger.info("slot_worker skipping slot=%s (drain requested: %s)", slot, runtime.drain_reason)
         return {"search_count": 0, "_batch_evidence_flags": [False]}
 
+    if on_stage and not is_retry:
+        try:
+            on_stage(f"規劃查詢策略：{_slot_label(state, slot)}")
+        except Exception:
+            pass
+
     # On retry attempts skip LLM planning to avoid repeating the same failure.
     if is_retry:
         decision = build_slot_decision(rs, slot)
