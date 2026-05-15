@@ -46,6 +46,7 @@ docker compose up -d
 ```
 
 > `docker-compose.yml` 會啟動：
+>
 > - PostgreSQL: `localhost:5432`
 > - Qdrant: `localhost:6333`
 > - Phoenix（可觀測）: `localhost:6006`
@@ -144,17 +145,23 @@ data-package/
 為了方便交接，我們提供了自動化腳本：
 
 ### 打包資料 (Export)
+
 如果你在本機已有資料想交給別人：
+
 ```powershell
 cd D:\try\backend
 .\.venv\Scripts\python.exe .\scripts\export_data.py
 ```
+
 這會在 `D:\try\data-package` 產生 Snapshot 與 Dump。請將此資料夾打包（不要推上 Git）交給對方。
 
 ### 還原資料 (Import)
+
 接手的人拿到 `data-package` 後：
+
 1. 確保 Docker 已啟動
 2. 執行：
+
 ```powershell
 cd D:\try\backend
 .\.venv\Scripts\python.exe .\scripts\import_data.py
@@ -175,4 +182,3 @@ cd D:\try\backend
 - `ECONNREFUSED /api/...`：frontend 有啟動，但 backend 沒啟動
 - 搜尋沒結果：Qdrant 無資料、或 `QDRANT_URL` 指到錯的主機
 - 回答失敗：Azure OpenAI 設定未填完整或 deployment 名稱錯誤
-

@@ -44,7 +44,7 @@ npm run dev
 ## 技術棧
 
 | 層次 | 技術 |
-|------|------|
+| ---- | ---- |
 | Web 框架 | FastAPI |
 | Agent 框架 | LangGraph + LangChain |
 | LLM | Azure OpenAI (GPT-4.x / GPT-4o-mini) |
@@ -59,7 +59,7 @@ npm run dev
 ## 重要目錄
 
 | 目錄/檔案 | 說明 |
-|-----------|------|
+| --------- | ---- |
 | `agents/` | 各 agent 進入點與工具型 runner |
 | `agents/research/` | Research graph（scheduler → executor → writer） |
 | `api/` | FastAPI 路由（chat、documents、traces、health） |
@@ -75,7 +75,7 @@ npm run dev
 ## 資料存儲
 
 | 存儲 | 用途 | 預設位置 |
-|------|------|---------|
+| ---- | ---- | ------- |
 | PostgreSQL（pgvector） | 文件、對話、traces、checkpoint、長期記憶 | `127.0.0.1:5432/reportdb`（Docker） |
 | Qdrant | 文件 RAG 向量搜尋（dense + sparse） | Cloud（`QDRANT_URL` + `QDRANT_API_KEY`） |
 | Disk / Azure Blob | PDF 原始檔案 | `backend/uploads/` 或設定的 blob container |
@@ -165,7 +165,7 @@ D:\try\backend\.venv\Scripts\python.exe backend\eval\runner.py
 ## 工具腳本
 
 | 腳本 | 用途 |
-|------|------|
+| ---- | ---- |
 | `scripts/sync_prompts.py` | 將所有 prompt 上傳到 Langfuse（production label） |
 | `scripts/pull_prompts.py` | 從 Langfuse 拉取最新 prompt 到本地 |
 | `scripts/extract_abstracts.py` | 從上傳 PDF 提取摘要文字 |

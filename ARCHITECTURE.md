@@ -15,19 +15,22 @@ Report Agent 是一套 RAG-first 多代理人學術研究助理，核心設計�
 ```mermaid
 flowchart TD
     U["使用者訊息"] --> API["api/chat.py\nPOST /api/chat/stream"]
-    API --> Router["router_agent\n意圖分類 + ExecutionPlan"]
+    API --> Router["router_agent\n意圖分類 + ExecutionPlan\n唯一的協調中心"]
 
     Router -->|chat| Chat["chat_agent\n純文字對話"]
     Router -->|retrieval| Ret["retrieval_agent\n文件 Q&A（RAG tools）"]
-    Router -->|question| QA["question_agent\n出題 / 導讀"]
+    Router -->|"question（有文件）\nStep 1: evidence collection"| Ret
+    Ret -->|"回傳 evidence\n到 router"| Router
+    Router -->|"Step 2: question\n含 evidence"| QA["question_agent\n出題 / 導讀"]
+    Router -->|"question（無文件）"| QA
     Router -->|research| Res["research_agent\n多輪研究圖"]
     Router -->|evaluation| Eval["evaluation_agent\n品質評分"]
+    Router -->|"compose_after（選用）\nStep 3: 格式化"| Chat
 
-    Ret -->|文件有附且需要問題形式| QA
     Res --> RG["research_graph\n排程 → 執行 → 撰寫"]
-    Router -.->|背景 evaluate_after| Eval
+    Router -.->|"背景 evaluate_after"| Eval
 
-    style Router fill:#e8f4f8,stroke:#2196F3
+    style Router fill:#e8f4f8,stroke:#2196F3,color:#000
     style RG fill:#f0f8e8,stroke:#4CAF50
 ```
 
@@ -41,6 +44,7 @@ flowchart TD
 **Prompt：** `core` + `route_coordinator`（fallback 時才呼叫 LLM）
 
 **職責：**
+
 - 擁有整個請求的協調權，是唯一知道完整 ExecutionPlan 的角色
 - 意圖分類：先走 keyword fast path，uncertain 才呼叫 `route_coordinator` LLM
 - 建立 `ExecutionPlan`，決定哪些 agent 按哪個順序執行
@@ -48,6 +52,7 @@ flowchart TD
 - 決定是否在任務後執行 evaluate_after（限 research / retrieval / question）
 
 **設計決策：**
+
 - `route_coordinator` 不是 agent，是 router 內部使用的 fallback prompt
 - Router 不做實際回答，只做協調
 - `evaluate_after` 有 deterministic policy 門檻，防止濫用 LLM
@@ -60,12 +65,15 @@ flowchart TD
 **Prompt：** `core` + `chat_mode`
 
 **職責：**
+
 - 純文字對話（無 RAG tools）
-- 格式化最終回應（`compose_final_response`）
+- 格式化最終回應（`compose_final_response`）—— 只有 router 呼叫，不被其他 agent 直接呼叫
 
 **設計決策：**
+
 - 不持有 agent-to-agent routing 邏輯
 - Streaming 透過 `no_tool_runner.py` 的 `stream_no_tool_agent()` 實現
+- `compose_after` 是 router 控制的選用 Step 3，chat_agent 在這裡扮演格式化角色
 
 ---
 
@@ -76,12 +84,15 @@ flowchart TD
 **Tools：** `search_report`（RAG），`AgentContext` 含文件 metadata
 
 **職責：**
+
 - 單點文件 Q&A：搜尋特定資訊、引用、方法、結果
-- 可收集 evidence 供 question_agent 使用（router 控制）
+- 當 intent=question 且有文件時，作為 Step 1 收集 evidence（**不直接呼叫 question_agent**）
 
 **設計決策：**
+
 - 用 LangGraph tool agent（`runner.py`），有 checkpoint + 記憶注入
 - Middleware stack 保護：token limit、model fallback、retry
+- 永遠回傳到 router_agent，由 router 決定是否把 evidence 傳給 question_agent
 
 ---
 
@@ -91,6 +102,7 @@ flowchart TD
 **Prompt：** `core` + `question_skill`
 
 **職責：**
+
 - 學生導向：出題、測驗、互動導讀
 - 無 RAG tools，使用 router 傳入的 evidence 或純 LLM 知識
 
@@ -102,6 +114,7 @@ flowchart TD
 **Prompt：** `core` + `evaluation_agent`
 
 **職責：**
+
 - 對任務 trace 進行品質評分（0-1）
 - 只在 deterministic policy 允許時由 router 觸發（背景執行）
 - 或由使用者明確要求評估時直接路由
@@ -114,6 +127,7 @@ flowchart TD
 **Prompt stack：** `research_runtime`（5 個 prompt 組合）
 
 **職責：**
+
 - 執行多輪 coverage-driven 研究圖
 - 載入 document research cache（跳過已填充的 slot）
 - 完成後寫入長期記憶
@@ -182,7 +196,7 @@ flowchart TD
 ### 各節點職責與 Prompt
 
 | 節點 | 類型 | Prompt | 核心職責 |
-|------|------|--------|---------|
+| ---- | ---- | ------ | ------- |
 | **task_planner** | LLM | `task_planner` | 分析問題，建立 coverage items（研究維度）和 output contract |
 | **scheduler_node** | LLM | `research_scheduler` | 對所有 candidate slots 按搜尋方向明確度排序，輸出完整 pending_slots |
 | **slot_executor_node** | asyncio | — | 管理 Semaphore(3)，reactive 執行，void 計數，結果合併 |
@@ -193,7 +207,7 @@ flowchart TD
 ### SlotStatus 語意
 
 | 狀態 | 含義 | Writer 行為 |
-|------|------|------------|
+| ---- | ---- | ---------- |
 | `FILLED` | 有充足 evidence | 完整輸出 |
 | `PARTIAL` | 有部分 evidence，全局預算到頂時停止 | 有多少說多少 |
 | `EXHAUSTED` | 達 per_slot_cap（7次）停止 | 有多少說多少 |
@@ -245,7 +259,7 @@ flowchart LR
 ```
 
 | Intent | 讀 context_summary | 讀長期記憶 | 讀 doc cache | 寫 context_summary | 寫長期記憶 |
-|--------|:------------------:|:---------:|:------------:|:------------------:|:---------:|
+| ------ | :----------------: | :-------: | :----------: | :----------------: | :-------: |
 | research | ✓ | ✓ | ✓ | ✓ | ✓ |
 | retrieval | ✓ | — | ✓ | — | — |
 | question | ✓ | — | — | — | — |
@@ -299,7 +313,7 @@ core.txt                    ← 所有 stack 的共用基底
 **Prompt 職責分工（Research）：**
 
 | Prompt | 決策類型 | 呼叫頻率 |
-|--------|---------|---------|
+| ------ | ------- | ------- |
 | `task_planner` | 建立研究維度（coverage items） | 每次任務 1 次 |
 | `research_scheduler` | 排序全部 candidate slots | 每輪 1 次 |
 | `research_planner` | 規劃單一 slot 的搜尋查詢 | 每個 slot 1 次 |
