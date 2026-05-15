@@ -226,9 +226,9 @@ async def setup_checkpointer():
                 ),
                 _trim_messages,                         # safety message-count cap
                 # ── Cost & safety limits ─────────────────────────────────
-                ModelCallLimitMiddleware(               # per-request model call hard cap
-                    run_limit=30,                       # max_searches(10) × ~2 calls/search + overhead
-                    exit_behavior="end",
+                ModelCallLimitMiddleware(               # per-request model call hard cap (tool agent only)
+                    run_limit=30,                       # ~2 calls/search × up to 10 searches + overhead
+                    exit_behavior="end",                # research graph is NOT affected by this middleware
                 ),
                 # ── Resilience ───────────────────────────────────────────
                 ModelRetryMiddleware(                   # replaces manual StructuredOutputValidationError retry
