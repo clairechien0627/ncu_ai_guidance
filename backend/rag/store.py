@@ -80,14 +80,25 @@ def _ensure_collection(client: QdrantClient) -> None:
 
 
 def _ensure_payload_indexes(client: QdrantClient) -> None:
-    """Ensure payload indexes exist for filtered search. Idempotent."""
+    """Ensure payload indexes exist for all filtered fields. Idempotent."""
     from qdrant_client.models import PayloadSchemaType
-    for field in ("metadata.document_id", "metadata.filename"):
+    keyword_fields = ("metadata.document_id", "metadata.filename")
+    integer_fields = ("metadata.reindex_ts",)
+    for field in keyword_fields:
         try:
             client.create_payload_index(
                 collection_name=COLLECTION_NAME,
                 field_name=field,
                 field_schema=PayloadSchemaType.KEYWORD,
+            )
+        except Exception:
+            pass
+    for field in integer_fields:
+        try:
+            client.create_payload_index(
+                collection_name=COLLECTION_NAME,
+                field_name=field,
+                field_schema=PayloadSchemaType.INTEGER,
             )
         except Exception:
             pass
