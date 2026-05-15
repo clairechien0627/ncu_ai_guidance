@@ -145,6 +145,8 @@ function CollapsiblePanel({
   )
 }
 
+const EMPTY_TRACES: TraceItem[] = []
+
 export default function AdminTracesPage({ onBack }: Props) {
   const queryClient = useQueryClient()
 
@@ -236,7 +238,7 @@ export default function AdminTracesPage({ onBack }: Props) {
   }), [filterPrompt, filterVersion, filterStatus, filterLatency,
        filterHandoffOnly, filterOriginalIntent, filterResolvedIntent])
 
-  const { data: baseTraces = [], isPending: tracesLoading, isError: tracesError } = useQuery({
+  const { data: baseTraces = EMPTY_TRACES, isPending: tracesLoading, isError: tracesError } = useQuery({
     queryKey: ['traces', traceFilters],
     queryFn: () => getTraces(30, { ...traceFilters, offset: 0 }),
   })
