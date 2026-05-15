@@ -4,7 +4,6 @@ import operator
 from dataclasses import dataclass, field
 from typing import Annotated, Literal, TypedDict
 
-from langgraph.channels.delta import DeltaChannel
 
 
 SlotStatus = Literal["FILLED", "PARTIAL", "NOT_FILLED", "EXHAUSTED"]
@@ -328,12 +327,10 @@ class ResearchGraphState(TypedDict):
     _batch_evidence_flags: Annotated[list, _batch_flags_reducer]
 
     # ── trace & output ────────────────────────────────────────────────────────
-    # DeltaChannel: checkpoints store only each super-step's additions instead of
-    # the full accumulated list, significantly reducing checkpoint storage for long runs.
-    steps_json: Annotated[list, DeltaChannel]
-    chunks_by_query_json: Annotated[list, DeltaChannel]
+    steps_json: Annotated[list, operator.add]
+    chunks_by_query_json: Annotated[list, operator.add]
     trace_summary: dict
-    messages: Annotated[list, DeltaChannel]
+    messages: Annotated[list, operator.add]
     llm_call_count: Annotated[int, operator.add]
     started_at: str
     final_answer: str
