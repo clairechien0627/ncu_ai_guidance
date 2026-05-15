@@ -155,7 +155,6 @@ def jobs_enqueue(pairs: list[tuple[int, str]], job_type: str = "reindex"):
         for doc_id, filename in pairs:
             if any(j["doc_id"] == doc_id and _is_active_status(j.get("status")) for j in _active_jobs):
                 continue
-            _active_jobs = [j for j in _active_jobs if j["doc_id"] != doc_id]
             job = {
                 "job_id": _new_job_id(job_type, doc_id),
                 "doc_id": doc_id,
@@ -195,7 +194,7 @@ def jobs_remove(doc_id: int):
                 job["stage"] = "已取消"
                 job["updated_at"] = _iso()
                 to_persist.append(dict(job))
-        _active_jobs = [j for j in _active_jobs if j["doc_id"] != doc_id]
+        _active_jobs = [j for j in _active_jobs if j["doc_id"] != doc_id or not _is_active_status(j.get("status"))]
     for snap in to_persist:
         _persist_job(snap, final_status="cancelled")
 
