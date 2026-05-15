@@ -195,29 +195,23 @@ def _emit_graph_progress(
     if not on_stage:
         return
     try:
-        if node_name == "orchestrator":
-            batch = patch.get("batch_plan") or []
-            if batch:
+        if node_name == "scheduler":
+            pending = patch.get("pending_slots") or []
+            if pending:
                 labels = ", ".join(
                     _slot_label(state, str(item.get("slot") or ""))
-                    for item in batch
+                    for item in pending
                     if isinstance(item, dict)
                 )
                 on_stage(f"排程搜尋：{labels}")
-        elif node_name == "slot_worker":
-            steps = patch.get("steps_json") or []
-            last_step = steps[-1] if steps else {}
-            slot = str(last_step.get("slot") or "")
-            quality = last_step.get("quality") or "UNKNOWN"
-            statuses = patch.get("slot_status") or state.get("slot_status") or {}
-            status = statuses.get(slot, "")
-            chunks = patch.get("chunks_by_query_json") or []
-            chunk_count = 0
-            if chunks and isinstance(chunks[-1], dict):
-                chunk_count = len(chunks[-1].get("chunks") or [])
-            on_stage(f"完成搜尋「{_slot_label(state, slot)}」：{quality} / {status}，片段 {chunk_count}")
-        elif node_name == "batch_complete":
-            pass  # internal merge step, not user-facing
+        elif node_name == "slot_executor":
+            # Per-slot progress is emitted via on_stage inside _run_single_slot;
+            # here we only emit a summary when the executor wave finishes.
+            slot_status = patch.get("slot_status") or {}
+            not_found = [s for s, v in slot_status.items() if v in ("NOT_FOUND", "OMITTED")]
+            if not_found:
+                labels = "、".join(_slot_label(state, s) for s in not_found)
+                on_stage(f"無資料：{labels}")
         elif node_name == "writer":
             on_stage("產生研究整理")
     except Exception:
@@ -729,7 +723,6 @@ def _build_initial_graph_state(
         "output_contract": output_contract,
         "search_count": 0,
         "consecutive_no_new": 0,
-        "verification_done": False,
         "known_keywords": _seed_keywords(context),
         "used_queries": [],
         "slot_status": {slot: "NOT_FILLED" for slot in coverage_ids},
@@ -742,8 +735,8 @@ def _build_initial_graph_state(
         "avoid_query_terms": [],
         "seen_chunk_keys": [],
         "used_query_keys": [],
-        "batch_plan": [],
-        "_batch_evidence_flags": [],
+        "pending_slots": [],
+        "void_slot_attempts": {},
         "steps_json": [],
         "chunks_by_query_json": [],
         "trace_summary": {},

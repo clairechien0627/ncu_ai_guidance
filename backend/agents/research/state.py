@@ -6,7 +6,7 @@ from typing import Annotated, Literal, TypedDict
 
 
 
-SlotStatus = Literal["FILLED", "PARTIAL", "NOT_FILLED", "EXHAUSTED"]
+SlotStatus = Literal["FILLED", "PARTIAL", "NOT_FILLED", "EXHAUSTED", "NOT_FOUND", "OMITTED"]
 
 DEFAULT_SUMMARY_COVERAGE: tuple[str, ...] = (
     "research_motivation",
@@ -308,7 +308,6 @@ class ResearchGraphState(TypedDict):
     # ── persistent research state ─────────────────────────────────────────────
     search_count: Annotated[int, operator.add]
     consecutive_no_new: int
-    verification_done: bool
     known_keywords: Annotated[list[str], _merge_unique_list]
     used_queries: Annotated[list[str], operator.add]
     slot_status: Annotated[dict, _merge_dict_overwrite]
@@ -323,13 +322,13 @@ class ResearchGraphState(TypedDict):
     used_query_keys: Annotated[list[str], _merge_unique_list]
 
     # ── per-run quality constraints ───────────────────────────────────────────
-    # Document extraction sets this to 1 so writer only fires when every
-    # required slot has at least one real evidence note (or is genuinely EXHAUSTED).
     min_evidence_per_slot: int
 
-    # ── in-flight search (planner → retriever → reflector, cleared by writer) ──
-    batch_plan: list[dict]
-    _batch_evidence_flags: Annotated[list, _batch_flags_reducer]
+    # ── scheduler ↔ executor contract ────────────────────────────────────────
+    # pending_slots: scheduler writes (ordered list of slots to run)
+    # void_slot_attempts: executor writes (how many times each slot returned void)
+    pending_slots: list[dict]                                    # [{slot, hint}]
+    void_slot_attempts: Annotated[dict, _merge_dict_overwrite]  # {slot_id: int}
 
     # ── trace & output ────────────────────────────────────────────────────────
     steps_json: Annotated[list, operator.add]
@@ -340,8 +339,4 @@ class ResearchGraphState(TypedDict):
     started_at: str
     final_answer: str
     final_sources: list[str]
-
-
-class WorkerState(ResearchGraphState):
-    worker_slot: str
     worker_hint: str

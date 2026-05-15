@@ -13,7 +13,6 @@ from .planner import PlannerDecision, build_slot_decision
 from .state import (
     ResearchGraphState,
     ResearchState,
-    WorkerState,
     _merge_dict_overwrite,
     _merge_evidence_dict,
     _merge_unique_list,
@@ -159,7 +158,6 @@ def _trace_summary(state: ResearchGraphState) -> dict:
         ],
         "progress": {
             "search_count": state.get("search_count", 0),
-            "verification_done": state.get("verification_done", False),
             "slot_status": state.get("slot_status", {}),
         },
         "steps": _public_steps(state),
@@ -388,7 +386,7 @@ def _merge_stream_patch(state: dict, patch: dict) -> dict:
             merged[key] = _merge_evidence_dict(merged.get(key, {}), value)
         elif key == "slot_status":
             merged[key] = _merge_dict_overwrite(merged.get(key, {}), value)
-        elif key in {"used_queries", "steps_json", "chunks_by_query_json", "messages", "_batch_evidence_flags"}:
+        elif key in {"used_queries", "steps_json", "chunks_by_query_json", "messages"}:
             merged[key] = list(merged.get(key, [])) + list(value or [])
         elif key in {"search_count", "llm_call_count"}:
             merged[key] = int(merged.get(key, 0) or 0) + int(value or 0)
@@ -397,7 +395,7 @@ def _merge_stream_patch(state: dict, patch: dict) -> dict:
     return merged
 
 
-def _graph_to_rs(state: ResearchGraphState | WorkerState) -> ResearchState:
+def _graph_to_rs(state: ResearchGraphState) -> ResearchState:
     return ResearchState(
         question=state["question"],
         document_ids=list(state["document_ids"]),
@@ -407,7 +405,7 @@ def _graph_to_rs(state: ResearchGraphState | WorkerState) -> ResearchState:
         output_contract=state.get("output_contract", ""),
         search_count=state["search_count"],
         consecutive_no_new=state["consecutive_no_new"],
-        verification_done=state["verification_done"],
+        verification_done=False,  # removed from graph state
         known_keywords=list(state["known_keywords"]),
         used_queries=list(state["used_queries"]),
         slot_status=dict(state["slot_status"]),
