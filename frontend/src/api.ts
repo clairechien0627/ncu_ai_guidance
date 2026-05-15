@@ -304,7 +304,6 @@ export interface TraceGroupStats {
 }
 
 export interface TraceFilters {
-  mode?: string
   prompt_name?: string
   prompt_version?: string
   status?: string
@@ -327,11 +326,6 @@ export const getTraces = async (limit = 40, filters: TraceFilters = {}): Promise
 
 export const getTraceStats = async (): Promise<TraceStats> => {
   const { data } = await api.get<TraceStats>('/traces/stats')
-  return data
-}
-
-export const getTracesByMode = async (): Promise<TraceGroupStats[]> => {
-  const { data } = await api.get<TraceGroupStats[]>('/traces/by-mode')
   return data
 }
 

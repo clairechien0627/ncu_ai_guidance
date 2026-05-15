@@ -9,7 +9,6 @@ import {
   getTraceErrors,
   getTraceStats,
   getTraces,
-  getTracesByMode,
   getTracesByPrompt,
   getTracesByPromptVersion,
   getTraceDetail,
@@ -37,7 +36,6 @@ interface Props {
 // ── Filter state ───────────────────────────────────────────────────────────────
 
 type FilterState = {
-  mode: string
   prompt: string
   version: string
   status: string
@@ -48,7 +46,6 @@ type FilterState = {
 }
 
 const FILTER_DEFAULT: FilterState = {
-  mode: 'all',
   prompt: 'all',
   version: 'all',
   status: 'all',
@@ -153,7 +150,6 @@ export default function AdminTracesPage({ onBack }: Props) {
 
   const refreshAll = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['trace-stats'] })
-    queryClient.invalidateQueries({ queryKey: ['traces-by-mode'] })
     queryClient.invalidateQueries({ queryKey: ['traces-by-prompt'] })
     queryClient.invalidateQueries({ queryKey: ['traces-by-version'] })
     queryClient.invalidateQueries({ queryKey: ['trace-errors'] })
@@ -165,7 +161,7 @@ export default function AdminTracesPage({ onBack }: Props) {
 
   // ── Filter state ───────────────────────────────────────────────────────────
   const [filters, dispatchFilter] = useReducer(filterReducer, FILTER_DEFAULT)
-  const { mode: filterMode, prompt: filterPrompt, version: filterVersion,
+  const { prompt: filterPrompt, version: filterVersion,
           status: filterStatus, latency: filterLatency,
           originalIntent: filterOriginalIntent, resolvedIntent: filterResolvedIntent,
           handoffOnly: filterHandoffOnly } = filters
@@ -205,7 +201,7 @@ export default function AdminTracesPage({ onBack }: Props) {
   const [toolsPickerOpen, setToolsPickerOpen] = useState(true)
   const [collapsedCards, setCollapsedCards] = useState<Set<string>>(
     () => new Set([
-      'byMode', 'byPrompt', 'byPromptVersion', 'errors', 'slowRuns',
+      'byPrompt', 'byPromptVersion', 'errors', 'slowRuns',
       'promptCompare', 'batchScore', 'routeTest', 'promptList', 'eval',
     ]),
   )
@@ -217,7 +213,6 @@ export default function AdminTracesPage({ onBack }: Props) {
     queryKey: ['trace-stats'],
     queryFn: getTraceStats,
   })
-  const { data: byMode = [] } = useQuery({ queryKey: ['traces-by-mode'], queryFn: getTracesByMode })
   const { data: byPrompt = [] } = useQuery({ queryKey: ['traces-by-prompt'], queryFn: getTracesByPrompt })
   const { data: byPromptVersion = [] } = useQuery({ queryKey: ['traces-by-version'], queryFn: getTracesByPromptVersion })
   const { data: errors = [] } = useQuery({ queryKey: ['trace-errors'], queryFn: () => getTraceErrors(20) })
@@ -230,7 +225,6 @@ export default function AdminTracesPage({ onBack }: Props) {
 
   // Filter-dependent trace list — resets pagination when filters change.
   const traceFilters = useMemo(() => ({
-    mode: filterMode,
     prompt_name: filterPrompt === 'all' ? undefined : filterPrompt,
     prompt_version: filterVersion === 'all' ? undefined : filterVersion,
     status: filterStatus === 'all' ? undefined : filterStatus,
@@ -239,7 +233,7 @@ export default function AdminTracesPage({ onBack }: Props) {
       ? 'retrieval_handoff'
       : filterOriginalIntent === 'all' ? undefined : filterOriginalIntent,
     resolved_intent: filterResolvedIntent === 'all' ? undefined : filterResolvedIntent,
-  }), [filterMode, filterPrompt, filterVersion, filterStatus, filterLatency,
+  }), [filterPrompt, filterVersion, filterStatus, filterLatency,
        filterHandoffOnly, filterOriginalIntent, filterResolvedIntent])
 
   const { data: baseTraces = [], isPending: tracesLoading, isError: tracesError } = useQuery({
@@ -492,17 +486,13 @@ export default function AdminTracesPage({ onBack }: Props) {
           <div className="trace-filter-bar">
             <button className="trace-filter-toggle" onClick={() => setFiltersOpen(p => !p)}>
               {filtersOpen ? '▲' : '▼'} 篩選
-              {(filterMode !== 'all' || filterPrompt !== 'all' || filterVersion !== 'all' ||
+              {(filterPrompt !== 'all' || filterVersion !== 'all' ||
                 filterStatus !== 'all' || filterLatency || filterHandoffOnly) && (
                 <span className="trace-filter-badge">已篩選</span>
               )}
             </button>
             {filtersOpen && (
               <div className="trace-filters">
-                <label>Mode<select value={filterMode} onChange={(e) => dispatchFilter({ mode: e.target.value })}>
-                  <option value="all">All</option>
-                  {byMode.map((row) => <option key={row.key} value={row.key}>{row.key}</option>)}
-                </select></label>
                 <label>Prompt<select value={filterPrompt} onChange={(e) => dispatchFilter({ prompt: e.target.value })}>
                   <option value="all">All</option>
                   {byPrompt.map((row) => <option key={row.key} value={row.key}>{row.key}</option>)}
@@ -552,10 +542,6 @@ export default function AdminTracesPage({ onBack }: Props) {
                   <div className="trace-table-scroll trace-table-scroll-sm">
                     <TraceList rows={slowRuns} onSelect={openTrace} selectedId={selectedTrace?.id} />
                   </div>
-                </CollapsiblePanel>
-
-                <CollapsiblePanel id="byMode" title="By Mode" summary={`${byMode.length} groups`} collapsed={isCardCollapsed('byMode')} onToggle={toggleCard}>
-                  <div className="trace-table-scroll trace-table-scroll-sm"><TraceGroupTable rows={byMode} /></div>
                 </CollapsiblePanel>
 
                 <CollapsiblePanel id="byPrompt" title="By Prompt" summary={`${byPrompt.length} prompts`} collapsed={isCardCollapsed('byPrompt')} onToggle={toggleCard}>
