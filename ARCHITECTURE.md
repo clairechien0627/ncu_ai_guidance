@@ -12,25 +12,33 @@ Report Agent 是一套 RAG-first 多代理人學術研究助理，核心設計�
 
 ## 整體請求流程
 
+所有 agent 的結果都回傳給 router，由 router 統一回應使用者。唯一特殊的是 question+文件流程中，retrieval 的 evidence 先回 router，router 再傳給 question。
+
 ```mermaid
 flowchart TD
-    U["使用者訊息"] --> API["api/chat.py\nPOST /api/chat/stream"]
+    U["使用者訊息"] --> API["api/chat.py"]
     API --> Router["router_agent\n意圖分類 + ExecutionPlan\n唯一的協調中心"]
 
-    Router -->|chat| Chat["chat_agent\n純文字對話"]
-    Router -->|retrieval| Ret["retrieval_agent\n文件 Q&A（RAG tools）"]
-    Router -->|"question（有文件）\nStep 1: evidence collection"| Ret
-    Ret -->|"回傳 evidence\n到 router"| Router
-    Router -->|"Step 2: question\n含 evidence"| QA["question_agent\n出題 / 導讀"]
-    Router -->|"question（無文件）"| QA
-    Router -->|research| Res["research_agent\n多輪研究圖"]
-    Router -->|evaluation| Eval["evaluation_agent\n品質評分"]
-    Router -->|"compose_after（選用）\nStep 3: 格式化"| Chat
+    Router -->|chat| Chat["chat_agent"]
+    Router -->|retrieval| Ret["retrieval_agent\n文件 Q&A"]
+    Router -->|"question＋文件\nStep 1"| Ret
+    Router -->|"question（無文件）"| QA["question_agent"]
+    Router -->|research| Res["research_agent"]
+    Router -->|evaluation| Eval["evaluation_agent"]
+    Router -->|"compose_after（選用）"| Chat
 
+    Chat -->|"回傳結果"| Router
+    Ret -->|"回傳結果 / evidence"| Router
+    QA -->|"回傳結果"| Router
+    Res -->|"回傳結果"| Router
+    Eval -->|"回傳結果"| Router
+
+    Router -->|"Step 2（含 evidence）"| QA
+    Router --> OUT["回應使用者"]
     Res --> RG["research_graph\n排程 → 執行 → 撰寫"]
-    Router -.->|"背景 evaluate_after"| Eval
+    Router -.->|"背景"| Eval
 
-    style Router fill:#e8f4f8,stroke:#2196F3,color:#000
+    style Router fill:#e8f4f8,stroke:#2196F3
     style RG fill:#f0f8e8,stroke:#4CAF50
 ```
 
@@ -145,16 +153,16 @@ flowchart TD
     START([▶ START]) --> TP
 
     subgraph PRE["前置：research_agent.py"]
-        TP["task_planner\n（LLM）\n建立 coverage items + output contract"]
+        TP["task_planner<br>（LLM）<br>建立 coverage items + output contract"]
     end
 
     TP --> SCH
 
     subgraph GRAPH["research_graph（LangGraph）"]
-        SCH["scheduler_node\n（LLM）\n對所有 candidate slots 排序\n輸出 pending_slots"]
-        EX["slot_executor_node\n（asyncio.Semaphore 3）\n依序執行 pending_slots\nvoid 搜尋不計數"]
+        SCH["scheduler_node<br>（LLM）<br>對所有 candidate slots 排序<br>輸出 pending_slots"]
+        EX["slot_executor_node<br>（asyncio.Semaphore 3）<br>依序執行 pending_slots<br>void 搜尋不計數"]
         SC{should_continue}
-        WRI["writer_node\n（LLM）\n依 evidence + contract 產生報告"]
+        WRI["writer_node<br>（LLM）<br>依 evidence + contract 產生報告"]
     end
 
     SCH --> EX
@@ -173,16 +181,16 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    PS["pending_slots\n（已按優先序排列）"] --> INIT["初始啟動\nmin(3, n) 個 slots"]
+    PS["pending_slots<br>（已按優先序排列）"] --> INIT["初始啟動<br>min(3, n) 個 slots"]
 
     subgraph WORKER["每個 asyncio Task（最多 3 個同時）"]
         SEM["acquire Semaphore(3)"]
-        SEM --> RS["_run_single_slot\nplan → retrieve → reflect"]
+        SEM --> RS["_run_single_slot<br>plan → retrieve → reflect"]
         RS --> Q{搜尋品質}
-        Q -->|"USEFUL / PARTIAL\n有 evidence"| OK["merge 到 accumulated\nsearch_count += 1\nrelease semaphore"]
-        Q -->|"NO_RESULTS / NOT_USEFUL\n且 evidence = 0"| VOID{void_attempts?}
-        VOID -->|"< 4 次"| BACK["放回 void 通知\nscheduler 下輪重排\nrelease semaphore"]
-        VOID -->|"≥ 4 次"| DEAD["標記 NOT_FOUND / OMITTED\n永久結束此 slot\nrelease semaphore"]
+        Q -->|"USEFUL / PARTIAL<br>有 evidence"| OK["merge 到 accumulated<br>search_count += 1<br>release semaphore"]
+        Q -->|"NO_RESULTS / NOT_USEFUL<br>且 evidence = 0"| VOID{void_attempts?}
+        VOID -->|"< 4 次"| BACK["放回 void 通知<br>scheduler 下輪重排<br>release semaphore"]
+        VOID -->|"≥ 4 次"| DEAD["標記 NOT_FOUND / OMITTED<br>永久結束此 slot<br>release semaphore"]
     end
 
     INIT --> WORKER
@@ -224,16 +232,16 @@ flowchart TD
 flowchart LR
     REQ["使用者請求"] --> M1
     subgraph MIDDLEWARE["Middleware Stack（由上到下）"]
-        M1["@dynamic_prompt _memory_prompt\n動態 system prompt + 記憶注入"]
-        M2["@after_model _track_model_cost\nToken 計費 log"]
-        M3["@before_model _trim_messages\n訊息數量上限（20 條）"]
-        M4["SummarizationMiddleware\n舊訊息壓縮"]
-        M5["ContextEditingMiddleware\n清除過期 tool results"]
-        M6["ModelCallLimitMiddleware\n模型呼叫上限（15 次）"]
-        M7["ModelFallbackMiddleware\n主模型失敗 → mini 模型"]
-        M8["ModelRetryMiddleware\n結構化輸出解析失敗重試"]
-        M9["ToolRetryMiddleware\n瞬態 tool 錯誤重試"]
-        M10["HumanInTheLoopMiddleware\ninterrupt_on={}\n（目前全唯讀工具，無中斷）"]
+        M1["@dynamic_prompt _memory_prompt<br>動態 system prompt + 記憶注入"]
+        M2["@after_model _track_model_cost<br>Token 計費 log"]
+        M3["@before_model _trim_messages<br>訊息數量上限（20 條）"]
+        M4["SummarizationMiddleware<br>舊訊息壓縮"]
+        M5["ContextEditingMiddleware<br>清除過期 tool results"]
+        M6["ModelCallLimitMiddleware<br>模型呼叫上限（15 次）"]
+        M7["ModelFallbackMiddleware<br>主模型失敗 → mini 模型"]
+        M8["ModelRetryMiddleware<br>結構化輸出解析失敗重試"]
+        M9["ToolRetryMiddleware<br>瞬態 tool 錯誤重試"]
+        M10["HumanInTheLoopMiddleware<br>interrupt_on={}<br>（目前全唯讀工具，無中斷）"]
     end
     M1 --> M2 --> M3 --> M4 --> M5 --> M6 --> M7 --> M8 --> M9 --> M10 --> LLM["LLM"]
 ```
@@ -247,9 +255,9 @@ flowchart LR
 ```mermaid
 flowchart LR
     subgraph MEM["記憶系統"]
-        ST["短期記憶\ncontext_summary\n（per-thread PG 欄位）\nResearch 完成後更新\n不經 LLM 壓縮"]
-        LT["長期記憶\nAsyncPostgresStore\n（per-user, pgvector）\n語意搜尋過去研究"]
-        DC["文件 Cache\ndocument_research_cache\n（PG 表）\nper-document-set + coverage-template\n已填充 slot 跳過重搜"]
+        ST["短期記憶<br>context_summary<br>（per-thread PG 欄位）<br>Research 完成後更新<br>不經 LLM 壓縮"]
+        LT["長期記憶<br>AsyncPostgresStore<br>（per-user, pgvector）<br>語意搜尋過去研究"]
+        DC["文件 Cache<br>document_research_cache<br>（PG 表）<br>per-document-set + coverage-template<br>已填充 slot 跳過重搜"]
     end
 
     RES["research_agent"] -->|"寫入"| ST
@@ -274,10 +282,10 @@ flowchart LR
 ```mermaid
 flowchart LR
     UP["PDF 上傳"] --> S1
-    S1["Step 1\nresearch_agent\n原始研究摘要"] --> S2 & S3
-    S2["Step 2\nsummary_structure\n結構化欄位"] --> S4
-    S3["Step 3\nquestion_generator\n導讀 + 問題"] --> S4
-    S4["Step 4\nsummary_quality\n品質評分"]
+    S1["Step 1<br>research_agent<br>原始研究摘要"] --> S2 & S3
+    S2["Step 2<br>summary_structure<br>結構化欄位"] --> S4
+    S3["Step 3<br>question_generator<br>導讀 + 問題"] --> S4
+    S4["Step 4<br>summary_quality<br>品質評分"]
 
     style S1 fill:#e8f4f8,stroke:#2196F3
     style S2 fill:#f0f8e8,stroke:#4CAF50
