@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import uuid
+from collections.abc import AsyncIterator
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import AzureChatOpenAI
@@ -99,6 +100,47 @@ def _write_trace(
             db.rollback()
 
 
+def _prepare_no_tool_call(
+    *,
+    user_message: str,
+    stack_name: str,
+    agent_name: str,
+    task_type: str,
+    route_intent: str,
+    extra_system_messages: list[str] | None = None,
+    payload: dict | None = None,
+    sources: list[str] | None = None,
+    original_intent: str | None = None,
+    resolved_intent: str | None = None,
+) -> tuple[list, dict, dict]:
+    stack = load_stack(stack_name)
+    metadata = {
+        "task_type": task_type,
+        "route_intent": route_intent,
+        "agent_name": agent_name,
+        **stack.metadata(),
+    }
+    if original_intent:
+        metadata["original_intent"] = original_intent
+    if resolved_intent:
+        metadata["resolved_intent"] = resolved_intent
+
+    inputs = {
+        "user_message": user_message,
+        "payload": payload or {},
+        "sources": sources or [],
+    }
+    messages = [SystemMessage(content=content) for content in stack.contents]
+    for content in extra_system_messages or []:
+        if content:
+            messages.append(SystemMessage(content=content))
+    messages.append(HumanMessage(content=json.dumps({
+        "user_message": user_message,
+        **(payload or {}),
+    }, ensure_ascii=False)))
+    return messages, metadata, inputs
+
+
 async def run_no_tool_agent(
     *,
     user_message: str,
@@ -120,23 +162,18 @@ async def run_no_tool_agent(
 ) -> tuple[str, list[str], dict, str]:
     """Run one no-tool LLM call and persist a local trace row."""
     run_id = run_id or str(uuid.uuid4())
-    stack = load_stack(stack_name)
-    metadata = {
-        "task_type": task_type,
-        "route_intent": route_intent,
-        "agent_name": agent_name,
-        **stack.metadata(),
-    }
-    if original_intent:
-        metadata["original_intent"] = original_intent
-    if resolved_intent:
-        metadata["resolved_intent"] = resolved_intent
-
-    inputs = {
-        "user_message": user_message,
-        "payload": payload or {},
-        "sources": sources or [],
-    }
+    messages, metadata, inputs = _prepare_no_tool_call(
+        user_message=user_message,
+        stack_name=stack_name,
+        agent_name=agent_name,
+        task_type=task_type,
+        route_intent=route_intent,
+        extra_system_messages=extra_system_messages,
+        payload=payload,
+        sources=sources,
+        original_intent=original_intent,
+        resolved_intent=resolved_intent,
+    )
     _write_trace(
         run_id=run_id,
         parent_run_id=parent_run_id,
@@ -146,15 +183,6 @@ async def run_no_tool_agent(
         metadata=metadata,
         inputs=inputs,
     )
-
-    messages = [SystemMessage(content=content) for content in stack.contents]
-    for content in extra_system_messages or []:
-        if content:
-            messages.append(SystemMessage(content=content))
-    messages.append(HumanMessage(content=json.dumps({
-        "user_message": user_message,
-        **(payload or {}),
-    }, ensure_ascii=False)))
 
     try:
         with propagate_attributes(
@@ -183,6 +211,87 @@ async def run_no_tool_agent(
             output=output,
         )
         return content, result_sources, metadata, run_id
+    except Exception as exc:
+        _write_trace(
+            run_id=run_id,
+            parent_run_id=parent_run_id,
+            thread_id=thread_id,
+            document_ids=document_ids,
+            name=f"{agent_name}.no_tool",
+            metadata=metadata,
+            inputs=inputs,
+            error=str(exc),
+        )
+        raise
+
+
+async def stream_no_tool_agent(
+    *,
+    user_message: str,
+    thread_id: str,
+    document_ids: list[int] | None,
+    stack_name: str,
+    prompt_name: str,
+    agent_name: str,
+    task_type: str,
+    route_intent: str,
+    run_id: str | None = None,
+    parent_run_id: str | None = None,
+    use_mini: bool = False,
+    extra_system_messages: list[str] | None = None,
+    payload: dict | None = None,
+    sources: list[str] | None = None,
+    original_intent: str | None = None,
+    resolved_intent: str | None = None,
+) -> AsyncIterator[str]:
+    """Stream one no-tool LLM call token-by-token and persist a local trace row."""
+    run_id = run_id or str(uuid.uuid4())
+    messages, metadata, inputs = _prepare_no_tool_call(
+        user_message=user_message,
+        stack_name=stack_name,
+        agent_name=agent_name,
+        task_type=task_type,
+        route_intent=route_intent,
+        extra_system_messages=extra_system_messages,
+        payload=payload,
+        sources=sources,
+        original_intent=original_intent,
+        resolved_intent=resolved_intent,
+    )
+    _write_trace(
+        run_id=run_id,
+        parent_run_id=parent_run_id,
+        thread_id=thread_id,
+        document_ids=document_ids,
+        name=f"{agent_name}.no_tool",
+        metadata=metadata,
+        inputs=inputs,
+    )
+
+    content = ""
+    try:
+        with propagate_attributes(
+            session_id=thread_id,
+            user_id=get_user_id(),
+            version=metadata.get("prompt_version"),
+        ) if thread_id else contextlib.nullcontext():
+            async for chunk in _llm(use_mini=use_mini).astream(messages):
+                token = getattr(chunk, "content", None)
+                if token:
+                    token_text = str(token)
+                    content += token_text
+                    yield token_text
+        result_sources = sources or []
+        _write_trace(
+            run_id=run_id,
+            parent_run_id=parent_run_id,
+            thread_id=thread_id,
+            document_ids=document_ids,
+            name=f"{agent_name}.no_tool",
+            metadata=metadata,
+            inputs=inputs,
+            output={"answer": content.strip(), "sources": result_sources},
+        )
     except Exception as exc:
         _write_trace(
             run_id=run_id,

@@ -12,7 +12,7 @@ from langfuse import observe, propagate_attributes
 
 from config import settings
 from observability import ainvoke_traced_generation, update_current_observation_io
-from .no_tool_runner import run_no_tool_agent
+from .no_tool_runner import run_no_tool_agent, stream_no_tool_agent
 from .request_context import get_user_id
 from prompting.loader import load_stack
 
@@ -305,16 +305,28 @@ async def stream(
     original_intent: str | None = None,
     resolved_intent: str | None = None,
 ) -> AsyncIterator[tuple[str, bool, list[str]]]:
-    result = await answer(
-        user_message,
-        thread_id,
-        document_ids,
+    if on_stage:
+        on_stage("chat_agent: composing")
+    async for token in stream_no_tool_agent(
+        user_message=user_message,
+        thread_id=thread_id,
+        document_ids=document_ids,
+        stack_name=STACK_NAME,
+        prompt_name=PROMPT_NAME,
+        agent_name=AGENT_NAME,
+        task_type="chat_turn",
+        route_intent="chat",
         run_id=run_id,
         parent_run_id=parent_run_id,
-        on_stage=on_stage,
         use_mini=use_mini,
+        extra_system_messages=[
+            "You do not have retrieval tools in this step. If the request "
+            "requires document evidence, answer only from context already "
+            "provided by the router or state that the router should use a "
+            "retrieval/research route."
+        ],
         original_intent=original_intent,
         resolved_intent=resolved_intent,
-    )
-    yield result.response, False, []
-    yield "", True, result.sources
+    ):
+        yield token, False, []
+    yield "", True, []
