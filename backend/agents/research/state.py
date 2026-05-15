@@ -42,6 +42,11 @@ def _batch_flags_reducer(a: list | None, b: list | None) -> list:
     return list(a or []) + list(b or [])
 
 
+def _keep_last(a, b):
+    """Last-write-wins: used for string fields written by parallel slot_workers."""
+    return b if b is not None else a
+
+
 def _merge_unique_list(a: list | None, b: list | None) -> list:
     result = list(a or [])
     seen = {str(item) for item in result}
@@ -310,10 +315,10 @@ class ResearchGraphState(TypedDict):
     evidence: Annotated[dict, _merge_evidence_dict]
     evidence_details: Annotated[dict, _merge_evidence_dict]
     sources: Annotated[list[str], _merge_unique_list]
-    last_reflection: str
-    next_search_angle: str
-    suggested_query_terms: list[str]
-    avoid_query_terms: list[str]
+    last_reflection: Annotated[str, _keep_last]
+    next_search_angle: Annotated[str, _keep_last]
+    suggested_query_terms: Annotated[list[str], _merge_unique_list]
+    avoid_query_terms: Annotated[list[str], _merge_unique_list]
     seen_chunk_keys: Annotated[list[str], _merge_unique_list]
     used_query_keys: Annotated[list[str], _merge_unique_list]
 
