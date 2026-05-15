@@ -46,10 +46,11 @@ export function JobDrawer({ open, onClose, onRefreshJobs, onRefreshItems, setPar
     .sort((a, b) => (b.completed_at ?? '').localeCompare(a.completed_at ?? ''))
 
   const renderJobRow = (job: JobItem, index: number) => {
-    const logKey = `${job.doc_id}_${job.job_type ?? 'job'}`
+    const logKey = `${job.job_id ?? job.doc_id}_${job.job_type ?? 'job'}`
     const stageLog = (job.stage_log ?? []).filter(shouldShowStageInLog)
     const compactLog = stageLog.filter((stage, stageIndex) => stageIndex === 0 || stage !== stageLog[stageIndex - 1])
-    const isLogExpanded = expandedJobLogs.has(logKey)
+    const isRunning = job.status === 'running'
+    const isLogExpanded = isRunning || expandedJobLogs.has(logKey)
     const statusText =
       job.status === 'error' || (job.status === 'done' && job.error)
         ? `失敗${job.completed_at ? ` · ${relativeTime(job.completed_at)}` : ''}`
@@ -58,7 +59,7 @@ export function JobDrawer({ open, onClose, onRefreshJobs, onRefreshItems, setPar
         : job.status === 'cancelled'
         ? `已取消${getJobActionLabel(job.job_type)}`
         : job.status === 'running'
-        ? shortStage(job.stage ?? '處理中')
+        ? (compactLog.length > 0 ? '' : shortStage(job.stage ?? '處理中'))
         : `等待${getJobActionLabel(job.job_type)}`
 
     return (
