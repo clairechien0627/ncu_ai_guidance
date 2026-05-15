@@ -60,7 +60,7 @@ async def main() -> None:
             thread_id="smoke-langfuse-prompts",
         )
         obs.update(output=route.__dict__)
-        traces.append(("intent_router", langfuse.get_current_trace_id()))
+        traces.append(("route_coordinator", langfuse.get_current_trace_id()))
 
     langfuse.flush()
     for name, trace_id in traces:

@@ -73,7 +73,7 @@ def trace_metadata(
 
 RUNTIME_PROMPT_NAMES = (
     "task_planner",
-    "research_orchestrator",
+    "research_scheduler",
     "research_planner",
     "research_reflector",
     "research_writer",

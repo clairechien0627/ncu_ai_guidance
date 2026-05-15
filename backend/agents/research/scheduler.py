@@ -76,7 +76,7 @@ def _build_scheduler_prompt(
         },
     }
     return [
-        SystemMessage(content=get_prompt("research_orchestrator")),
+        SystemMessage(content=get_prompt("research_scheduler")),
         HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
     ]
 
@@ -101,12 +101,12 @@ async def decide_slot_ordering(
         raw_result = await ainvoke_traced_generation(
             structured,
             _build_scheduler_prompt(rs, candidate_slots, void_slot_attempts),
-            prompt_name="research_orchestrator",
+            prompt_name="research_scheduler",
             metadata={
                 "task_type": "research_task",
                 "route_intent": "research",
                 "agent_name": "research_agent",
-                **research_node_stack_metadata("research_orchestrator"),
+                **research_node_stack_metadata("research_scheduler"),
             },
         )
         if isinstance(raw_result, dict):

@@ -17,7 +17,7 @@ PROMPT_STACKS: dict[str, list[str]] = {
     "research_runtime": [
         "core",
         "task_planner",
-        "research_orchestrator",
+        "research_scheduler",
         "research_planner",
         "research_reflector",
         "research_writer",
