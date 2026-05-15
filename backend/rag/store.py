@@ -33,7 +33,7 @@ _qdrant_client: QdrantClient | None = None
 
 
 def _build_client() -> QdrantClient:
-    kwargs: dict = {"url": settings.qdrant_url}
+    kwargs: dict = {"url": settings.qdrant_url, "timeout": 15}
     if settings.qdrant_api_key.get_secret_value():
         kwargs["api_key"] = settings.qdrant_api_key.get_secret_value()
     return QdrantClient(**kwargs)
@@ -49,6 +49,7 @@ def _ensure_collection(client: QdrantClient) -> None:
         info = client.get_collection(COLLECTION_NAME)
         has_sparse = bool(info.config.params.sparse_vectors)
         if has_sparse:
+            _ensure_payload_indexes(client)
             return
         point_count = client.count(COLLECTION_NAME).count
         allow_rebuild = os.getenv("ALLOW_COLLECTION_REBUILD", "").lower() in {"1", "true", "yes"}
@@ -75,6 +76,21 @@ def _ensure_collection(client: QdrantClient) -> None:
             SPARSE_NAME: SparseVectorParams(modifier=Modifier.IDF),
         },
     )
+    _ensure_payload_indexes(client)
+
+
+def _ensure_payload_indexes(client: QdrantClient) -> None:
+    """Ensure payload indexes exist for filtered search. Idempotent."""
+    from qdrant_client.models import PayloadSchemaType
+    for field in ("metadata.document_id", "metadata.filename"):
+        try:
+            client.create_payload_index(
+                collection_name=COLLECTION_NAME,
+                field_name=field,
+                field_schema=PayloadSchemaType.KEYWORD,
+            )
+        except Exception:
+            pass
 
 
 def _init_vectorstore() -> QdrantVectorStore:

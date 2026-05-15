@@ -324,7 +324,7 @@ def get_document_chunks(doc_id: int, db: Session = Depends(get_db)):
             key="metadata.document_id",
             match=MatchValue(value=str(doc_id)),
         )]),
-        limit=2000,
+        limit=500,
         with_payload=True,
         with_vectors=False,
     )
