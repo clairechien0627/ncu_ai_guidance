@@ -11,8 +11,10 @@ from typing import Literal
 
 from langchain_core.runnables import RunnableConfig
 from langfuse import observe
+from langgraph.errors import NodeError
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import RetryPolicy, Send
+from langgraph.runtime import Runtime
+from langgraph.types import Command, RetryPolicy, Send, TimeoutPolicy
 
 from observability import update_current_observation_io
 
@@ -490,28 +492,34 @@ async def orchestrator_node(state: ResearchGraphState, config: RunnableConfig) -
 
 
 @observe(as_type="chain", name="slot_worker", capture_input=False, capture_output=False)
-async def slot_worker_node(state: WorkerState, config: RunnableConfig) -> dict:
+async def slot_worker_node(state: WorkerState, config: RunnableConfig, runtime: Runtime) -> dict:
     llm = config["configurable"]["llm"]
     on_stage = config["configurable"].get("on_stage")
     rs = _graph_to_rs(state)
     slot = state["worker_slot"]
     hint = state.get("worker_hint", "")
     round_index = int(state.get("search_count", 0)) + 1
+    is_retry = runtime.execution_info.node_attempt > 1
     _safe_update_current_observation(
         input={
             "round": round_index,
             "slot": slot,
             "hint": hint,
+            "attempt": runtime.execution_info.node_attempt,
             "coverage_status": _coverage_status_for_trace(state),
             "evidence_counts": _evidence_counts(state),
         }
     )
 
-    try:
-        decision = await plan_query_for_slot(llm, rs, slot, hint)
-    except Exception as exc:
-        logger.warning("slot_worker planner failed for %s: %s", slot, exc)
+    # On retry attempts skip LLM planning to avoid repeating the same failure.
+    if is_retry:
         decision = build_slot_decision(rs, slot)
+    else:
+        try:
+            decision = await plan_query_for_slot(llm, rs, slot, hint)
+        except Exception as exc:
+            logger.warning("slot_worker planner failed for %s: %s", slot, exc)
+            decision = build_slot_decision(rs, slot)
     decision = _force_decision_slot(decision, rs, slot)
     if hint:
         decision = decision.model_copy(update={"keyword_query": _normalize_query(hint)})
@@ -945,13 +953,83 @@ def assign_workers(state: ResearchGraphState):
     ]
 
 
+# ── Fault-tolerance error handlers ───────────────────────────────────────────
+# Each handler runs after all retries are exhausted. They return a minimal state
+# update so the graph continues gracefully rather than crashing the whole run.
+
+def _orchestrator_error_handler(state: ResearchGraphState, error: NodeError) -> dict:
+    logger.warning("orchestrator exhausted retries (%s); clearing batch_plan", error.error)
+    return {"batch_plan": []}
+
+
+def _slot_worker_error_handler(state: WorkerState, error: NodeError) -> dict:
+    slot = state.get("worker_slot", "unknown")
+    logger.warning("slot_worker exhausted retries for slot=%s (%s)", slot, error.error)
+    return {
+        "steps_json": [{
+            "slot": slot,
+            "query": slot,
+            "display_intent": f"錯誤：{type(error.error).__name__}",
+            "quality": "ERROR",
+            "chunk_count": 0,
+            "updated_slots": [],
+            "missing_gap": str(error.error)[:120],
+            "next_search_angle": "",
+            "is_verification": False,
+        }],
+        "slot_status": {slot: "EXHAUSTED"},
+        "search_count": 1,
+        "_batch_evidence_flags": [False],
+    }
+
+
+def _verification_error_handler(state: ResearchGraphState, error: NodeError) -> Command:
+    logger.warning("verification exhausted retries (%s); routing to writer", error.error)
+    return Command(update={"verification_done": True}, goto="writer")
+
+
+def _writer_error_handler(state: ResearchGraphState, error: NodeError) -> dict:
+    logger.warning("writer exhausted retries (%s); using evidence fallback", error.error)
+    rs = _graph_to_rs(state)
+    writeup = _fallback_writeup(rs)
+    final_state = dict(state)
+    final_state.update({"final_answer": writeup.answer, "final_sources": writeup.sources})
+    return {
+        "final_answer": writeup.answer,
+        "final_sources": writeup.sources,
+        "messages": [{"type": "ai", "content": writeup.answer, "sources": writeup.sources}],
+        "trace_summary": _trace_summary(final_state),
+        "llm_call_count": 0,
+    }
+
+
 def _build(checkpointer=False) -> object:
     builder = StateGraph(ResearchGraphState)
-    builder.add_node("orchestrator", orchestrator_node)
-    builder.add_node("slot_worker", slot_worker_node, retry_policy=RetryPolicy(max_attempts=3, initial_interval=1.0))
+    builder.add_node(
+        "orchestrator", orchestrator_node,
+        retry_policy=RetryPolicy(max_attempts=2, initial_interval=1.0),
+        timeout=TimeoutPolicy(run_timeout=90),
+        error_handler=_orchestrator_error_handler,
+    )
+    builder.add_node(
+        "slot_worker", slot_worker_node,
+        retry_policy=RetryPolicy(max_attempts=3, initial_interval=1.0),
+        timeout=TimeoutPolicy(run_timeout=180),
+        error_handler=_slot_worker_error_handler,
+    )
     builder.add_node("batch_complete", batch_complete_node)
-    builder.add_node("verification", verification_node, retry_policy=RetryPolicy(max_attempts=2, initial_interval=1.0))
-    builder.add_node("writer", writer_node, retry_policy=RetryPolicy(max_attempts=2, initial_interval=2.0))
+    builder.add_node(
+        "verification", verification_node,
+        retry_policy=RetryPolicy(max_attempts=2, initial_interval=1.0),
+        timeout=TimeoutPolicy(run_timeout=180),
+        error_handler=_verification_error_handler,
+    )
+    builder.add_node(
+        "writer", writer_node,
+        retry_policy=RetryPolicy(max_attempts=2, initial_interval=2.0),
+        timeout=TimeoutPolicy(run_timeout=240),
+        error_handler=_writer_error_handler,
+    )
     builder.add_edge(START, "orchestrator")
     builder.add_conditional_edges("orchestrator", assign_workers, ["slot_worker", "writer"])
     builder.add_edge("slot_worker", "batch_complete")
