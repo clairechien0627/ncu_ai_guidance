@@ -11,9 +11,13 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from agents.runner import generate_title, get_thread_messages, get_pending_interrupt, resume_from_interrupt
+from agents.runner import (
+    generate_title,
+    get_thread_messages,
+    get_pending_interrupt,
+    run_tool_agent_resume_stream,
+)
 from agents.router_agent import (
-    run_chat_agent,
     run_research_agent,
     classify_intent,
     route_agent_message,
@@ -23,6 +27,22 @@ from agents.request_context import set_user_id
 from db import get_db, Conversation, Document, Trace
 
 router = APIRouter()
+
+
+def _json_dumps(data: dict) -> str:
+    return json.dumps(data, ensure_ascii=False, default=str)
+
+
+def _json_safe(data):
+    return json.loads(json.dumps(data, ensure_ascii=False, default=str))
+
+
+def _interrupt_event(interrupts) -> dict:
+    first = interrupts[0] if interrupts else None
+    return {
+        "interrupt": _json_safe(getattr(first, "value", first) if first is not None else {}),
+        "interrupt_id": getattr(first, "id", None) if first is not None else None,
+    }
 
 
 class ChatRequest(BaseModel):
@@ -231,7 +251,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
             "trace_run_id": router_run_id,
             "agent_trace_run_id": None,
         }
-        yield f"data: {json.dumps({'conversation_id': conv_id, **route_payload})}\n\n"
+        yield f"data: {_json_dumps({'conversation_id': conv_id, **route_payload})}\n\n"
         task_run_id = str(uuid.uuid4())
         try:
             if route.intent == "research":
@@ -267,17 +287,17 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                 while not task.done():
                     await asyncio.sleep(0.05)
                     while not token_queue.empty():
-                        yield f"data: {json.dumps({'token': token_queue.get_nowait()})}\n\n"
+                        yield f"data: {_json_dumps({'token': token_queue.get_nowait()})}\n\n"
                         streamed_tokens = True
                     while not stage_queue.empty():
-                        yield f"data: {json.dumps({'stage': stage_queue.get_nowait()})}\n\n"
+                        yield f"data: {_json_dumps({'stage': stage_queue.get_nowait()})}\n\n"
 
                 # Drain any remaining events
                 while not token_queue.empty():
-                    yield f"data: {json.dumps({'token': token_queue.get_nowait()})}\n\n"
+                    yield f"data: {_json_dumps({'token': token_queue.get_nowait()})}\n\n"
                     streamed_tokens = True
                 while not stage_queue.empty():
-                    yield f"data: {json.dumps({'stage': stage_queue.get_nowait()})}\n\n"
+                    yield f"data: {_json_dumps({'stage': stage_queue.get_nowait()})}\n\n"
 
                 if task.exception():
                     raise task.exception()
@@ -288,40 +308,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                 # Tokens were already streamed token-by-token; only send bulk
                 # response as fallback when the writer stream produced nothing.
                 if not streamed_tokens:
-                    yield f"data: {json.dumps({'token': full_response})}\n\n"
-            elif route.intent == "chat":
-                stage_queue_chat: asyncio.Queue[str] = asyncio.Queue()
-
-                def _push_chat(msg: str) -> None:
-                    try:
-                        stage_queue_chat.put_nowait(msg)
-                    except Exception:
-                        pass
-
-                chat_task = asyncio.create_task(
-                    run_chat_agent(
-                        req.message, str(conv_id), req.document_ids,
-                        run_id=task_run_id,
-                        parent_run_id=router_run_id,
-                        on_stage=_push_chat,
-                        use_mini=use_mini,
-                        original_intent=route.original_intent,
-                        resolved_intent=route.resolved_intent,
-                    )
-                )
-                while not chat_task.done():
-                    await asyncio.sleep(0.25)
-                    while not stage_queue_chat.empty():
-                        yield f"data: {json.dumps({'stage': stage_queue_chat.get_nowait()})}\n\n"
-                while not stage_queue_chat.empty():
-                    yield f"data: {json.dumps({'stage': stage_queue_chat.get_nowait()})}\n\n"
-                if chat_task.exception():
-                    raise chat_task.exception()
-                chat_result = chat_task.result()
-                full_response = chat_result.response
-                sources = chat_result.sources
-                route_payload["agent_trace_run_id"] = chat_result.trace_run_id
-                yield f"data: {json.dumps({'token': full_response})}\n\n"
+                    yield f"data: {_json_dumps({'token': full_response})}\n\n"
             else:
                 async for token, is_done, src in route_agent_stream(
                     req.message,
@@ -332,16 +319,19 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                     task_run_id=task_run_id,
                     use_mini=use_mini,
                 ):
-                    if is_done:
+                    if is_done == "interrupt":
+                        yield f"data: {_json_dumps(_interrupt_event(token))}\n\n"
+                        return
+                    elif is_done:
                         sources = src
                     else:
                         full_response += token
-                        yield f"data: {json.dumps({'token': token})}\n\n"
+                        yield f"data: {_json_dumps({'token': token})}\n\n"
                 route_payload["agent_trace_run_id"] = task_run_id
 
                 # ── Stream handoff: retrieval → research ─────────────────
         except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            yield f"data: {_json_dumps({'error': str(e)})}\n\n"
             # Commit to persist any conversation state changes (e.g. model field)
             # even when the agent call itself fails.
             try:
@@ -365,7 +355,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                 pass
 
         db.commit()
-        yield f"data: {json.dumps({'done': True, 'sources': sources, 'title': title, **route_payload})}\n\n"
+        yield f"data: {_json_dumps({'done': True, 'sources': sources, 'title': title, **route_payload})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -440,12 +430,12 @@ async def get_conversation_interrupt(conv_id: int, db: Session = Depends(get_db)
     return {
         "has_interrupt": pending is not None,
         "interrupt_id": pending["interrupt_id"] if pending else None,
-        "value": pending["value"] if pending else None,
+        "value": _json_safe(pending["value"]) if pending else None,
     }
 
 
 class ResumeRequest(BaseModel):
-    response: str
+    decisions: list[dict]
     interrupt_id: Optional[str] = None
 
 
@@ -459,10 +449,26 @@ async def resume_conversation(conv_id: int, body: ResumeRequest, db: Session = D
     conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    ok = await resume_from_interrupt(str(conv_id), body.response)
-    if not ok:
-        raise HTTPException(status_code=409, detail="No pending interrupt for this conversation")
-    return {"resumed": True}
+
+    async def resume_stream():
+        saw_event = False
+        async for token, is_done, sources in run_tool_agent_resume_stream(
+            str(conv_id),
+            body.decisions,
+            interrupt_id=body.interrupt_id,
+        ):
+            saw_event = True
+            if is_done == "interrupt":
+                yield f"data: {_json_dumps(_interrupt_event(token))}\n\n"
+                return
+            if is_done:
+                yield f"data: {_json_dumps({'done': True, 'sources': sources})}\n\n"
+            else:
+                yield f"data: {_json_dumps({'token': token})}\n\n"
+        if not saw_event:
+            yield f"data: {_json_dumps({'error': 'No pending interrupt for this conversation'})}\n\n"
+
+    return StreamingResponse(resume_stream(), media_type="text/event-stream")
 
 
 @router.delete("/api/conversations/{conv_id}")

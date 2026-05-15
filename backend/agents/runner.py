@@ -3,15 +3,17 @@ import json
 import logging
 import re
 import warnings
-from typing import Callable
+from collections.abc import AsyncIterator
+from typing import Callable, Any
 from pydantic import BaseModel, Field
 from langchain.agents import create_agent
-from langchain.agents.middleware import before_model
+from langchain.agents.middleware import HumanInTheLoopMiddleware, before_model
 from langchain.agents.structured_output import ProviderStrategy
 from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from langgraph.types import Command
 from langfuse import observe, propagate_attributes
 from .request_context import get_user_id
 
@@ -142,7 +144,10 @@ async def setup_checkpointer():
             llm,
             tools=tools,
             system_prompt=SYSTEM_PROMPT,
-            middleware=[_trim_messages],
+            middleware=[
+                _trim_messages,
+                HumanInTheLoopMiddleware(interrupt_on={}),
+            ],
             response_format=ProviderStrategy(AgentResponse, strict=True),
             checkpointer=_checkpointer,
             context_schema=AgentContext,
@@ -177,8 +182,6 @@ async def get_pending_interrupt(thread_id: str) -> dict | None:
         checkpoint_tuple = await _checkpointer.aget_tuple(config)
         if not checkpoint_tuple:
             return None
-        for task in (checkpoint_tuple.checkpoint.get("pending_sends") or []):
-            pass
         snapshot_tasks = checkpoint_tuple.checkpoint.get("tasks") or []
         for task in snapshot_tasks:
             interrupts = getattr(task, "interrupts", None) or []
@@ -206,7 +209,6 @@ async def resume_from_interrupt(thread_id: str, response: str) -> bool:
     if not pending:
         return False
     try:
-        from langgraph.types import Command
         agent = _tool_agent
         if agent is None:
             return False
@@ -216,6 +218,57 @@ async def resume_from_interrupt(thread_id: str, response: str) -> bool:
     except Exception as exc:
         logger.warning("resume_from_interrupt(%s): %s", thread_id, exc)
         return False
+
+
+def _content_to_text(content: Any) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict):
+                text = block.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+            elif isinstance(block, str):
+                parts.append(block)
+        return "".join(parts)
+    return str(content)
+
+
+def _stream_token_from_chunk(chunk: dict) -> str:
+    if chunk.get("type") != "messages":
+        return ""
+    data = chunk.get("data")
+    if not isinstance(data, tuple) or len(data) != 2:
+        return ""
+    token, metadata = data
+    if not isinstance(metadata, dict) or metadata.get("langgraph_node") != "model":
+        return ""
+    return _content_to_text(getattr(token, "content", None))
+
+
+def _interrupts_from_chunk(chunk: dict) -> list | None:
+    if chunk.get("type") != "updates":
+        return None
+    data = chunk.get("data")
+    if not isinstance(data, dict):
+        return None
+    if "__interrupt__" in data:
+        return data["__interrupt__"]
+    for value in data.values():
+        if isinstance(value, dict) and "__interrupt__" in value:
+            return value["__interrupt__"]
+    return None
+
+
+def _resume_value(pending: dict | None, decisions: list[dict], interrupt_id: str | None = None) -> dict:
+    resolved_interrupt_id = interrupt_id or (pending or {}).get("interrupt_id")
+    if not resolved_interrupt_id:
+        return {"decisions": decisions}
+    return {resolved_interrupt_id: {"decisions": decisions}}
 
 
 async def generate_title(messages: list[dict]) -> str:
@@ -545,9 +598,8 @@ async def run_tool_agent_stream(
     if run_id:
         config["run_id"] = _uuid.UUID(run_id)
 
-    async def _run_stream() -> str:
+    async def _stream_chunks() -> AsyncIterator[dict]:
         with propagate_attributes(session_id=thread_id, user_id=get_user_id()):
-            content = ""
             async for chunk in agent.astream(
                 {"messages": _build_messages(user_message, document_ids, task_prompt, include_document_abstracts, thread_id=thread_id, include_research_context=include_research_context)},
                 config,
@@ -561,27 +613,42 @@ async def run_tool_agent_stream(
                     thread_id=thread_id,
                     run_id=run_id,
                 ),
-                stream_mode="messages",
+                stream_mode=["messages", "updates"],
+                version="v2",
             ):
-                token, chunk_metadata = chunk
-                if (
-                    isinstance(token, AIMessage)
-                    and token.content
-                    and chunk_metadata.get("langgraph_node") == "model"
-                ):
-                    content += token.content
-            return content
+                yield chunk
 
+    async def _run_stream_full() -> str:
+        content = ""
+        async for chunk in _stream_chunks():
+            token_text = _stream_token_from_chunk(chunk)
+            if token_text:
+                content += token_text
+        return content
+
+    full_content = ""
+    streamed = False
     try:
-        full_content = await _run_stream()
+        async for chunk in _stream_chunks():
+            interrupts = _interrupts_from_chunk(chunk)
+            if interrupts:
+                yield interrupts, "interrupt", []
+                return
+            token_text = _stream_token_from_chunk(chunk)
+            if token_text:
+                full_content += token_text
+                streamed = True
+                yield token_text, False, []
     except Exception as e:
         if "StructuredOutputValidationError" in str(e) or "Extra data" in str(e):
             logger.warning("StructuredOutputValidationError in stream, retrying: %s", e)
-            full_content = await _run_stream()
+            if streamed:
+                raise
+            full_content = await _run_stream_full()
         else:
             raise
 
-    if full_content:
+    if full_content and not streamed:
         yield _extract_answer(full_content), False, []
 
     # Read sources from checkpoint structured_response
@@ -590,4 +657,40 @@ async def run_tool_agent_stream(
     if structured:
         sources = structured.sources
 
+    yield "", True, sources
+
+
+async def run_tool_agent_resume_stream(
+    thread_id: str,
+    decisions: list[dict],
+    *,
+    interrupt_id: str | None = None,
+    use_mini: bool = False,
+) -> AsyncIterator[tuple[Any, bool | str, list[str]]]:
+    """Resume a paused HITL tool-agent run and stream the continued response."""
+    agent = _get_tool_agent(mini=use_mini)
+    if agent is None:
+        return
+    pending = await get_pending_interrupt(thread_id)
+    config = {"configurable": {"thread_id": thread_id}}
+    full_content = ""
+    async for chunk in agent.astream(
+        Command(resume=_resume_value(pending, decisions, interrupt_id)),
+        config,
+        stream_mode=["messages", "updates"],
+        version="v2",
+    ):
+        interrupts = _interrupts_from_chunk(chunk)
+        if interrupts:
+            yield interrupts, "interrupt", []
+            return
+        token_text = _stream_token_from_chunk(chunk)
+        if token_text:
+            full_content += token_text
+            yield token_text, False, []
+
+    sources: list[str] = []
+    structured = await _get_structured_response(thread_id)
+    if structured:
+        sources = structured.sources
     yield "", True, sources

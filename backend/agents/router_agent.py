@@ -830,6 +830,9 @@ async def route_agent_stream(
                 evidence_sources=evidence_sources,
             ):
                 token, is_done, sources = item
+                if is_done == "interrupt":
+                    yield item
+                    return
                 if is_done:
                     last_sources = sources
                 else:
@@ -847,6 +850,9 @@ async def route_agent_stream(
                 resolved_intent=route.resolved_intent,
             ):
                 token, is_done, sources = item
+                if is_done == "interrupt":
+                    yield item
+                    return
                 if is_done:
                     last_sources = sources
                 else:
@@ -861,6 +867,9 @@ async def route_agent_stream(
                 resolved_intent=route.resolved_intent,
             ):
                 token, is_done, sources = item
+                if is_done == "interrupt":
+                    yield item
+                    return
                 if is_done:
                     last_sources = sources
                 else:
