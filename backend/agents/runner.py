@@ -227,7 +227,7 @@ async def setup_checkpointer():
                 _trim_messages,                         # safety message-count cap
                 # ── Cost & safety limits ─────────────────────────────────
                 ModelCallLimitMiddleware(               # per-request model call hard cap (tool agent only)
-                    run_limit=50,                       # emergency backstop; research graph is unaffected
+                    run_limit=15,                       # chat/retrieval/question are lightweight; research graph unaffected
                     exit_behavior="end",
                 ),
                 # ── Resilience ───────────────────────────────────────────
