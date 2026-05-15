@@ -63,28 +63,22 @@ async def reorder_jobs(body: dict):
 
 @router.post("/api/jobs/{doc_id}/cancel")
 async def cancel_reindex_job(doc_id: int):
-    from database import get_db, Document, SessionLocal
+    from db import get_db, Document, db_session
     result = await job_service.jobs_cancel_queued(doc_id)
     if result == "not_found":
         # Not in queue — may be a stale processing state after restart
-        s = SessionLocal()
-        try:
+        with db_session() as s:
             doc = s.query(Document).filter(Document.id == doc_id).first()
             if not doc:
                 raise HTTPException(status_code=404, detail="Document not found")
             if doc.status == "processing":
                 doc.status = "error"
                 s.commit()
-        finally:
-            s.close()
     elif result == "queued":
-        s = SessionLocal()
-        try:
+        with db_session() as s:
             doc = s.query(Document).filter(Document.id == doc_id).first()
             if doc:
                 doc.status = "ready" if doc.status == "processing" else doc.status
                 doc.batch_status = "pending" if doc.batch_status == "processing" else doc.batch_status
                 s.commit()
-        finally:
-            s.close()
     return {"id": doc_id, "cancelled": True}

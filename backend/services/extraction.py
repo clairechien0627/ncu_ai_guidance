@@ -8,17 +8,31 @@ from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import AzureChatOpenAI
 from langfuse import observe
-from langfuse.langchain import CallbackHandler
 
 from config import settings
-from agents.research_agent import run_research_summary, trace_metadata as summary_trace_metadata
+from agents.research import run_research_summary, trace_metadata as summary_trace_metadata
+from observability import ainvoke_traced_generation
 from prompting.loader import load_stack
+from langfuse import propagate_attributes
 
 logger = logging.getLogger(__name__)
 
 
+def _extraction_session_id(document_id: int) -> str:
+    return f"document-extraction:{document_id}"
+
+
 def _stack_system_messages(stack_name: str) -> list[SystemMessage]:
     return [SystemMessage(content=content) for content in load_stack(stack_name).contents]
+
+
+def _generation_metadata(stack_name: str, task_type: str, agent_name: str) -> dict:
+    return {
+        "task_type": task_type,
+        "route_intent": None,
+        "agent_name": agent_name,
+        **load_stack(stack_name).metadata(),
+    }
 
 
 def _prefixed_stack_metadata(stack_name: str, prefix: str) -> dict:
@@ -100,7 +114,7 @@ class QuestionGenerationResponse(BaseModel):
 _llm_base = AzureChatOpenAI(
     azure_deployment=settings.azure_chat_deployment,
     azure_endpoint=settings.azure_openai_endpoint,
-    api_key=settings.azure_openai_api_key,
+    api_key=settings.azure_openai_api_key.get_secret_value(),
     api_version=settings.azure_openai_api_version,
     temperature=0,
 )
@@ -113,14 +127,11 @@ _question_llm = _llm_base.with_structured_output(QuestionGenerationResponse)
 
 
 def _get_document_abstract(document_id: int) -> str | None:
-    from database import Document, SessionLocal
+    from db import Document, db_session
 
-    db = SessionLocal()
-    try:
+    with db_session() as db:
         row = db.query(Document.abstract_text).filter(Document.id == document_id).first()
         return row[0] if row and row[0] else None
-    finally:
-        db.close()
 
 
 STEP1_RESEARCH_QUESTION = (
@@ -135,13 +146,14 @@ def _empty_summary() -> dict:
     return {"motivation": "資料不足", "method": "資料不足", "results": "資料不足", "tags": []}
 
 
+@observe(as_type="agent", name="Research Evidence Collection")
 async def run_document_research_step1(
     document_id: int,
     on_stage: Callable[[str], None] | None = None,
 ) -> tuple[str, list[str], str]:
     """Run the expensive research graph only and return raw answer, sources, run_id."""
     run_id = str(uuid.uuid4())
-    thread_id = f"_extract_{document_id}_{uuid.uuid4().hex[:8]}"
+    thread_id = _extraction_session_id(document_id)
     logger.info("Step 1: agent RAG for document %d (run_id=%s)", document_id, run_id)
     if on_stage:
         on_stage("Step 1 研究檢索中")
@@ -152,6 +164,7 @@ async def run_document_research_step1(
         "agent_name": "research_agent",
         **_prefixed_stack_metadata("extract_step2", "extract_step2"),
         **_prefixed_stack_metadata("extract_step3", "extract_step3"),
+        **_prefixed_stack_metadata("extract_step4", "extract_step4"),
     })
     summary_result = await run_research_summary(
         question=STEP1_RESEARCH_QUESTION,
@@ -166,6 +179,7 @@ async def run_document_research_step1(
     return summary_result.response, summary_result.sources, run_id
 
 
+@observe(as_type="chain", name="Structure Summary Fields")
 async def structure_research_step2(
     answer: str,
     on_stage: Callable[[str], None] | None = None,
@@ -174,14 +188,20 @@ async def structure_research_step2(
     if on_stage:
         on_stage("整理結構中")
     structure_messages = _stack_system_messages("extract_step2")
-    handler = CallbackHandler()
-    core: CoreExtractionResponse = await _structure_llm.ainvoke([
+    messages = [
         *structure_messages,
         HumanMessage(content=answer),
-    ])
+    ]
+    core: CoreExtractionResponse = await ainvoke_traced_generation(
+        _structure_llm,
+        messages,
+        prompt_name="summary_structure",
+        metadata=_generation_metadata("extract_step2", "document_extraction", "summary_structure"),
+    )
     return core.model_dump()
 
 
+@observe(as_type="chain", name="Generate Student Guidance")
 async def generate_interest_step3(
     answer: str,
     on_stage: Callable[[str], None] | None = None,
@@ -190,21 +210,28 @@ async def generate_interest_step3(
     if on_stage:
         on_stage("生成導讀與問題")
     question_messages = _stack_system_messages("extract_step3")
-    handler = CallbackHandler()
-    questions_resp: QuestionGenerationResponse = await _question_llm.ainvoke([
+    messages = [
         *question_messages,
-        HumanMessage(content=(
+        HumanMessage(
+            content=(
             "以下資料用於產生高中生導讀 intro 與 3 題興趣量表 questions。\n"
             "請只依據下面的高資訊量研究摘要。\n"
             "不要重新摘要，不要出考題，不要三題都用「你是否對...」開頭。\n\n"
             "【研究摘要】\n"
             f"{answer}"
-        )),
-    ])
+            )
+        ),
+    ]
+    questions_resp: QuestionGenerationResponse = await ainvoke_traced_generation(
+        _question_llm,
+        messages,
+        prompt_name="question_generator",
+        metadata=_generation_metadata("extract_step3", "document_extraction", "question_generator"),
+    )
     return questions_resp.model_dump()
 
 
-@observe(as_type="chain")
+@observe(as_type="chain", name="Document Summary Extraction")
 async def extract_document_summary_with_raw(
     document_id: int,
     on_stage: Callable[[str], None] | None = None,
@@ -212,59 +239,60 @@ async def extract_document_summary_with_raw(
     """Step 1: agent does full ReAct RAG. Step 2: structure the free-text answer into Pydantic.
     Returns (summary_dict, run_id, raw_answer, raw_sources)."""
 
-    answer, _sources, run_id = await run_document_research_step1(document_id, on_stage=on_stage)
+    with propagate_attributes(session_id=_extraction_session_id(document_id)):
+        answer, _sources, run_id = await run_document_research_step1(document_id, on_stage=on_stage)
 
-    if not answer or answer.strip() == "Unable to generate a response.":
-        return _empty_summary(), run_id, answer, _sources
+        if not answer or answer.strip() == "Unable to generate a response.":
+            return _empty_summary(), run_id, answer, _sources
 
-    # Step 2 & 3 — run in parallel; both only read the step1 answer text
-    logger.info("Step 2+3: structuring and question generation in parallel for document %d", document_id)
-    core_result, question_result = await asyncio.gather(
-        structure_research_step2(answer),
-        generate_interest_step3(answer),
-    )
-    if on_stage:
-        on_stage("結構化與導讀題目生成完成")
-    result = {**core_result, **question_result}
-
-    if os.getenv("ENABLE_QUALITY_CHECK", "false").lower() == "true":
-        logger.info("Step 4: quality check for document %d", document_id)
+        # Step 2 & 3 — run in parallel; both only read the step1 answer text
+        logger.info("Step 2+3: structuring and question generation in parallel for document %d", document_id)
+        core_result, question_result = await asyncio.gather(
+            structure_research_step2(answer),
+            generate_interest_step3(answer),
+        )
         if on_stage:
-            on_stage("品質檢查")
-        from agents.quality_agent import score_extraction
-        from tools.trace_tool import update_trace_quality
+            on_stage("結構化與導讀題目生成完成")
+        result = {**core_result, **question_result}
 
-        abstract_text = _get_document_abstract(document_id)
-        score, note = await score_extraction(result, abstract_text)
-
-        # Quality gate: retry once if score is below threshold
-        if score < 2.5:
-            logger.warning(
-                "Quality score %.1f below threshold for document %d; retrying step 1",
-                score, document_id,
-            )
+        if os.getenv("ENABLE_QUALITY_CHECK", "false").lower() == "true":
+            logger.info("Step 4: quality check for document %d", document_id)
             if on_stage:
-                on_stage("品質未達標，重新搜尋")
-            answer2, _sources2, run_id2 = await run_document_research_step1(document_id, on_stage=on_stage)
-            if answer2 and answer2.strip() != "Unable to generate a response.":
-                core2, question2 = await asyncio.gather(
-                    structure_research_step2(answer2),
-                    generate_interest_step3(answer2),
-                )
-                result2 = {**core2, **question2}
-                score2, note2 = await score_extraction(result2, abstract_text)
-                if score2 > score:
-                    logger.info(
-                        "Retry improved quality %.1f → %.1f for document %d",
-                        score, score2, document_id,
-                    )
-                    result, score, note = result2, score2, note2
-                    answer, _sources, run_id = answer2, _sources2, run_id2
+                on_stage("品質檢查")
+            from services.extraction_quality import score_extraction
+            from tools.trace_tool import update_trace_quality
 
-        result["quality_score"] = score
-        result["quality_note"] = note
-        update_trace_quality(run_id, quality_score=score)
-    return result, run_id, answer, _sources
+            abstract_text = _get_document_abstract(document_id)
+            score, note = await score_extraction(result, abstract_text)
+
+            # Quality gate: retry once if score is below threshold
+            if score < 2.5:
+                logger.warning(
+                    "Quality score %.1f below threshold for document %d; retrying step 1",
+                    score, document_id,
+                )
+                if on_stage:
+                    on_stage("品質未達標，重新搜尋")
+                answer2, _sources2, run_id2 = await run_document_research_step1(document_id, on_stage=on_stage)
+                if answer2 and answer2.strip() != "Unable to generate a response.":
+                    core2, question2 = await asyncio.gather(
+                        structure_research_step2(answer2),
+                        generate_interest_step3(answer2),
+                    )
+                    result2 = {**core2, **question2}
+                    score2, note2 = await score_extraction(result2, abstract_text)
+                    if score2 > score:
+                        logger.info(
+                            "Retry improved quality %.1f → %.1f for document %d",
+                            score, score2, document_id,
+                        )
+                        result, score, note = result2, score2, note2
+                        answer, _sources, run_id = answer2, _sources2, run_id2
+
+            result["quality_score"] = score
+            result["quality_note"] = note
+            update_trace_quality(run_id, quality_score=score)
+        return result, run_id, answer, _sources
 
 
 async def extract_document_summary(
@@ -274,4 +302,3 @@ async def extract_document_summary(
     """Compatibility wrapper for the full extraction pipeline."""
     result, run_id, _answer, _sources = await extract_document_summary_with_raw(document_id, on_stage)
     return result, run_id
-

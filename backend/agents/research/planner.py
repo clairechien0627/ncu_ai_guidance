@@ -5,9 +5,10 @@ import logging
 import re
 
 from langchain_core.messages import HumanMessage
+from observability import ainvoke_traced_generation
 from pydantic import BaseModel, Field
 
-from .runtime_prompts import research_node_system_messages
+from .runtime_prompts import research_node_stack_metadata, research_node_system_messages
 from .state import ResearchState
 
 logger = logging.getLogger(__name__)
@@ -86,7 +87,9 @@ def _slot_kind(slot: str, item_text: str) -> str:
         return "limitations"
     if any(token in text for token in ("result", "finding")) or any(term in item_text for term in ("\u6210\u679c", "\u767c\u73fe", "\u7d50\u8ad6", "\u898f\u5247", "\u5206\u985e")):
         return "findings"
-    return "findings"
+    # No category matched \u2014 return "generic" so callers get empty section_terms
+    # rather than forcing the wrong section hints onto an unrelated question.
+    return "generic"
 
 
 def is_derived_hyde_slot(state: ResearchState, slot: str) -> bool:
@@ -122,7 +125,7 @@ def should_use_hyde(state: ResearchState, slot: str, requested: bool = False) ->
 
 
 def _section_terms_for_slot(slot: str, item_text: str) -> list[str]:
-    return _SECTION_TERMS[_slot_kind(slot, item_text)]
+    return _SECTION_TERMS.get(_slot_kind(slot, item_text), [])
 
 
 def _clean_term(term: str) -> str:
@@ -267,23 +270,84 @@ def _repair_query(decision: PlannerDecision, state: ResearchState) -> PlannerDec
     return _repair_bundle(decision, state, slot)
 
 
+async def plan_query_for_slot(
+    llm,
+    state: ResearchState,
+    slot: str,
+    hint: str = "",
+) -> PlannerDecision:
+    assigned_slot = slot if slot in state.coverage_ids() else state.weakest_slot()
+    planner = llm.with_structured_output(PlannerDecision, strict=True)
+    try:
+        messages = [
+            *research_node_system_messages("research_planner"),
+            HumanMessage(
+                content=json.dumps(
+                    {
+                        "question": state.question,
+                        "document_context": state.document_context[:1600],
+                        "assigned_slot": assigned_slot,
+                        "hint": hint,
+                        "instruction": (
+                            "assigned_slot was selected by the scheduler; "
+                            "next_slot must exactly equal assigned_slot."
+                        ),
+                        "state": state.as_prompt_dict(),
+                    },
+                    ensure_ascii=False,
+                )
+            ),
+        ]
+        decision: PlannerDecision = await ainvoke_traced_generation(
+            planner,
+            messages,
+            prompt_name="research_planner",
+            metadata={
+                "task_type": "research_task",
+                "route_intent": "research",
+                "agent_name": "research_agent",
+                **research_node_stack_metadata("research_planner"),
+            },
+        )
+    except Exception as exc:
+        logger.warning("plan_query_for_slot failed (slot=%s count=%d): %s", assigned_slot, state.search_count, exc)
+        decision = build_slot_decision(state, assigned_slot)
+
+    if decision.next_slot != assigned_slot:
+        decision = decision.model_copy(update={"next_slot": assigned_slot})
+    if hint and not decision.keyword_query.strip():
+        decision = decision.model_copy(update={"keyword_query": hint})
+    if not decision.keyword_query.strip():
+        decision = build_slot_decision(state, assigned_slot)
+    return _repair_bundle(decision, state, assigned_slot)
+
+
 async def plan_next_query(llm, state: ResearchState) -> PlannerDecision:
     planner = llm.with_structured_output(PlannerDecision, strict=True)
     try:
-        decision: PlannerDecision = await planner.ainvoke(
-            [
-                *research_node_system_messages("research_planner"),
-                HumanMessage(
-                    content=json.dumps(
-                        {
-                            "question": state.question,
-                            "document_context": state.document_context[:1600],
-                            "state": state.as_prompt_dict(),
-                        },
-                        ensure_ascii=False,
-                    )
-                ),
-            ]
+        messages = [
+            *research_node_system_messages("research_planner"),
+            HumanMessage(
+                content=json.dumps(
+                    {
+                        "question": state.question,
+                        "document_context": state.document_context[:1600],
+                        "state": state.as_prompt_dict(),
+                    },
+                    ensure_ascii=False,
+                )
+            ),
+        ]
+        decision: PlannerDecision = await ainvoke_traced_generation(
+            planner,
+            messages,
+            prompt_name="research_planner",
+            metadata={
+                "task_type": "research_task",
+                "route_intent": "research",
+                "agent_name": "research_agent",
+                **research_node_stack_metadata("research_planner"),
+            },
         )
     except Exception as exc:
         logger.warning("plan_next_query failed (count=%d): %s", state.search_count, exc)

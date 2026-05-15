@@ -22,7 +22,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
 from dotenv import load_dotenv
 load_dotenv(os.path.join(BACKEND_DIR, ".env"))
 
-from database import SessionLocal, Document
+from db import SessionLocal, Document
 from rag import _parse_with_llamaparse, _llamaparse_cache_path
 from config import settings
 
@@ -33,7 +33,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Preview only")
     args = parser.parse_args()
 
-    if not settings.llama_cloud_api_key:
+    if not settings.llama_cloud_api_key.get_secret_value():
         print("ERROR: LLAMA_CLOUD_API_KEY not set in .env")
         sys.exit(1)
 

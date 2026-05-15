@@ -41,7 +41,7 @@ def main():
 
     print(f"JSON 中有摘要的 PDF：{len(abstract_map)} 筆")
 
-    from database import SessionLocal, Document
+    from db import SessionLocal, Document
     db = SessionLocal()
     try:
         docs = db.query(Document).filter(

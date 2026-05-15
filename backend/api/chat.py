@@ -1,7 +1,10 @@
 import asyncio
 import json
+import logging
 import uuid
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -9,16 +12,15 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from agents.runner import generate_title, get_thread_messages
-from agents.main_agent import (
-    MAX_HANDOFFS,
-    _run_chat_agent,
-    _run_research_agent,
+from agents.router_agent import (
+    run_chat_agent,
+    run_research_agent,
     classify_intent,
     route_agent_message,
     route_agent_stream,
-    _route_for_intent,
 )
-from database import get_db, Conversation, Document, Trace
+from agents.request_context import set_user_id
+from db import get_db, Conversation, Document, Trace
 
 router = APIRouter()
 
@@ -28,6 +30,7 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[int] = None
     model: str = "gemini"
     document_ids: Optional[list[int]] = None
+    user_id: Optional[str] = None
 
 
 def _should_use_mini(model: str, intent: str, document_ids: list[int] | None) -> bool:
@@ -56,7 +59,7 @@ def _hydrate_message_attachments(conv_id: int, messages: list[dict], db: Session
     traces = (
         db.query(Trace.document_ids)
         .filter(
-            Trace.parent_run_id.is_(None),
+            Trace.agent_name == "router_agent",
             Trace.thread_id == str(conv_id),
             Trace.document_ids.isnot(None),
         )
@@ -84,16 +87,17 @@ def _hydrate_message_attachments(conv_id: int, messages: list[dict], db: Session
 
 
 def _hydrate_assistant_meta(conv_id: int, messages: list[dict], db: Session) -> list[dict]:
-    """Attach route/trace metadata to assistant messages using root traces by turn."""
+    """Attach route/trace metadata to assistant messages using router-level traces by turn."""
     traces = (
         db.query(
             Trace.run_id,
-            Trace.mode,
+            Trace.task_type,
+            Trace.route_intent,
             Trace.agent_name,
             Trace.prompt_name,
             Trace.prompt_version,
         )
-        .filter(Trace.parent_run_id.is_(None), Trace.thread_id == str(conv_id))
+        .filter(Trace.agent_name == "router_agent", Trace.thread_id == str(conv_id))
         .order_by(Trace.start_time.asc())
         .all()
     )
@@ -104,9 +108,11 @@ def _hydrate_assistant_meta(conv_id: int, messages: list[dict], db: Session) -> 
         item = dict(msg)
         if item.get("role") == "assistant":
             if assistant_turn < len(traces):
-                run_id, mode, agent_name, prompt_name, prompt_version = traces[assistant_turn]
-                if mode:
-                    item["mode"] = mode
+                run_id, task_type, route_intent, agent_name, prompt_name, prompt_version = traces[assistant_turn]
+                if task_type:
+                    item["task_type"] = task_type
+                if route_intent:
+                    item["route_intent"] = route_intent
                 if agent_name:
                     item["agent_name"] = agent_name
                 if prompt_name:
@@ -133,45 +139,33 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(conv)
 
+    set_user_id(req.user_id)
     try:
         prev_intent_sync: str | None = None
         if req.conversation_id:
             last = (
-                db.query(Trace.mode)
-                .filter(Trace.parent_run_id.is_(None), Trace.thread_id == str(conv.id))
+                db.query(Trace.route_intent)
+                .filter(Trace.agent_name == "router_agent", Trace.thread_id == str(conv.id))
                 .order_by(Trace.start_time.desc())
                 .first()
             )
             prev_intent_sync = last[0] if last else None
         route = await classify_intent(req.message, req.document_ids, str(conv.id), previous_intent=prev_intent_sync)
-        run_id = str(uuid.uuid4())
+        router_run_id = str(uuid.uuid4())
         use_mini = _should_use_mini(req.model, route.intent, req.document_ids)
         result = await route_agent_message(
             req.message,
             str(conv.id),
             req.document_ids,
             route=route,
-            run_id=run_id,
+            run_id=router_run_id,
             _hop_count=0,
             use_mini=use_mini,
         )
-        # Agent may request a handoff to another intent (swarm-style delegation).
-        hop = 1
-        while result.next_intent and hop < MAX_HANDOFFS:
-            new_route = _route_for_intent(result.next_intent, req.document_ids, str(conv.id))
-            result = await route_agent_message(
-                req.message,
-                str(conv.id),
-                req.document_ids,
-                route=new_route,
-                run_id=run_id,
-                _hop_count=hop,
-                use_mini=use_mini,
-            )
-            hop += 1
         response, sources = result.response, result.sources
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Agent error: {e}")
+        logger.error("Agent error in chat endpoint", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal agent error")
 
     conv.message_count = (conv.message_count or 0) + 2
     db.commit()
@@ -179,13 +173,15 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
         "conversation_id": conv.id,
         "response": response,
         "sources": sources,
-        "mode": result.mode,
+        "task_type": result.task_type,
+        "route_intent": result.route_intent,
         "agent_name": result.agent_name,
         "prompt_name": result.prompt_name,
         "prompt_version": result.prompt_version,
         "original_intent": route.original_intent,
         "resolved_intent": route.resolved_intent,
-        "trace_run_id": result.trace_run_id,
+        "trace_run_id": router_run_id,
+        "agent_trace_run_id": result.trace_run_id,
     }
 
 
@@ -205,39 +201,44 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
     conv_id = conv.id
     is_new = req.conversation_id is None  # title only generated for brand-new conversations
 
-    # Carry the last turn's intent so follow-up questions stay in the same mode
+    set_user_id(req.user_id)
+    # Carry the last turn's intent so follow-up questions stay in the same route.
     prev_intent: str | None = None
     if req.conversation_id:
         last_trace = (
-            db.query(Trace.mode)
-            .filter(Trace.parent_run_id.is_(None), Trace.thread_id == str(conv_id))
+            db.query(Trace.route_intent)
+            .filter(Trace.agent_name == "router_agent", Trace.thread_id == str(conv_id))
             .order_by(Trace.start_time.desc())
             .first()
         )
         prev_intent = last_trace[0] if last_trace else None
 
     route = await classify_intent(req.message, req.document_ids, str(conv_id), previous_intent=prev_intent)
-    run_id = str(uuid.uuid4())
+    router_run_id = str(uuid.uuid4())
     use_mini = _should_use_mini(req.model, route.intent, req.document_ids)
 
     async def event_stream():
         sources = []
         full_response = ""
         route_payload = {
-            "mode": route.intent,
+            "task_type": "chat_turn",
+            "route_intent": route.intent,
             "agent_name": route.agent_name,
             "prompt_name": route.prompt_name,
             "prompt_version": route.prompt_version,
             "original_intent": route.original_intent,
             "resolved_intent": route.resolved_intent,
-            "trace_run_id": run_id,
+            "trace_run_id": router_run_id,
+            "agent_trace_run_id": None,
         }
         yield f"data: {json.dumps({'conversation_id': conv_id, **route_payload})}\n\n"
+        task_run_id = str(uuid.uuid4())
         try:
             if route.intent == "research":
-                # Research is non-streaming internally; run as asyncio task so we can
-                # emit stage events while it works.
+                # Research streams writer tokens in real time via on_token;
+                # stage progress events continue to flow via on_stage.
                 stage_queue: asyncio.Queue[str] = asyncio.Queue()
+                token_queue: asyncio.Queue[str] = asyncio.Queue()
 
                 def _push_stage(msg: str) -> None:
                     try:
@@ -245,21 +246,36 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                     except Exception:
                         pass
 
+                def _push_token(t: str) -> None:
+                    try:
+                        token_queue.put_nowait(t)
+                    except Exception:
+                        pass
+
                 task = asyncio.create_task(
-                    _run_research_agent(
+                    run_research_agent(
                         req.message, str(conv_id), req.document_ids,
-                        run_id=run_id,
+                        run_id=task_run_id,
+                        parent_run_id=router_run_id,
                         on_stage=_push_stage,
+                        on_token=_push_token,
                         original_intent=route.original_intent,
                         resolved_intent=route.resolved_intent,
                     )
                 )
+                streamed_tokens = False
                 while not task.done():
-                    await asyncio.sleep(0.25)
+                    await asyncio.sleep(0.05)
+                    while not token_queue.empty():
+                        yield f"data: {json.dumps({'token': token_queue.get_nowait()})}\n\n"
+                        streamed_tokens = True
                     while not stage_queue.empty():
                         yield f"data: {json.dumps({'stage': stage_queue.get_nowait()})}\n\n"
 
-                # Drain any remaining stage messages
+                # Drain any remaining events
+                while not token_queue.empty():
+                    yield f"data: {json.dumps({'token': token_queue.get_nowait()})}\n\n"
+                    streamed_tokens = True
                 while not stage_queue.empty():
                     yield f"data: {json.dumps({'stage': stage_queue.get_nowait()})}\n\n"
 
@@ -268,10 +284,12 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                 result = task.result()
                 full_response = result.response
                 sources = result.sources
-                yield f"data: {json.dumps({'token': full_response})}\n\n"
+                route_payload["agent_trace_run_id"] = result.trace_run_id
+                # Tokens were already streamed token-by-token; only send bulk
+                # response as fallback when the writer stream produced nothing.
+                if not streamed_tokens:
+                    yield f"data: {json.dumps({'token': full_response})}\n\n"
             elif route.intent == "chat":
-                # Chat uses the orchestrator which may internally call research.
-                # Run as a Task so stage events from call_research_agent propagate.
                 stage_queue_chat: asyncio.Queue[str] = asyncio.Queue()
 
                 def _push_chat(msg: str) -> None:
@@ -281,9 +299,11 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                         pass
 
                 chat_task = asyncio.create_task(
-                    _run_chat_agent(
+                    run_chat_agent(
                         req.message, str(conv_id), req.document_ids,
-                        run_id=run_id, on_stage=_push_chat,
+                        run_id=task_run_id,
+                        parent_run_id=router_run_id,
+                        on_stage=_push_chat,
                         use_mini=use_mini,
                         original_intent=route.original_intent,
                         resolved_intent=route.resolved_intent,
@@ -300,6 +320,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                 chat_result = chat_task.result()
                 full_response = chat_result.response
                 sources = chat_result.sources
+                route_payload["agent_trace_run_id"] = chat_result.trace_run_id
                 yield f"data: {json.dumps({'token': full_response})}\n\n"
             else:
                 async for token, is_done, src in route_agent_stream(
@@ -307,7 +328,8 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                     str(conv_id),
                     req.document_ids,
                     route=route,
-                    run_id=run_id,
+                    run_id=router_run_id,
+                    task_run_id=task_run_id,
                     use_mini=use_mini,
                 ):
                     if is_done:
@@ -315,52 +337,17 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                     else:
                         full_response += token
                         yield f"data: {json.dumps({'token': token})}\n\n"
+                route_payload["agent_trace_run_id"] = task_run_id
 
                 # ── Stream handoff: retrieval → research ─────────────────
-                # When retrieval finds nothing AND the question asked for
-                # comprehensive coverage, escalate to the full research pipeline.
-                _research_keywords = (
-                    "摘要", "總結", "重點整理", "懶人包",
-                    "研究動機", "研究方法", "研究成果", "研究限制",
-                    "summary", "summarize", "overview",
-                )
-                if (
-                    route.intent == "retrieval"
-                    and req.document_ids
-                    and not sources
-                    and any(kw in req.message.lower() for kw in _research_keywords)
-                ):
-                    yield f"data: {json.dumps({'stage': '切換深度研究模式'})}\n\n"
-                    stage_queue2: asyncio.Queue[str] = asyncio.Queue()
-
-                    def _push2(msg: str) -> None:
-                        try:
-                            stage_queue2.put_nowait(msg)
-                        except Exception:
-                            pass
-
-                    research_task = asyncio.create_task(
-                        _run_research_agent(
-                            req.message, str(conv_id), req.document_ids,
-                            run_id=run_id,
-                            on_stage=_push2,
-                            original_intent="retrieval_handoff",
-                            resolved_intent="research",
-                        )
-                    )
-                    while not research_task.done():
-                        await asyncio.sleep(0.25)
-                        while not stage_queue2.empty():
-                            yield f"data: {json.dumps({'stage': stage_queue2.get_nowait()})}\n\n"
-                    while not stage_queue2.empty():
-                        yield f"data: {json.dumps({'stage': stage_queue2.get_nowait()})}\n\n"
-                    if not research_task.exception():
-                        res2 = research_task.result()
-                        full_response = res2.response
-                        sources = res2.sources
-                        yield f"data: {json.dumps({'token': full_response})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            # Commit to persist any conversation state changes (e.g. model field)
+            # even when the agent call itself fails.
+            try:
+                db.commit()
+            except Exception:
+                pass
             return
 
         conv.message_count = (conv.message_count or 0) + 2
@@ -369,7 +356,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
         title = conv.title
         if is_new and full_response:
             try:
-                title = await asyncio.to_thread(generate_title, [
+                title = await generate_title([
                     {"role": "user", "content": req.message},
                     {"role": "assistant", "content": full_response[:600]},
                 ])
@@ -409,12 +396,13 @@ async def create_conversation_title(conv_id: int, db: Session = Depends(get_db))
     if not msgs:
         return {"title": None}
     try:
-        title = await asyncio.to_thread(generate_title, msgs)
+        title = await generate_title(msgs)
         conv.title = title
         db.commit()
         return {"title": title}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Title generation failed", exc_info=True)
+        raise HTTPException(status_code=500, detail="Title generation failed")
 
 
 @router.patch("/api/conversations/{conv_id}/title")

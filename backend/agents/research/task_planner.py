@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage
 from langfuse import observe
 from pydantic import BaseModel, Field
 
+from observability import ainvoke_traced_generation
 from .runtime_prompts import research_node_system_messages
 from .state import default_summary_coverage
 
@@ -131,7 +132,7 @@ def _question_demands_item(question: str, item: CoverageItemModel, item_id: str,
     return False
 
 
-def _clean_plan(plan: ResearchPlan, mode: str, question: str) -> ResearchPlan:
+def _clean_plan(plan: ResearchPlan, task_context: str, question: str) -> ResearchPlan:
     used: set[str] = set()
     items: list[CoverageItemModel] = []
     for item in plan.coverage_items:
@@ -157,7 +158,7 @@ def _clean_plan(plan: ResearchPlan, mode: str, question: str) -> ResearchPlan:
         if len(items) >= 6:
             break
     if not items:
-        return fallback_research_plan(mode, question)
+        return fallback_research_plan(task_context, question)
     return plan.model_copy(update={"coverage_items": items})
 
 
@@ -242,9 +243,9 @@ def _count_documents(document_context: str) -> int:
     return len(_re.findall(r"^\[.+?\]", document_context, flags=_re.MULTILINE))
 
 
-def fallback_research_plan(mode: str, question: str, document_count: int = 1) -> ResearchPlan:
-    mode = (mode or "research").lower()
-    if mode == "retrieval":
+def fallback_research_plan(task_context: str, question: str, document_count: int = 1) -> ResearchPlan:
+    task_context = (task_context or "research").lower()
+    if task_context == "retrieval":
         return ResearchPlan(
             goal=question or "回答文件相關問題。",
             coverage_items=[
@@ -265,7 +266,7 @@ async def create_research_plan(
     llm,
     *,
     question: str,
-    mode: str,
+    task_context: str,
     document_context: str,
 ) -> ResearchPlan:
     doc_count = _count_documents(document_context)
@@ -275,20 +276,31 @@ async def create_research_plan(
     )
     planner = llm.with_structured_output(ResearchPlan, strict=True)
     try:
-        plan: ResearchPlan = await planner.ainvoke(
-            [
-                *research_node_system_messages("task_planner"),
-                HumanMessage(
-                    content="\n\n".join([
-                        f"問題：{question}",
-                        f"模式：{mode}",
-                        f"文件摘要：\n{document_context[:1800]}" + multi_doc_hint,
-                        "請規劃 coverage items，每個 item 描述一個證據需求，使用繁體中文 label。",
-                    ])
-                ),
-            ]
+        messages = [
+            *research_node_system_messages("task_planner"),
+            HumanMessage(
+                content="\n\n".join([
+                    f"問題：{question}",
+                    f"任務脈絡：{task_context}",
+                    f"文件摘要：\n{document_context[:1800]}" + multi_doc_hint,
+                    "請規劃 coverage items，每個 item 描述一個證據需求，使用繁體中文 label。",
+                ])
+            ),
+        ]
+        from .runtime_prompts import research_node_stack_metadata
+
+        plan: ResearchPlan = await ainvoke_traced_generation(
+            planner,
+            messages,
+            prompt_name="task_planner",
+            metadata={
+                "task_type": "research_task",
+                "route_intent": "research",
+                "agent_name": "research_agent",
+                **research_node_stack_metadata("task_planner"),
+            },
         )
-        return _clean_plan(plan, mode, question)
+        return _clean_plan(plan, task_context, question)
     except Exception as exc:
         logger.warning("create_research_plan failed: %s", exc)
-        return fallback_research_plan(mode, question, document_count=doc_count)
+        return fallback_research_plan(task_context, question, document_count=doc_count)

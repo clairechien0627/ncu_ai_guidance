@@ -1,1 +1,1 @@
-"""Shared tool facade package for future specialist agents."""
+"""Shared tool facade package for task agents."""

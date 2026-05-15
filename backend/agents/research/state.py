@@ -14,9 +14,41 @@ DEFAULT_SUMMARY_COVERAGE: tuple[str, ...] = (
     "research_limitations",
 )
 
-# Backward-compatible name for older imports/tests.
-SLOTS = DEFAULT_SUMMARY_COVERAGE
 
+def _merge_dict_overwrite(a: dict | None, b: dict | None) -> dict:
+    return {**(a or {}), **(b or {})}
+
+
+def _merge_evidence_dict(a: dict | None, b: dict | None) -> dict:
+    result = {str(k): list(v or []) for k, v in (a or {}).items()}
+    for slot, notes in (b or {}).items():
+        key = str(slot)
+        existing = {str(item) for item in result.get(key, [])}
+        result.setdefault(key, [])
+        for note in notes or []:
+            if str(note) not in existing:
+                result[key].append(note)
+                existing.add(str(note))
+    return result
+
+
+_FLAGS_CLEAR: list = ["__clear__"]
+
+
+def _batch_flags_reducer(a: list | None, b: list | None) -> list:
+    if b is _FLAGS_CLEAR:
+        return []
+    return list(a or []) + list(b or [])
+
+
+def _merge_unique_list(a: list | None, b: list | None) -> list:
+    result = list(a or [])
+    seen = {str(item) for item in result}
+    for item in b or []:
+        if str(item) not in seen:
+            result.append(item)
+            seen.add(str(item))
+    return result
 
 @dataclass
 class CoverageItem:
@@ -66,7 +98,6 @@ class ResearchState:
     evidence: dict[str, list[str]] = field(default_factory=dict)
     evidence_details: dict[str, list[dict]] = field(default_factory=dict)
     sources: list[str] = field(default_factory=list)
-    steps: list[SearchStep] = field(default_factory=list)
     last_reflection: str = ""
     next_search_angle: str = ""
     suggested_query_terms: list[str] = field(default_factory=list)
@@ -91,12 +122,18 @@ class ResearchState:
                 self.evidence_details.pop(stale, None)
 
     def coverage_ids(self) -> list[str]:
-        ids: list[str] = []
-        for item in self.coverage_items:
-            item_id = str(item.get("id", "")).strip()
-            if item_id and item_id not in ids:
-                ids.append(item_id)
-        return ids or list(DEFAULT_SUMMARY_COVERAGE)
+        # Memoised: coverage_items is stable after __post_init__.
+        try:
+            return self._coverage_ids_cache  # type: ignore[attr-defined]
+        except AttributeError:
+            ids: list[str] = []
+            for item in self.coverage_items:
+                item_id = str(item.get("id", "")).strip()
+                if item_id and item_id not in ids:
+                    ids.append(item_id)
+            result = ids or list(DEFAULT_SUMMARY_COVERAGE)
+            object.__setattr__(self, '_coverage_ids_cache', result)
+            return result
 
     def coverage_item(self, item_id: str) -> dict:
         for item in self.coverage_items:
@@ -124,12 +161,18 @@ class ResearchState:
         return labels.get(item_id, item_id.replace("_", " "))
 
     def required_coverage_ids(self) -> list[str]:
-        ids = [
-            str(item.get("id"))
-            for item in self.coverage_items
-            if item.get("required", True) and item.get("id")
-        ]
-        return ids or self.coverage_ids()
+        # Memoised: coverage_items is stable after __post_init__.
+        try:
+            return self._required_coverage_ids_cache  # type: ignore[attr-defined]
+        except AttributeError:
+            ids = [
+                str(item.get("id"))
+                for item in self.coverage_items
+                if item.get("required", True) and item.get("id")
+            ]
+            result = ids or self.coverage_ids()
+            object.__setattr__(self, '_required_coverage_ids_cache', result)
+            return result
 
     def weakest_slot(self) -> str:
         rank: dict[SlotStatus, int] = {
@@ -157,7 +200,7 @@ class ResearchState:
             status = self.slot_status.get(slot, "NOT_FILLED")
             if status not in ("FILLED", "PARTIAL", "EXHAUSTED"):
                 return False
-            # summary mode: require at least N evidence notes unless slot is truly EXHAUSTED
+            # Document extraction can require evidence notes unless a slot is truly EXHAUSTED.
             if min_evidence_per_slot > 0 and status != "EXHAUSTED":
                 if len(self.evidence.get(slot, [])) < min_evidence_per_slot:
                     return False
@@ -257,40 +300,42 @@ class ResearchGraphState(TypedDict):
     output_contract: str
 
     # ── persistent research state ─────────────────────────────────────────────
-    search_count: int
+    search_count: Annotated[int, operator.add]
     consecutive_no_new: int
     verification_done: bool
-    known_keywords: list[str]
-    used_queries: list[str]
-    slot_status: dict
-    evidence: dict
-    evidence_details: dict
-    sources: list[str]
+    known_keywords: Annotated[list[str], _merge_unique_list]
+    used_queries: Annotated[list[str], operator.add]
+    slot_status: Annotated[dict, _merge_dict_overwrite]
+    evidence: Annotated[dict, _merge_evidence_dict]
+    evidence_details: Annotated[dict, _merge_evidence_dict]
+    sources: Annotated[list[str], _merge_unique_list]
     last_reflection: str
     next_search_angle: str
     suggested_query_terms: list[str]
     avoid_query_terms: list[str]
-    seen_chunk_keys: list[str]
-    used_query_keys: list[str]
+    seen_chunk_keys: Annotated[list[str], _merge_unique_list]
+    used_query_keys: Annotated[list[str], _merge_unique_list]
 
     # ── per-run quality constraints ───────────────────────────────────────────
-    # summary mode sets this to 1 so writer only fires when every required slot
-    # has at least one real evidence note (or is genuinely EXHAUSTED).
+    # Document extraction sets this to 1 so writer only fires when every
+    # required slot has at least one real evidence note (or is genuinely EXHAUSTED).
     min_evidence_per_slot: int
 
     # ── in-flight search (planner → retriever → reflector, cleared by writer) ──
-    # current_step keys: slot, query, keyword_query, semantic_query,
-    #   section_terms, use_hyde, display_intent, tool_call_id,
-    #   thought, expected_evidence, planner_rationale, is_verification
-    current_step: dict
-    current_chunks: list
+    batch_plan: list[dict]
+    _batch_evidence_flags: Annotated[list, _batch_flags_reducer]
 
     # ── trace & output ────────────────────────────────────────────────────────
-    steps_json: list
-    chunks_by_query_json: list
+    steps_json: Annotated[list, operator.add]
+    chunks_by_query_json: Annotated[list, operator.add]
     trace_summary: dict
     messages: Annotated[list, operator.add]  # append-only; each node returns only new messages
-    llm_call_count: int
+    llm_call_count: Annotated[int, operator.add]
     started_at: str
     final_answer: str
     final_sources: list[str]
+
+
+class WorkerState(ResearchGraphState):
+    worker_slot: str
+    worker_hint: str

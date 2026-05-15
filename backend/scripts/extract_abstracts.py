@@ -359,7 +359,7 @@ def main():
                         help='直接將摘要寫入資料庫 abstract_text（需 abstract_text 為空且未手動編輯）')
     args = parser.parse_args()
 
-    from database import SessionLocal, Document
+    from db import SessionLocal, Document
 
     db = SessionLocal()
     try:

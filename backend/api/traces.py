@@ -4,14 +4,31 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import func, or_, and_, select
 from sqlalchemy.orm import Session
 
-from database import get_db, Trace
+from db import get_db, Trace
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _agent_execution_root():
+    """
+    SQLAlchemy filter condition that matches each routed agent execution root.
+
+    Supports both old data where the task agent was the DB root
+    (parent_run_id=None) and new data where the task agent is a child of
+    router_agent.
+    """
+    router_run_ids = (
+        select(Trace.run_id).where(Trace.agent_name == "router_agent").scalar_subquery()
+    )
+    return or_(
+        Trace.parent_run_id.in_(router_run_ids),
+        and_(Trace.parent_run_id.is_(None), Trace.agent_name != "router_agent"),
+    )
 
 
 class TraceFeedbackRequest(BaseModel):
@@ -33,14 +50,12 @@ def _latency_seconds(t: Trace) -> float | None:
 
 
 def _trace_meta(t: Trace) -> dict:
-    prompt_stack = getattr(t, "prompt_stack_json", None)
-    if isinstance(prompt_stack, str):
-        try:
-            prompt_stack = json.loads(prompt_stack)
-        except Exception:
-            pass
+    prompt_stack = _parse_json(getattr(t, "prompt_stack_json", None))
+    primary_prompt = _parse_json(getattr(t, "primary_prompt_json", None))
+    workflow_prompts = _parse_json(getattr(t, "workflow_prompts_json", None))
     return {
-        "mode": getattr(t, "mode", None),
+        "task_type": getattr(t, "task_type", None),
+        "route_intent": getattr(t, "route_intent", None),
         "agent_name": getattr(t, "agent_name", None),
         "prompt_name": getattr(t, "prompt_name", None),
         "prompt_version": getattr(t, "prompt_version", None),
@@ -52,6 +67,8 @@ def _trace_meta(t: Trace) -> dict:
         "quality_prompt_hash": getattr(t, "quality_prompt_hash", None),
         "prompt_stack_name": getattr(t, "prompt_stack_name", None),
         "prompt_stack_json": prompt_stack,
+        "primary_prompt_json": primary_prompt,
+        "workflow_prompts_json": workflow_prompts,
         "prompt_stack_tokens": getattr(t, "prompt_stack_tokens", None),
         "tool_count": getattr(t, "tool_count", None),
         "llm_call_count": getattr(t, "llm_call_count", None),
@@ -213,18 +230,22 @@ def _clean_filter(value: str | None) -> str | None:
 def _matches_trace_filters(
     t: Trace,
     *,
-    mode: str | None = None,
+    task_type: str | None = None,
+    route_intent: str | None = None,
     prompt_name: str | None = None,
     prompt_version: str | None = None,
     status: str | None = None,
     min_latency: float | None = None,
 ) -> bool:
-    mode = _clean_filter(mode)
+    task_type = _clean_filter(task_type)
+    route_intent = _clean_filter(route_intent)
     prompt_name = _clean_filter(prompt_name)
     prompt_version = _clean_filter(prompt_version)
     status = _clean_filter(status)
 
-    if mode and (t.mode or "unknown") != mode:
+    if task_type and (t.task_type or "unknown") != task_type:
+        return False
+    if route_intent and (t.route_intent or "unknown") != route_intent:
         return False
     if prompt_name and (t.prompt_name or "unknown") != prompt_name:
         return False
@@ -241,19 +262,13 @@ def _matches_trace_filters(
 
 @router.get("/api/documents/{doc_id}/traces")
 def get_document_traces(doc_id: int, db: Session = Depends(get_db)):
-    # Cast JSONB to Text before LIKE so the operator exists on PostgreSQL.
-    from sqlalchemy import cast, Text, or_
-    id_str = str(doc_id)
-    col = cast(Trace.document_ids, Text)
-    doc_filter = or_(
-        col.like(f'[{id_str}]'),
-        col.like(f'[{id_str},%'),
-        col.like(f'%, {id_str}]'),
-        col.like(f'%, {id_str},%'),
-    )
+    # document_ids is JSONB (migration 001). Use the @> containment operator
+    # which is index-supported via idx_traces_document_ids_gin.
+    from sqlalchemy import func
+    doc_filter = Trace.document_ids.op('@>')(func.jsonb_build_array(doc_id))
     candidates = (
         db.query(Trace)
-        .filter(Trace.parent_run_id.is_(None), Trace.document_ids.isnot(None), doc_filter)
+        .filter(_agent_execution_root(), Trace.document_ids.isnot(None), doc_filter)
         .order_by(Trace.start_time.desc())
         .limit(200)
         .all()
@@ -261,11 +276,6 @@ def get_document_traces(doc_id: int, db: Session = Depends(get_db)):
     extract_traces = []
     other_traces = []
     for t in candidates:
-        try:
-            if doc_id not in json.loads(t.document_ids):
-                continue
-        except Exception:
-            continue
         if t.thread_id and t.thread_id.startswith("_extract_"):
             extract_traces.append(t)
         elif t.thread_id and not t.thread_id.lstrip("-").isdigit():
@@ -295,7 +305,8 @@ def get_document_traces(doc_id: int, db: Session = Depends(get_db)):
 def list_traces(
     limit: int = 40,
     offset: int = 0,
-    mode: str | None = None,
+    task_type: str | None = None,
+    route_intent: str | None = None,
     prompt_name: str | None = None,
     prompt_version: str | None = None,
     status: str | None = None,
@@ -304,17 +315,20 @@ def list_traces(
     resolved_intent: str | None = None,
     db: Session = Depends(get_db),
 ):
-    q = db.query(Trace).filter(Trace.parent_run_id.is_(None))
+    q = db.query(Trace).filter(_agent_execution_root())
 
-    mode = _clean_filter(mode)
+    task_type = _clean_filter(task_type)
+    route_intent = _clean_filter(route_intent)
     prompt_name = _clean_filter(prompt_name)
     prompt_version = _clean_filter(prompt_version)
     status = _clean_filter(status)
     original_intent = _clean_filter(original_intent)
     resolved_intent = _clean_filter(resolved_intent)
 
-    if mode:
-        q = q.filter(Trace.mode == mode)
+    if task_type:
+        q = q.filter(Trace.task_type == task_type)
+    if route_intent:
+        q = q.filter(Trace.route_intent == route_intent)
     if prompt_name:
         q = q.filter(Trace.prompt_name == prompt_name)
     if prompt_version:
@@ -349,7 +363,7 @@ def list_traces(
 
 @router.get("/api/traces/stats")
 def trace_stats(db: Session = Depends(get_db)):
-    root = Trace.parent_run_id.is_(None)
+    root = _agent_execution_root()
     total = db.query(func.count(Trace.id)).filter(root).scalar() or 0
     errors = db.query(func.count(Trace.id)).filter(root, Trace.error.isnot(None)).scalar() or 0
     traces = db.query(Trace).filter(root).order_by(Trace.start_time.desc()).limit(1000).all()
@@ -436,21 +450,27 @@ def _grouped_prompt_version_stats(traces: list[Trace]) -> list[dict]:
     return sorted(result, key=lambda x: x["runs"], reverse=True)
 
 
-@router.get("/api/traces/by-mode")
-def traces_by_mode(db: Session = Depends(get_db)):
-    traces = db.query(Trace).filter(Trace.parent_run_id.is_(None)).order_by(Trace.start_time.desc()).limit(1000).all()
-    return _grouped_trace_stats(traces, "mode")
+@router.get("/api/traces/by-task-type")
+def traces_by_task_type(db: Session = Depends(get_db)):
+    traces = db.query(Trace).filter(_agent_execution_root()).order_by(Trace.start_time.desc()).limit(1000).all()
+    return _grouped_trace_stats(traces, "task_type")
+
+
+@router.get("/api/traces/by-route-intent")
+def traces_by_route_intent(db: Session = Depends(get_db)):
+    traces = db.query(Trace).filter(_agent_execution_root()).order_by(Trace.start_time.desc()).limit(1000).all()
+    return _grouped_trace_stats(traces, "route_intent")
 
 
 @router.get("/api/traces/by-prompt")
 def traces_by_prompt(db: Session = Depends(get_db)):
-    traces = db.query(Trace).filter(Trace.parent_run_id.is_(None)).order_by(Trace.start_time.desc()).limit(1000).all()
+    traces = db.query(Trace).filter(_agent_execution_root()).order_by(Trace.start_time.desc()).limit(1000).all()
     return _grouped_trace_stats(traces, "prompt_name")
 
 
 @router.get("/api/traces/by-prompt-version")
 def traces_by_prompt_version(db: Session = Depends(get_db)):
-    traces = db.query(Trace).filter(Trace.parent_run_id.is_(None)).order_by(Trace.start_time.desc()).limit(1000).all()
+    traces = db.query(Trace).filter(_agent_execution_root()).order_by(Trace.start_time.desc()).limit(1000).all()
     return _grouped_prompt_version_stats(traces)
 
 
@@ -458,7 +478,7 @@ def traces_by_prompt_version(db: Session = Depends(get_db)):
 def trace_errors(limit: int = 40, db: Session = Depends(get_db)):
     traces = (
         db.query(Trace)
-        .filter(Trace.parent_run_id.is_(None), Trace.error.isnot(None))
+        .filter(_agent_execution_root(), Trace.error.isnot(None))
         .order_by(Trace.start_time.desc())
         .limit(limit)
         .all()
@@ -480,7 +500,7 @@ def trace_errors(limit: int = 40, db: Session = Depends(get_db)):
 def slow_runs(limit: int = 40, min_latency: float = 10, db: Session = Depends(get_db)):
     candidates = (
         db.query(Trace)
-        .filter(Trace.parent_run_id.is_(None), Trace.end_time.isnot(None))
+        .filter(_agent_execution_root(), Trace.end_time.isnot(None))
         .order_by(Trace.start_time.desc())
         .limit(1000)
         .all()
@@ -505,7 +525,8 @@ def slow_runs(limit: int = 40, min_latency: float = 10, db: Session = Depends(ge
 @router.get("/api/traces/timeline")
 def trace_timeline(
     prompt_name: str | None = None,
-    mode: str | None = None,
+    task_type: str | None = None,
+    route_intent: str | None = None,
     days: int = 14,
     db: Session = Depends(get_db),
 ):
@@ -514,13 +535,15 @@ def trace_timeline(
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
     query = db.query(Trace).filter(
-        Trace.parent_run_id.is_(None),
+        _agent_execution_root(),
         Trace.start_time >= cutoff,
     )
     if _clean_filter(prompt_name):
         query = query.filter(Trace.prompt_name == prompt_name)
-    if _clean_filter(mode):
-        query = query.filter(Trace.mode == mode)
+    if _clean_filter(task_type):
+        query = query.filter(Trace.task_type == task_type)
+    if _clean_filter(route_intent):
+        query = query.filter(Trace.route_intent == route_intent)
     traces = query.all()
 
     buckets: dict[str, dict] = {}
@@ -563,7 +586,7 @@ def compare_prompt_versions(
     def _stats(version: str) -> dict:
         traces = (
             db.query(Trace)
-            .filter(Trace.parent_run_id.is_(None), Trace.prompt_version == version)
+            .filter(_agent_execution_root(), Trace.prompt_version == version)
             .order_by(Trace.start_time.desc())
             .limit(limit)
             .all()
@@ -596,18 +619,16 @@ async def batch_score_traces(
     limit: int = 50,
     db: Session = Depends(get_db),
 ):
-    """對最近 limit 條 quality_score=null 的 root trace 執行 quality_agent 評分。
+    """對最近 limit 條 quality_score=null 的 root trace 執行 evaluation_agent 評分。
 
-    research/summary/chat/retrieval → score_trace（grounding/completeness/source_quality/…）
-    其他 → score_extraction（舊版四維度）
     細項寫入 quality_detail；overall 寫入 quality_score。
     """
-    from agents.quality_agent import score_extraction, score_trace
+    from agents.evaluation_agent import score_trace
 
     traces = (
         db.query(Trace)
         .filter(
-            Trace.parent_run_id.is_(None),
+            _agent_execution_root(),
             Trace.quality_score.is_(None),
             Trace.error.is_(None),
         )
@@ -615,14 +636,13 @@ async def batch_score_traces(
         .limit(limit)
         .all()
     )
-    run_ids_modes = [(t.run_id, t.mode or "") for t in traces]
+    run_ids_context = [(t.run_id, t.task_type or "", t.route_intent or "") for t in traces]
 
-    async def _score_all(items: list[tuple[str, str]]) -> None:
-        from database import SessionLocal
-        for run_id, mode in items:
+    async def _score_all(items: list[tuple[str, str, str]]) -> None:
+        from db import db_session
+        for run_id, task_type, route_intent in items:
             try:
-                session = SessionLocal()
-                try:
+                with db_session() as session:
                     t = session.query(Trace).filter(Trace.run_id == run_id).first()
                     if not t:
                         continue
@@ -632,25 +652,21 @@ async def batch_score_traces(
                             display_data = json.loads(t.display)
                         except Exception:
                             pass
-                    if mode in ("research", "summary", "chat", "retrieval", "question"):
-                        score, explanation, detail = await score_trace(display_data, mode)
-                        t.quality_detail = json.dumps(detail, ensure_ascii=False) if detail else None
-                    else:
-                        summary_dict = {}
-                        if display_data.get("answer"):
-                            summary_dict = {"answer": display_data["answer"]}
-                        score, explanation = await score_extraction(summary_dict)
+                    score, explanation, detail = await score_trace(
+                        display_data,
+                        task_type=task_type or "unknown",
+                        route_intent=route_intent or None,
+                    )
+                    t.quality_detail = json.dumps(detail, ensure_ascii=False) if detail else None
                     t.quality_score = score
                     if not t.user_feedback:
                         t.user_feedback = explanation[:500]
                     session.commit()
-                finally:
-                    session.close()
             except Exception as exc:
                 logger.warning("batch_score failed for %s: %s", run_id, exc)
 
-    asyncio.create_task(_score_all(run_ids_modes))
-    return {"queued": len(run_ids_modes), "message": f"已排入 {len(run_ids_modes)} 條追蹤記錄的自動評分。"}
+    asyncio.create_task(_score_all(run_ids_context))
+    return {"queued": len(run_ids_context), "message": f"已排入 {len(run_ids_context)} 條追蹤記錄的自動評分。"}
 
 
 class TestRouteRequest(BaseModel):
@@ -661,7 +677,7 @@ class TestRouteRequest(BaseModel):
 @router.post("/api/traces/test-route")
 async def test_route(body: TestRouteRequest):
     """測試路由決策，不執行實際 agent。毫秒內回應。"""
-    from agents.main_agent import _keyword_classify, _llm_classify_intent, _route_for_intent
+    from agents.router_agent import _keyword_classify, _llm_classify_intent, _route_for_intent
 
     has_docs = bool(body.document_ids)
     keyword_result = _keyword_classify(body.message, has_docs)

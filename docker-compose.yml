@@ -22,18 +22,6 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
 
-  phoenix:
-    image: arizephoenix/phoenix:latest
-    restart: always
-    depends_on:
-      postgres:
-        condition: service_healthy
-    ports:
-      - "6006:6006" # UI & HTTP Collector
-      - "4317:4317" # gRPC Collector
-    environment:
-      - PHOENIX_SQL_DATABASE_URL=postgresql://postgres:postgres@postgres:5432/postgres
-
 volumes:
   postgres_data:
   qdrant_data:

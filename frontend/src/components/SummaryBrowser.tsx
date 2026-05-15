@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { getSummaries, extractSummary, reindexDocument } from '../api'
 import type { SummaryItem } from '../api'
-import ChunkViewer from './ChunkViewer'
+import ChunkViewer from './viewer/ChunkViewer'
 
 interface Props {
   onClose: () => void

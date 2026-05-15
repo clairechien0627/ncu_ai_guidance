@@ -1,20 +1,30 @@
 def build_trace_metadata(
     *,
-    mode: str,
+    task_type: str,
+    route_intent: str | None = None,
     agent_name: str,
     prompt_name: str,
     prompt_version: str = "v1",
 ) -> dict[str, str]:
-    return {
-        "mode": mode,
+    data = {
+        "task_type": task_type,
         "agent_name": agent_name,
         "prompt_name": prompt_name,
         "prompt_version": prompt_version,
     }
+    if route_intent:
+        data["route_intent"] = route_intent
+    return data
 
 
 def estimate_prompt_tokens(*contents: str | None) -> int:
-    """Cheap local estimate for prompt stack size; avoids tokenizer dependency."""
+    """Cheap local estimate for prompt stack size; avoids tokenizer dependency.
+
+    Uses the ``len / 4`` heuristic (~4 chars/token for mixed CJK+Latin).
+    Accuracy is ±20-30% — sufficient for observability dashboards.
+    Upgrade path: replace with ``tiktoken.encoding_for_model("gpt-4o").encode()``
+    if precise token counts become necessary for cost tracking.
+    """
     text = "\n".join(content or "" for content in contents)
     if not text:
         return 0
@@ -62,10 +72,9 @@ def update_trace_quality(
     user_feedback: str | None = None,
 ) -> bool:
     """Update root trace quality metadata after a post-run evaluator finishes."""
-    from database import SessionLocal, Trace
+    from db import db_session, Trace
 
-    db = SessionLocal()
-    try:
+    with db_session() as db:
         trace = db.query(Trace).filter(Trace.run_id == run_id).first()
         if not trace:
             return False
@@ -74,5 +83,3 @@ def update_trace_quality(
             trace.user_feedback = user_feedback
         db.commit()
         return True
-    finally:
-        db.close()

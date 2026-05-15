@@ -3,12 +3,17 @@ import datetime
 import json
 import logging
 import os
+import threading
 import time
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
 # ── In-memory job registry ──────────────────────────────────────────────────────
+# _jobs_lock guards ALL mutations of _active_jobs.
+# Rule: hold the lock only for in-memory operations; never call _persist_job
+# (DB I/O) while holding the lock — collect snapshots inside, write outside.
+_jobs_lock = threading.Lock()
 _active_jobs: list[dict] = []
 _job_subscribers: list[asyncio.Queue] = []
 _reindex_tasks: dict[int, asyncio.Task] = {}
@@ -75,7 +80,7 @@ def _persist_job(job: dict, *, final_status: str | None = None) -> None:
     running jobs instead of losing them.
     """
     try:
-        from database import SessionLocal, JobHistory
+        from db import db_session, JobHistory
     except Exception:
         return
 
@@ -87,8 +92,7 @@ def _persist_job(job: dict, *, final_status: str | None = None) -> None:
     now = _utcnow()
     status = final_status or str(job.get("status") or "queued")
     try:
-        s = SessionLocal()
-        try:
+        with db_session() as s:
             row = s.query(JobHistory).filter(JobHistory.job_id == job_id).first()
             if not row:
                 row = JobHistory(
@@ -112,8 +116,6 @@ def _persist_job(job: dict, *, final_status: str | None = None) -> None:
             if status in ("done", "error", "cancelled"):
                 row.completed_at = now
             s.commit()
-        finally:
-            s.close()
     except Exception as e:
         logger.debug("Failed to persist job snapshot: %s", e)
 
@@ -148,94 +150,110 @@ def _jobs_payload() -> str:
 
 def jobs_enqueue(pairs: list[tuple[int, str]], job_type: str = "reindex"):
     global _active_jobs
-    for doc_id, filename in pairs:
-        if any(j["doc_id"] == doc_id and _is_active_status(j.get("status")) for j in _active_jobs):
-            continue
-        _active_jobs = [j for j in _active_jobs if j["doc_id"] != doc_id]
-        job = {
-            "job_id": _new_job_id(job_type, doc_id),
-            "doc_id": doc_id,
-            "filename": filename,
-            "status": "queued",
-            "job_type": job_type,
-            "stage_log": [],
-            "updated_at": _iso(),
-        }
-        _active_jobs.append(job)
+    to_persist = []
+    with _jobs_lock:
+        for doc_id, filename in pairs:
+            if any(j["doc_id"] == doc_id and _is_active_status(j.get("status")) for j in _active_jobs):
+                continue
+            _active_jobs = [j for j in _active_jobs if j["doc_id"] != doc_id]
+            job = {
+                "job_id": _new_job_id(job_type, doc_id),
+                "doc_id": doc_id,
+                "filename": filename,
+                "status": "queued",
+                "job_type": job_type,
+                "stage_log": [],
+                "updated_at": _iso(),
+            }
+            _active_jobs.append(job)
+            to_persist.append(dict(job))
+    for job in to_persist:
         _persist_job(job)
 
 
 def jobs_set_running(doc_id: int):
-    for job in _active_jobs:
-        if job["doc_id"] == doc_id and job["status"] == "queued":
-            job["status"] = "running"
-            job["started_at"] = job.get("started_at") or _iso()
-            job["updated_at"] = _iso()
-            _persist_job(job)
-            break
+    job_snap = None
+    with _jobs_lock:
+        for job in _active_jobs:
+            if job["doc_id"] == doc_id and job["status"] == "queued":
+                job["status"] = "running"
+                job["started_at"] = job.get("started_at") or _iso()
+                job["updated_at"] = _iso()
+                job_snap = dict(job)
+                break
+    if job_snap:
+        _persist_job(job_snap)
 
 
 def jobs_remove(doc_id: int):
     global _active_jobs
-    for job in _active_jobs:
-        if job.get("doc_id") == doc_id and _is_active_status(job.get("status")):
-            job["status"] = "cancelled"
-            job["stage"] = "已取消"
-            job["updated_at"] = _iso()
-            _persist_job(job, final_status="cancelled")
-    _active_jobs = [j for j in _active_jobs if j["doc_id"] != doc_id]
+    to_persist = []
+    with _jobs_lock:
+        for job in _active_jobs:
+            if job.get("doc_id") == doc_id and _is_active_status(job.get("status")):
+                job["status"] = "cancelled"
+                job["stage"] = "已取消"
+                job["updated_at"] = _iso()
+                to_persist.append(dict(job))
+        _active_jobs = [j for j in _active_jobs if j["doc_id"] != doc_id]
+    for snap in to_persist:
+        _persist_job(snap, final_status="cancelled")
 
 
 def jobs_set_stage(doc_id: int, stage: str):
-    for job in _active_jobs:
-        if job["doc_id"] == doc_id and _is_active_status(job.get("status")):
-            job["stage"] = stage
-            stage_log = list(job.get("stage_log") or [])
-            if not stage_log or stage_log[-1] != stage:
-                stage_log.append(stage)
-            job["stage_log"] = stage_log[-30:]
-            job["updated_at"] = _iso()
-            _persist_job(job)
-            break
+    job_snap = None
+    with _jobs_lock:
+        for job in _active_jobs:
+            if job["doc_id"] == doc_id and _is_active_status(job.get("status")):
+                job["stage"] = stage
+                stage_log = list(job.get("stage_log") or [])
+                if not stage_log or stage_log[-1] != stage:
+                    stage_log.append(stage)
+                job["stage_log"] = stage_log[-30:]
+                job["updated_at"] = _iso()
+                job_snap = dict(job)
+                break
+    if job_snap:
+        _persist_job(job_snap)
 
 
 def jobs_mark_done(doc_id: int, error: str | None = None):
-    from database import SessionLocal, Document, JobHistory
+    from db import db_session, Document, JobHistory
     job_type = "reindex"
     filename = str(doc_id)
     found = False
-    for job in _active_jobs:
-        if job["doc_id"] == doc_id and _is_active_status(job.get("status")):
-            job["status"] = "done"
-            job["stage"] = "失敗" if error else "完成"
-            stage_log = list(job.get("stage_log") or [])
-            if not stage_log or stage_log[-1] != job["stage"]:
-                stage_log.append(job["stage"])
-            job["stage_log"] = stage_log[-30:]
-            job["completed_at"] = _iso()
-            job["updated_at"] = job["completed_at"]
-            if error:
-                job["error"] = error[:200]
-            job_type = job.get("job_type", "reindex")
-            filename = job.get("filename", str(doc_id))
-            found = True
-            _persist_job(job, final_status="error" if error else "done")
-            break
+    job_snap = None
+    with _jobs_lock:
+        for job in _active_jobs:
+            if job["doc_id"] == doc_id and _is_active_status(job.get("status")):
+                job["status"] = "done"
+                job["stage"] = "失敗" if error else "完成"
+                stage_log = list(job.get("stage_log") or [])
+                if not stage_log or stage_log[-1] != job["stage"]:
+                    stage_log.append(job["stage"])
+                job["stage_log"] = stage_log[-30:]
+                job["completed_at"] = _iso()
+                job["updated_at"] = job["completed_at"]
+                if error:
+                    job["error"] = error[:200]
+                job_type = job.get("job_type", "reindex")
+                filename = job.get("filename", str(doc_id))
+                found = True
+                job_snap = dict(job)
+                break
+    if job_snap:
+        _persist_job(job_snap, final_status="error" if error else "done")
     if not found or filename == str(doc_id):
         try:
-            s = SessionLocal()
-            try:
+            with db_session() as s:
                 doc = s.query(Document).filter(Document.id == doc_id).first()
                 if doc:
                     filename = doc.filename
-            finally:
-                s.close()
         except Exception:
             pass
     logger.info("jobs_mark_done(%d): found=%s", doc_id, found)
     try:
-        s = SessionLocal()
-        try:
+        with db_session() as s:
             if not found:
                 now = _utcnow()
                 s.add(JobHistory(
@@ -250,8 +268,6 @@ def jobs_mark_done(doc_id: int, error: str | None = None):
                     completed_at=now,
                 ))
             s.commit()
-        finally:
-            s.close()
     except Exception as e:
         logger.warning("Failed to write JobHistory for doc %d: %s", doc_id, e)
 
@@ -263,7 +279,8 @@ def jobs_has_active(doc_id: int) -> bool:
 def jobs_append(entry: dict):
     entry.setdefault("job_id", _new_job_id(str(entry.get("job_type") or "job"), int(entry.get("doc_id") or 0)))
     entry.setdefault("updated_at", _iso())
-    _active_jobs.append(entry)
+    with _jobs_lock:
+        _active_jobs.append(entry)
     _persist_job(entry)
 
 
@@ -278,42 +295,52 @@ def jobs_has_active_parse(doc_id: int, parser: str) -> bool:
 
 
 def jobs_set_parse_running(job_id: str):
-    for j in _active_jobs:
-        if j.get("job_id") == job_id and j["status"] == "queued":
-            j["status"] = "running"
-            j["started_at"] = j.get("started_at") or _iso()
-            j["updated_at"] = _iso()
-            _persist_job(j)
-            break
+    snap = None
+    with _jobs_lock:
+        for j in _active_jobs:
+            if j.get("job_id") == job_id and j["status"] == "queued":
+                j["status"] = "running"
+                j["started_at"] = j.get("started_at") or _iso()
+                j["updated_at"] = _iso()
+                snap = dict(j)
+                break
+    if snap:
+        _persist_job(snap)
 
 
 def jobs_finalize_parse(job_id: str):
-    for j in _active_jobs:
-        if j.get("job_id") == job_id:
-            j["status"] = "done"
-            j["stage"] = "完成"
-            j["completed_at"] = _iso()
-            j["updated_at"] = j["completed_at"]
-            _persist_job(j, final_status="done")
-            break
+    snap = None
+    with _jobs_lock:
+        for j in _active_jobs:
+            if j.get("job_id") == job_id:
+                j["status"] = "done"
+                j["stage"] = "完成"
+                j["completed_at"] = _iso()
+                j["updated_at"] = j["completed_at"]
+                snap = dict(j)
+                break
+    if snap:
+        _persist_job(snap, final_status="done")
 
 
 def jobs_clear_done():
     global _active_jobs
-    _active_jobs = [j for j in _active_jobs if _is_active_status(j.get("status"))]
+    with _jobs_lock:
+        _active_jobs = [j for j in _active_jobs if _is_active_status(j.get("status"))]
 
 
 async def jobs_reorder_and_sync(doc_id: int, new_index: int) -> bool:
     global _active_jobs
-    job = next((j for j in _active_jobs if j["doc_id"] == doc_id and _is_active_status(j.get("status"))), None)
-    if not job:
-        return False
-    _active_jobs = [j for j in _active_jobs if j is not job]
-    non_done = [j for j in _active_jobs if _is_active_status(j.get("status"))]
-    done_entries = [j for j in _active_jobs if not _is_active_status(j.get("status"))]
-    new_index = max(0, min(new_index, len(non_done)))
-    non_done.insert(new_index, job)
-    _active_jobs = done_entries + non_done
+    with _jobs_lock:
+        job = next((j for j in _active_jobs if j["doc_id"] == doc_id and _is_active_status(j.get("status"))), None)
+        if not job:
+            return False
+        _active_jobs = [j for j in _active_jobs if j is not job]
+        non_done = [j for j in _active_jobs if _is_active_status(j.get("status"))]
+        done_entries = [j for j in _active_jobs if not _is_active_status(j.get("status"))]
+        new_index = max(0, min(new_index, len(non_done)))
+        non_done.insert(new_index, job)
+        _active_jobs = done_entries + non_done
 
     queued_reindex = [j["doc_id"] for j in _active_jobs if j["status"] == "queued" and j.get("job_type") == "reindex"]
     _reindex_work_queue.sort(key=lambda x: queued_reindex.index(x["doc_id"]) if x["doc_id"] in queued_reindex else 999)
@@ -370,14 +397,13 @@ def get_jobs() -> list[dict]:
 def restore_jobs_from_db(limit: int = 200) -> None:
     """Restore recent job snapshots for the job drawer after process restart."""
     try:
-        from database import SessionLocal, Document, JobHistory
+        from db import db_session, Document, JobHistory
     except Exception:
         return
 
     restored: list[dict] = []
     try:
-        s = SessionLocal()
-        try:
+        with db_session() as s:
             rows = (
                 s.query(JobHistory, Document.filename.label("doc_filename"))
                 .outerjoin(Document, JobHistory.doc_id == Document.id)
@@ -410,20 +436,19 @@ def restore_jobs_from_db(limit: int = 200) -> None:
                     "stage_log": _restore_stage_log(row),
                 }
                 restored.append({k: v for k, v in entry.items() if v is not None})
-        finally:
-            s.close()
     except Exception as e:
         logger.warning("Failed to restore jobs from DB: %s", e)
         return
 
-    _active_jobs[:] = list(reversed(restored))
+    with _jobs_lock:
+        _active_jobs[:] = list(reversed(restored))
 
 
 # ── DB helpers (called from thread) ─────────────────────────────────────────────
 
 def _upsert_extraction(s, doc_id: int) -> "DocumentExtraction":
     """Get or create the DocumentExtraction row for doc_id (version=1)."""
-    from database import DocumentExtraction
+    from db import DocumentExtraction
     ext = s.query(DocumentExtraction).filter(
         DocumentExtraction.document_id == doc_id,
         DocumentExtraction.version == 1,
@@ -435,9 +460,8 @@ def _upsert_extraction(s, doc_id: int) -> "DocumentExtraction":
 
 
 def db_set_summarized(doc_id: int, summary: dict, run_id: str | None = None):
-    from database import SessionLocal, Document
-    s = SessionLocal()
-    try:
+    from db import db_session, Document
+    with db_session() as s:
         d = s.query(Document).filter(Document.id == doc_id).first()
         ext = _upsert_extraction(s, doc_id)
         summary_str = json.dumps(summary, ensure_ascii=False)
@@ -454,14 +478,11 @@ def db_set_summarized(doc_id: int, summary: dict, run_id: str | None = None):
             d.langsmith_run_id = run_id
         d.batch_status = "summarized"
         s.commit()
-    finally:
-        s.close()
 
 
 def db_set_research_step1(doc_id: int, answer: str, sources: list[str], run_id: str | None = None):
-    from database import SessionLocal, Document
-    s = SessionLocal()
-    try:
+    from db import db_session, Document
+    with db_session() as s:
         d = s.query(Document).filter(Document.id == doc_id).first()
         ext = _upsert_extraction(s, doc_id)
         sources_str = json.dumps(sources, ensure_ascii=False)
@@ -479,21 +500,16 @@ def db_set_research_step1(doc_id: int, answer: str, sources: list[str], run_id: 
             d.langsmith_run_id = run_id
         d.batch_status = "summarized" if d.summary_json else "pending"
         s.commit()
-    finally:
-        s.close()
 
 
 def db_get_research_step1(doc_id: int) -> str | None:
-    from database import SessionLocal, DocumentExtraction
-    s = SessionLocal()
-    try:
+    from db import db_session, DocumentExtraction
+    with db_session() as s:
         ext = s.query(DocumentExtraction).filter(
             DocumentExtraction.document_id == doc_id,
             DocumentExtraction.version == 1,
         ).first()
         return ext.raw_research_answer if ext else None
-    finally:
-        s.close()
 
 
 def _merged_summary(existing_json: str | None, patch: dict) -> dict:
@@ -508,9 +524,8 @@ def _merged_summary(existing_json: str | None, patch: dict) -> dict:
 
 
 def db_set_summary_patch(doc_id: int, patch: dict, run_id: str | None = None):
-    from database import SessionLocal, Document
-    s = SessionLocal()
-    try:
+    from db import db_session, Document
+    with db_session() as s:
         d = s.query(Document).filter(Document.id == doc_id).first()
         ext = _upsert_extraction(s, doc_id)
         # Merge into the canonical extraction row
@@ -528,38 +543,29 @@ def db_set_summary_patch(doc_id: int, patch: dict, run_id: str | None = None):
             d.langsmith_run_id = run_id
         d.batch_status = "summarized"
         s.commit()
-    finally:
-        s.close()
 
 
 def db_set_error(doc_id: int, err: str):
-    from database import SessionLocal, Document
-    s = SessionLocal()
-    try:
+    from db import db_session, Document
+    with db_session() as s:
         d = s.query(Document).filter(Document.id == doc_id).first()
         d.batch_status = "error"
         d.error_message = err[:500]
         s.commit()
-    finally:
-        s.close()
 
 
 def db_restore_summarized(doc_id: int, err: str):
-    from database import SessionLocal, Document
-    s = SessionLocal()
-    try:
+    from db import db_session, Document
+    with db_session() as s:
         d = s.query(Document).filter(Document.id == doc_id).first()
         d.batch_status = "summarized"
         d.error_message = f"重建失敗: {err[:400]}"
         s.commit()
-    finally:
-        s.close()
 
 
 def reset_stuck_processing():
-    from database import SessionLocal, Document
-    db = SessionLocal()
-    try:
+    from db import db_session, Document
+    with db_session() as db:
         stuck = db.query(Document).filter(Document.batch_status == "processing").all()
         for doc in stuck:
             doc.batch_status = "summarized" if doc.summary_json else "pending"
@@ -568,8 +574,19 @@ def reset_stuck_processing():
             doc.status = "error"
         if stuck or stuck_reindex:
             db.commit()
-    finally:
-        db.close()
+
+
+def mark_all_interrupted():
+    """Mark in-memory running jobs as interrupted on clean shutdown."""
+    to_persist = []
+    with _jobs_lock:
+        for job in _active_jobs:
+            if job.get("status") == "running":
+                job["status"] = "interrupted"
+                job["stage"] = "伺服器關閉中斷"
+                to_persist.append(dict(job))
+    for snap in to_persist:
+        _persist_job(snap)
 
 
 # ── Async workers ────────────────────────────────────────────────────────────────
@@ -710,7 +727,7 @@ async def run_parse_job(doc_id: int, filename: str, raw_path: str, parser: str, 
 
 
 async def run_reindex_job(doc_id: int, file_path: str, tmp_path: str | None, parser: str = "auto"):
-    from database import SessionLocal, Document
+    from db import SessionLocal, Document  # kept manual: cross-await + multi-except cleanup
     from rag import process_pdf, delete_old_document_vectors, delete_pending_document_vectors
     jobs_set_running(doc_id)
     await push_jobs()

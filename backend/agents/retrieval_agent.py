@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator, Callable
 
-from .runner import run_specialist_agent as _run_agent
-from .runner import run_specialist_agent_stream as _run_agent_stream
+from .runner import run_tool_agent as _run_agent
+from .runner import run_tool_agent_stream as _run_agent_stream
 from prompting.loader import load_stack
 
 from .types import AgentResult
@@ -20,10 +20,11 @@ _RESEARCH_ESCALATION_KEYWORDS = (
 )
 
 
-def trace_metadata(mode: str = "retrieval") -> dict[str, str | int]:
+def trace_metadata(route_intent: str = "retrieval") -> dict[str, str | int]:
     stack = load_stack(STACK_NAME)
     return {
-        "mode": mode,
+        "task_type": "retrieval_qa",
+        "route_intent": route_intent,
         "agent_name": AGENT_NAME,
         **stack.metadata(),
     }
@@ -34,7 +35,7 @@ async def answer(
     thread_id: str,
     document_ids: list[int] | None = None,
     *,
-    mode: str = "retrieval",
+    route_intent: str = "retrieval",
     task_prompt: str | list[str] | None = None,
     on_stage: Callable[[str], None] | None = None,
     recursion_limit: int = 30,
@@ -49,7 +50,12 @@ async def answer(
     resolved_intent: str | None = None,
 ) -> AgentResult:
     stack = load_stack(STACK_NAME)
-    metadata = metadata or {"mode": mode, "agent_name": AGENT_NAME, **stack.metadata()}
+    metadata = metadata or {
+        "task_type": "retrieval_qa",
+        "route_intent": route_intent,
+        "agent_name": AGENT_NAME,
+        **stack.metadata(),
+    }
     if original_intent and "original_intent" not in metadata:
         metadata["original_intent"] = original_intent
     if resolved_intent and "resolved_intent" not in metadata:
@@ -65,6 +71,7 @@ async def answer(
         on_stage=on_stage,
         recursion_limit=recursion_limit,
         include_document_abstracts=include_document_abstracts,
+        include_research_context=False,
         max_searches=max_searches,
         max_consecutive_empty=max_consecutive_empty,
         parent_run_id=parent_run_id,
@@ -86,7 +93,8 @@ async def answer(
     return AgentResult(
         response=response,
         sources=sources,
-        mode=metadata.get("mode", mode),
+        task_type=str(metadata.get("task_type") or "retrieval_qa"),
+        route_intent=str(metadata.get("route_intent") or route_intent),
         agent_name=metadata.get("agent_name", AGENT_NAME),
         prompt_name=metadata.get("prompt_name", PROMPT_NAME),
         prompt_version=metadata.get("prompt_version", "unknown"),
@@ -100,10 +108,11 @@ async def stream(
     thread_id: str,
     document_ids: list[int] | None = None,
     *,
-    mode: str = "retrieval",
+    route_intent: str = "retrieval",
     task_prompt: str | list[str] | None = None,
     metadata: dict[str, str | int] | None = None,
     run_id: str | None = None,
+    parent_run_id: str | None = None,
     include_document_abstracts: bool = True,
     max_searches: int | None = None,
     max_consecutive_empty: int | None = None,
@@ -112,7 +121,12 @@ async def stream(
     resolved_intent: str | None = None,
 ) -> AsyncIterator[tuple[str, bool, list[str]]]:
     stack = load_stack(STACK_NAME)
-    metadata = metadata or {"mode": mode, "agent_name": AGENT_NAME, **stack.metadata()}
+    metadata = metadata or {
+        "task_type": "retrieval_qa",
+        "route_intent": route_intent,
+        "agent_name": AGENT_NAME,
+        **stack.metadata(),
+    }
     if original_intent and "original_intent" not in metadata:
         metadata["original_intent"] = original_intent
     if resolved_intent and "resolved_intent" not in metadata:
@@ -125,7 +139,9 @@ async def stream(
         metadata=metadata,
         task_prompt=effective_prompt,
         run_id=run_id,
+        parent_run_id=parent_run_id,
         include_document_abstracts=include_document_abstracts,
+        include_research_context=False,
         max_searches=max_searches,
         max_consecutive_empty=max_consecutive_empty,
         use_mini=use_mini,

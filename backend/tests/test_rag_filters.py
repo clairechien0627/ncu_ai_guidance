@@ -34,6 +34,7 @@ import pytest
 
 # Import only pure functions — do NOT trigger vectorstore init
 from rag import (
+    extract_abstract,
     _clean_text,
     _is_cover_page,
     _is_toc_page,
@@ -41,7 +42,9 @@ from rag import (
     _is_html_data_table_page,
     _is_nmr_params_page,
     _is_references_page,
+    _is_reference_continuation,
     _is_table_or_formula_heavy,
+    _check_quality,
     _classify_candidate_text,
     _remove_near_duplicate_chunks,
     _CHAPTER_DEFAULT,
@@ -409,6 +412,191 @@ class TestRemoveNearDuplicateChunks:
 
     def test_empty_input(self):
         assert _remove_near_duplicate_chunks([]) == []
+
+
+# ── _is_references_page ──────────────────────────────────────────────────────
+
+class TestIsReferencesPage:
+    def test_zh_heading_references(self):
+        text = "參考文獻\n[1] 陳文威，《有機化學》，2020。\n[2] 林家豪，台大化學期刊，2019。"
+        assert _is_references_page(text) is True
+
+    def test_markdown_references_heading(self):
+        text = "## References\n\n[1] Smith, J. et al. J. Chem. 2020.\n[2] Jones, A. Nature 2019."
+        assert _is_references_page(text) is True
+
+    def test_numbered_citation_lines(self):
+        # ≥4 lines needed for entry_starts matching path; ≥3 must match pattern
+        text = (
+            "[1] Smith, J. et al. J. Chem. 2020.\n"
+            "[2] Jones, A. Nature 2019.\n"
+            "[3] Brown, B. Science 2018.\n"
+            "[4] Lee, C. Environ. Sci. 2017.\n"
+        )
+        assert _is_references_page(text) is True
+
+    def test_content_page_not_references(self):
+        text = "本研究採用以下文獻作為理論基礎，分析有機薄膜的光學特性。"
+        assert _is_references_page(text) is False
+
+    def test_short_page_without_citations_not_references(self):
+        text = "第一章 緒論\n本章說明研究動機與目的。"
+        assert _is_references_page(text) is False
+
+
+# ── _is_reference_continuation ───────────────────────────────────────────────
+
+class TestIsReferenceContinuation:
+    def test_english_journal_continuation(self):
+        text = "Environ. Sci. Technol. 2019, 53, 1234-1245. DOI: 10.1021/acs.est.\nJournal of Chromatography A, 1600 (2019) 45-52."
+        assert _is_reference_continuation(text) is True
+
+    def test_year_based_continuation(self):
+        text = "Smith A, Jones B. 2020. Analysis of organic compounds. Talanta 212: 120-128."
+        assert _is_reference_continuation(text) is True
+
+    def test_chinese_prose_not_continuation(self):
+        # High CJK ratio → not a reference continuation
+        text = "本研究的結果顯示有機薄膜電晶體的載子移動率隨溫度升高而降低。"
+        assert _is_reference_continuation(text) is False
+
+    def test_empty_text_not_continuation(self):
+        assert _is_reference_continuation("") is False
+
+    def test_short_latin_without_keywords_not_continuation(self):
+        # Latin but no journal/year keywords
+        text = "Section A Results and Discussion"
+        assert _is_reference_continuation(text) is False
+
+
+# ── _is_html_data_table_page ─────────────────────────────────────────────────
+
+class TestIsHtmlDataTablePage:
+    def test_html_table_rows(self):
+        rows = "\n".join([f"<tr><td>col{i}</td><td>val{i}</td></tr>" for i in range(10)])
+        assert _is_html_data_table_page(rows) is True
+
+    def test_mixed_th_td(self):
+        text = (
+            "<tr><th>欄位A</th><th>欄位B</th></tr>\n" * 3 +
+            "<tr><td>數值1</td><td>數值2</td></tr>\n" * 5
+        )
+        assert _is_html_data_table_page(text) is True
+
+    def test_fewer_than_6_lines_not_flagged(self):
+        text = "<tr><td>a</td></tr>\n<tr><td>b</td></tr>"
+        assert _is_html_data_table_page(text) is False
+
+    def test_normal_text_not_html_table(self):
+        text = "本研究探討有機半導體材料的合成與電性分析，所得結果與文獻相符。"
+        assert _is_html_data_table_page(text) is False
+
+
+# ── _check_quality ────────────────────────────────────────────────────────────
+
+class TestCheckQuality:
+    def _doc(self, content: str):
+        return Document(page_content=content)
+
+    def test_scanned_document(self):
+        # Total non-space chars < 50 → "scanned"
+        docs = [self._doc("   \n   \n  abc  \n")]
+        assert _check_quality(docs) == "scanned"
+
+    def test_garbled_low_readable_ratio(self):
+        # Mid-range Unicode (U+0080–U+4DFF) dominates → "garbled"
+        garbled = "".join(chr(0x0100 + i) for i in range(200))  # Latin Extended chars
+        docs = [self._doc(garbled)]
+        result = _check_quality(docs)
+        assert result == "garbled"
+
+    def test_good_chinese_document(self):
+        text = "本研究探討有機薄膜電晶體材料的光學與電性特性，" * 10
+        docs = [self._doc(text)]
+        assert _check_quality(docs) is None
+
+    def test_good_english_document(self):
+        text = "This study investigates the optical and electrical properties of organic thin-film transistors. " * 5
+        docs = [self._doc(text)]
+        assert _check_quality(docs) is None
+
+    def test_image_heavy_document(self):
+        # Majority of pages are table/formula heavy
+        table_page = "\n".join([f"| col{i} | val{i} | num{i} |" for i in range(20)])
+        docs = [self._doc(table_page)] * 4 + [self._doc("少量文字")]
+        result = _check_quality(docs)
+        assert result == "image_heavy"
+
+    def test_mixed_math_not_garbled(self):
+        # Greek letters should not trigger garbled (threshold raised to 0.3)
+        text = "The nonlinear susceptibility χ⁽²⁾ relates to α, β, γ parameters. " * 20
+        docs = [self._doc(text)]
+        assert _check_quality(docs) is None
+
+
+# ── extract_abstract ──────────────────────────────────────────────────────────
+
+class TestExtractAbstract:
+    def _doc(self, content: str):
+        return Document(page_content=content)
+
+    def test_zh_abstract_heading(self):
+        text = "摘要\n\n本研究探討有機薄膜電晶體材料的光學特性，利用各種分析方法進行量測。結果顯示載子移動率隨溫度升高而降低。"
+        result = extract_abstract([self._doc(text)], "zh")
+        assert result is not None
+        assert "有機薄膜電晶體" in result
+
+    def test_en_abstract_heading(self):
+        text = "Abstract\n\nThis study investigates the synthesis and characterization of organic thin-film transistors.\nResults show improved carrier mobility at higher temperatures."
+        result = extract_abstract([self._doc(text)], "en")
+        assert result is not None
+        assert "carrier mobility" in result
+
+    def test_abstract_caps_heading(self):
+        text = "ABSTRACT\n\n本研究以高溫水熱法合成奈米材料，並利用 XRD 與 SEM 進行結構分析，結果顯示晶體具有良好的結晶度。"
+        result = extract_abstract([self._doc(text)], "zh")
+        assert result is not None
+        assert "XRD" in result
+
+    def test_fallback_first_long_paragraph(self):
+        # No abstract heading — fallback to first paragraph ≥ 150 chars
+        short = "前言"
+        long_para = (
+            "本研究以有機半導體材料為研究對象，探討其在不同溫度下的電性特性。"
+            "透過薄膜電晶體元件量測，分析載子移動率與閾值電壓的變化趨勢，並與文獻比較。"
+            "實驗結果顯示，隨溫度升高，載子移動率呈現先增後減的趨勢，此結果對元件設計具有重要參考價值。"
+            "此外，本研究亦對材料表面形貌進行掃描電子顯微鏡分析，確認薄膜均勻性達到預期標準。"
+        )
+        assert len(long_para) >= 150, f"段落長度不足：{len(long_para)}"
+        text = f"{short}\n\n{long_para}"
+        result = extract_abstract([self._doc(text)], "zh")
+        assert result is not None
+        assert "有機半導體" in result
+
+    def test_no_abstract_no_long_para_returns_none(self):
+        docs = [self._doc("短文字"), self._doc("也很短")]
+        assert extract_abstract(docs, "zh") is None
+
+    def test_abstract_truncated_at_2000(self):
+        long_abstract = "本研究 " * 1000  # > 2000 chars
+        text = f"摘要\n\n{long_abstract}"
+        result = extract_abstract([self._doc(text)], "zh")
+        assert result is not None
+        assert len(result) <= 2000
+
+    def test_uses_only_first_6_docs_for_heading(self):
+        # Abstract is in doc 7 — should NOT be found via heading search
+        filler = [self._doc(f"第{i}章 內容 " * 5) for i in range(6)]
+        abstract_doc = self._doc("摘要\n\n隱藏的摘要內容，不應該被找到。" * 10)
+        result = extract_abstract(filler + [abstract_doc], "zh")
+        assert result is None or "隱藏的摘要" not in result
+
+    def test_multiple_docs_combined(self):
+        doc1 = self._doc("封面頁內容")
+        doc2 = self._doc("摘要\n\n本研究結合多種分析技術探討有機半導體材料的物理化學特性。")
+        result = extract_abstract([doc1, doc2], "zh")
+        assert result is not None
+        assert "有機半導體" in result
 
 
 if __name__ == "__main__":

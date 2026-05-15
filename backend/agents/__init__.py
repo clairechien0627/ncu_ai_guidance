@@ -1,10 +1,8 @@
-"""Specialist agent facade package.
+"""Agent facade package.
 
-The first refactor phase keeps the proven legacy LangGraph implementation in
-``agent.py`` and routes calls through small specialist modules. This gives the
-API a stable Main Agent entry point while keeping rollback simple.
+Routing is owned by router_agent; task-agent modules implement task behavior.
 """
 
-from .main_agent import route_agent_message, route_agent_stream
+from .router_agent import route_agent_message, route_agent_stream
 
 __all__ = ["route_agent_message", "route_agent_stream"]

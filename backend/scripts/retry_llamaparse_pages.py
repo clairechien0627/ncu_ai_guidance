@@ -58,7 +58,7 @@ def process_doc(doc_id: int, dry_run: bool) -> None:
         retry_llamaparse_warning_pages,
         rebuild_llamaparse_md_from_raw,
     )
-    from database import SessionLocal, Document
+    from db import SessionLocal, Document
 
     raw_path = _llamaparse_raw_cache_path(doc_id)
     md_path  = _llamaparse_cache_path(doc_id)

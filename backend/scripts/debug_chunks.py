@@ -102,6 +102,72 @@ def _load_from_md(md_path: str, parser: str) -> list:
     return docs
 
 
+def _pipeline(docs: list, lang: str, pdf_path: str | None = None) -> dict:
+    """Pure RAG pipeline: clean → filter → head candidates → section map → chunk.
+
+    Returns a result dict with no I/O side effects, making it independently testable.
+    """
+    for doc in docs:
+        doc.page_content = _clean_text(doc.page_content, lang)
+
+    kept: list = []
+    dropped: list[tuple] = []
+    for d in docs:
+        text = d.page_content
+        pg = d.metadata.get("page", "?")
+        if not text:
+            dropped.append((pg, "empty", ""))
+        elif _is_cover_page(text):
+            dropped.append((pg, "cover", text))
+        elif _is_title_page_heading_only(text):
+            dropped.append((pg, "title_page", text))
+        elif _is_toc_page(text, lang):
+            dropped.append((pg, "toc", text))
+        elif _is_html_data_table_page(text):
+            dropped.append((pg, "html_table", text))
+        elif _is_nmr_params_page(text):
+            dropped.append((pg, "nmr_params", text))
+        else:
+            kept.append(d)
+
+    quality_issue = _check_quality(kept)
+    garbled_from_headings = False
+    if quality_issue is None and any(d.metadata.get("pymupdf4llm") for d in kept):
+        from rag import _extract_headings_from_markdown as _efm
+        md_headings = _efm(kept)
+        if len(md_headings) >= 3:
+            heading_text = " ".join(h["text"] for h in md_headings)
+            total_h = sum(1 for c in heading_text if not c.isspace())
+            if total_h > 0 and heading_text.count('�') / total_h > 0.25:
+                quality_issue = "garbled"
+                garbled_from_headings = True
+
+    is_markdown = any(d.metadata.get("pymupdf4llm") or d.metadata.get("llamaparse") for d in kept)
+    if is_markdown:
+        candidates = _extract_headings_from_markdown(kept)
+        candidate_source = "markdown"
+    else:
+        font_candidates = _extract_headings_by_font(pdf_path or "")
+        regex_candidates = _extract_candidate_headings(kept)
+        candidates = font_candidates if font_candidates else regex_candidates
+        candidate_source = "font" if font_candidates else "regex"
+
+    page_section_map = _build_page_section_map(kept, lang, file_path=pdf_path)
+    splits = _split_by_structure_and_semantics(kept, page_section_map, lang)
+
+    return {
+        "lang": lang,
+        "dropped": dropped,
+        "kept": kept,
+        "quality_issue": quality_issue,
+        "garbled_from_headings": garbled_from_headings,
+        "candidates": candidates,
+        "candidate_source": candidate_source,
+        "page_section_map": page_section_map,
+        "splits": splits,
+    }
+
+
 def process(
     pdf_path: str | None,
     lang_override: str | None,
@@ -151,7 +217,7 @@ def process(
             return
 
         print(f"\n載入: {pdf_path}")
-        from database import SessionLocal, Document as _Doc
+        from db import SessionLocal, Document as _Doc
         _db = SessionLocal()
         try:
             _doc = _db.query(_Doc).filter(_Doc.file_path == pdf_path).first()
@@ -192,89 +258,45 @@ def process(
     if not docs:
         return
 
-    # ── 2. Language + clean ───────────────────────────────────────────────────
+    # ── 2–6. Pipeline (pure: no I/O side effects) ─────────────────────────────
     lang = lang_override or _detect_language(docs)
     print(f"  Language     : {lang}")
+    result = _pipeline(docs, lang, pdf_path)
 
-    for doc in docs:
-        doc.page_content = _clean_text(doc.page_content, lang)
+    # ── Display: filter summary ───────────────────────────────────────────────
+    if result["garbled_from_headings"]:
+        print(f"  [Extra check] 標題含 U+FFFD 替換字元 → garbled")
+    print(f"  Quality issue: {result['quality_issue'] or 'None（正常）'}")
+    print(f"  Pages kept   : {len(result['kept'])}  (dropped {len(result['dropped'])})")
 
-    # ── 3. Page-level filters ─────────────────────────────────────────────────
-    kept, dropped = [], []
-    for d in docs:
-        text = d.page_content
-        pg = d.metadata.get("page", "?")
-        if not text:
-            dropped.append((pg, "empty", ""))
-        elif _is_cover_page(text):
-            dropped.append((pg, "cover", text))
-        elif _is_title_page_heading_only(text):
-            dropped.append((pg, "title_page", text))
-        elif _is_toc_page(text, lang):
-            dropped.append((pg, "toc", text))
-        elif _is_html_data_table_page(text):
-            dropped.append((pg, "html_table", text))
-        elif _is_nmr_params_page(text):
-            dropped.append((pg, "nmr_params", text))
-        else:
-            kept.append(d)
-
-    quality_issue = _check_quality(kept)
-
-    if quality_issue is None and any(d.metadata.get("pymupdf4llm") for d in kept):
-        from rag import _extract_headings_from_markdown as _efm
-        md_headings = _efm(kept)
-        if len(md_headings) >= 3:
-            heading_text = " ".join(h["text"] for h in md_headings)
-            total_h = sum(1 for c in heading_text if not c.isspace())
-            if total_h > 0 and heading_text.count('�') / total_h > 0.25:
-                quality_issue = "garbled"
-                print(f"  [Extra check] 標題含 U+FFFD 替換字元 → garbled")
-
-    print(f"  Quality issue: {quality_issue or 'None（正常）'}")
-    print(f"  Pages kept   : {len(kept)}  (dropped {len(dropped)})")
-
-    if dropped:
+    if result["dropped"]:
         print("  Dropped pages:")
-        for pg, reason, text in dropped:
+        for pg, reason, text in result["dropped"]:
             pn = int(pg) + 1 if pg != "?" else "?"
             preview = text[:120].replace("\n", " ").strip()
             print(f"    p.{pn:<4} [{reason}] {preview}")
 
-    docs = kept
-
-    # ── 4. Heading candidates ─────────────────────────────────────────────────
-    is_markdown = any(d.metadata.get("pymupdf4llm") or d.metadata.get("llamaparse") for d in docs)
-    if is_markdown:
-        candidates = _extract_headings_from_markdown(docs)
-        source = "markdown"
-    else:
-        font_candidates = _extract_headings_by_font(pdf_path or "")
-        regex_candidates = _extract_candidate_headings(docs)
-        candidates = font_candidates if font_candidates else regex_candidates
-        source = "font" if font_candidates else "regex"
-
-    print(f"\nHeading candidates ({len(candidates)}, source={source}):")
+    # ── Display: heading candidates ───────────────────────────────────────────
+    candidates = result["candidates"]
+    print(f"\nHeading candidates ({len(candidates)}, source={result['candidate_source']}):")
     if candidates:
         for c in candidates:
             print(f"  p.{c['page']+1:<4} {c['text']}")
     else:
         print("  (none — section map 將全為 unknown)")
 
-    # ── 5. Section map ────────────────────────────────────────────────────────
+    # ── Display: section map ──────────────────────────────────────────────────
     print("\nBuilding section map …")
-    page_section_map = _build_page_section_map(docs, lang, file_path=pdf_path)
     section_counts: dict[str, int] = {}
-    for v in page_section_map.values():
+    for v in result["page_section_map"].values():
         section_counts[v] = section_counts.get(v, 0) + 1
     print("  Section → pages:")
     for sec, cnt in sorted(section_counts.items(), key=lambda x: -x[1]):
         print(f"    {sec:<22} {cnt} page(s)")
 
-    # ── 6. Chunking ───────────────────────────────────────────────────────────
-    print("\nChunking …")
-    splits = _split_by_structure_and_semantics(docs, page_section_map, lang)
-    print(f"  Total chunks : {len(splits)}\n")
+    # ── Display: chunks ───────────────────────────────────────────────────────
+    splits = result["splits"]
+    print(f"\nChunking …\n  Total chunks : {len(splits)}\n")
 
     char_counts = [len(s.page_content) for s in splits]
     max_chars = max(char_counts) if char_counts else 1
@@ -288,9 +310,9 @@ def process(
         page_label = (
             f"{page_num}-{page_end_num}" if page_end_num != page_num else str(page_num)
         )
-        chars  = len(chunk.page_content)
-        low_q  = _is_table_or_formula_heavy(chunk.page_content)
-        bar    = _bar(chars / max_chars)
+        chars = len(chunk.page_content)
+        low_q = _is_table_or_formula_heavy(chunk.page_content)
+        bar   = _bar(chars / max_chars)
 
         print(SEP)
         print(f"[{i:>3}] section={section:<18} page={page_label:<7}  chars={chars:>5}  "
@@ -350,7 +372,7 @@ def _run_validate(args) -> None:
         print(f"[警告] 找不到 doc-id {doc_id} 的 pymupdf4llm 快取，嘗試本地解析…", file=sys.stderr)
         # Build a local parse path if we have the DB
         try:
-            from database import SessionLocal, Document as _Doc
+            from db import SessionLocal, Document as _Doc
             _db = SessionLocal()
             try:
                 doc = _db.query(_Doc).filter(_Doc.id == doc_id).first()

@@ -1,3 +1,4 @@
+import hashlib
 import json
 from dataclasses import dataclass, field
 from typing import Callable
@@ -23,7 +24,8 @@ class AgentContext:
     search_count: int = 0
     consecutive_empty: int = 0
     on_stage: Callable[[str], None] | None = None
-    mode: str | None = None
+    task_type: str | None = None
+    route_intent: str | None = None
     max_searches: int | None = None
     max_consecutive_empty: int | None = None
     thread_id: str | None = None
@@ -82,9 +84,25 @@ _MAX_CONSECUTIVE_EMPTY = 3
 
 
 def set_query_expander_llm(llm) -> None:
-    """Optional LLM used for HyDE query expansion."""
+    """Set the LLM used for HyDE query expansion. Called at startup by runner.py."""
     global _query_expander_llm
     _query_expander_llm = llm
+
+
+def _get_query_expander_llm():
+    """Return the expander LLM, lazily initialising from settings if not yet injected."""
+    global _query_expander_llm
+    if _query_expander_llm is None:
+        from langchain_openai import AzureChatOpenAI
+        from config import settings
+        _query_expander_llm = AzureChatOpenAI(
+            azure_deployment=settings.azure_chat_deployment,
+            azure_endpoint=settings.azure_openai_endpoint,
+            api_key=settings.azure_openai_api_key.get_secret_value(),
+            api_version=settings.azure_openai_api_version,
+            temperature=0.3,
+        )
+    return _query_expander_llm
 
 
 def expand_queries(
@@ -113,11 +131,11 @@ def expand_queries(
     if not queries:
         return []
 
-    if not use_hyde or _query_expander_llm is None:
+    if not use_hyde:
         return queries
 
     try:
-        hyde = _query_expander_llm.invoke(
+        hyde = _get_query_expander_llm().invoke(
             [
                 SystemMessage(content=_HYDE_PROMPT),
                 HumanMessage(
@@ -231,8 +249,34 @@ def run_search_report(
         exclude_chunk_keys=ctx.seen_chunks,
     )
 
+    # HyDE fallback: if the planner didn't request HyDE and we got zero results,
+    # retry once with a hypothetical document. This reduces false negatives caused
+    # by vocabulary mismatch without burning an extra search_count slot.
+    if not chunks and not use_hyde:
+        hyde_queries = expand_queries(
+            query, sub_queries,
+            target_lang=lang,
+            keyword_query=keyword_query,
+            semantic_query=semantic_query,
+            section_terms=section_terms,
+            use_hyde=True,
+        )
+        if len(hyde_queries) > len(queries):  # HyDE actually added something new
+            chunks, _ = _search_documents(
+                hyde_queries,
+                document_ids=ctx.document_ids or None,
+                top_n=top_n,
+                lang=lang,
+                exclude_chunk_keys=ctx.seen_chunks,
+            )
+            if chunks:
+                logger.debug(
+                    "run_search_report: HyDE fallback found %d chunks for %r",
+                    len(chunks), query[:60],
+                )
+
     for chunk in chunks:
-        ctx.seen_chunks.add(chunk["content"][:120])
+        ctx.seen_chunks.add(hashlib.md5(chunk["content"].encode("utf-8", errors="replace")).hexdigest())
 
     if not chunks:
         ctx.consecutive_empty += 1
@@ -299,11 +343,10 @@ def detect_document_language(runtime: ToolRuntime[AgentContext]) -> str:
 @observe(as_type="tool")
 def list_documents(runtime: ToolRuntime[AgentContext]) -> str:
     """List uploaded ready documents in current conversation."""
-    from database import Document as DocModel, SessionLocal
+    from db import Document as DocModel, db_session
 
     ctx = runtime.context
-    db = SessionLocal()
-    try:
+    with db_session() as db:
         query = db.query(DocModel).filter(DocModel.status == "ready")
         if ctx.document_ids:
             query = query.filter(DocModel.id.in_(ctx.document_ids))
@@ -312,8 +355,6 @@ def list_documents(runtime: ToolRuntime[AgentContext]) -> str:
             [{"id": doc.id, "filename": doc.filename} for doc in docs],
             ensure_ascii=False,
         )
-    finally:
-        db.close()
 
 
 @tool
@@ -327,11 +368,10 @@ def get_document_metadata(runtime: ToolRuntime[AgentContext]) -> str:
     such as title, author, upload date, field, or subject area — without
     needing to do a full-text search.
     """
-    from database import Document as DocModel, SessionLocal
+    from db import Document as DocModel, db_session
 
     ctx = runtime.context
-    db = SessionLocal()
-    try:
+    with db_session() as db:
         docs = db.query(DocModel).filter(DocModel.id.in_(ctx.document_ids or [])).all()
         result = []
         for doc in docs:
@@ -352,8 +392,6 @@ def get_document_metadata(runtime: ToolRuntime[AgentContext]) -> str:
                 "abstract_preview": (doc.abstract_text or "")[:400],
             })
         return json.dumps(result, ensure_ascii=False)
-    finally:
-        db.close()
 
 
 _VERIFY_CLAIM_SYSTEM = (
@@ -401,20 +439,12 @@ def verify_claim(claim: str, runtime: ToolRuntime[AgentContext]) -> str:
         }, ensure_ascii=False)
 
     # Step 2: LLM verification
-    if _query_expander_llm is None:
-        return json.dumps({
-            "verdict": "PARTIAL",
-            "confidence": 0.5,
-            "evidence": [str(c.get("content", ""))[:300] for c in chunks[:2]],
-            "explanation": "LLM 未初始化，僅提供相關片段供參考，請自行判斷。",
-        }, ensure_ascii=False)
-
     passages = [
         {"page": c.get("page"), "content": str(c.get("content", ""))[:600]}
         for c in chunks[:4]
     ]
     try:
-        resp = _query_expander_llm.invoke([
+        resp = _get_query_expander_llm().invoke([
             SystemMessage(content=_VERIFY_CLAIM_SYSTEM),
             HumanMessage(content=json.dumps(
                 {"claim": claim, "passages": passages},
@@ -537,7 +567,7 @@ def compare_documents(query: str, runtime: ToolRuntime[AgentContext]) -> str:
     """
     from qdrant_client.models import Filter, FieldCondition, MatchAny
     from rag import get_vectorstore, get_dense_vectorstore, get_document_language
-    from database import Document as DocModel, SessionLocal
+    from db import Document as DocModel, db_session
 
     ctx = runtime.context
     if not ctx.document_ids or len(ctx.document_ids) < 2:
@@ -546,12 +576,9 @@ def compare_documents(query: str, runtime: ToolRuntime[AgentContext]) -> str:
             ensure_ascii=False,
         )
 
-    db = SessionLocal()
-    try:
+    with db_session() as db:
         rows = db.query(DocModel.id, DocModel.filename).filter(DocModel.id.in_(ctx.document_ids)).all()
         id_to_name = {row.id: row.filename for row in rows}
-    finally:
-        db.close()
 
     lang = get_document_language(ctx.document_ids)
     vs = get_dense_vectorstore() if lang == "en" else get_vectorstore()
@@ -582,6 +609,10 @@ def web_search(query: str) -> str:
     Search public web for external or recent information.
 
     Prefer search_report first for file-related questions.
+
+    Note: uses synchronous DDGS intentionally — LangChain runs @tool in a
+    thread pool so this does not block the FastAPI event loop. If this is ever
+    converted to async def, switch to AsyncDDGS or wrap with asyncio.to_thread.
     """
     from duckduckgo_search import DDGS
 

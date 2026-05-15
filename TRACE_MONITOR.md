@@ -33,7 +33,7 @@ Trace Monitor 預設只顯示 root trace。
 
 | 欄位 | 說明 |
 |------|------|
-| Mode | 路由結果：`chat` / `retrieval` / `research` / `question` |
+| Route Intent | 路由結果：`chat` / `retrieval` / `research` / `question` |
 | Prompt | 主 prompt 名稱（e.g. `research_writer`） |
 | Version | Prompt 版本，顯示為 `#abc123`（hover 看完整 hash） |
 | Status | `success` / `error` |
@@ -47,7 +47,7 @@ Trace Monitor 預設只顯示 root trace。
 
 ### 分組統計表
 
-- **By Mode**：各模式的執行次數、錯誤數、平均延遲、品質分
+- **By Route Intent**：各路由意圖的執行次數、錯誤數、平均延遲、品質分
 - **By Prompt**：哪個 prompt 被用最多、品質好不好
 - **By Prompt Version**：同一個 prompt 改版前後的比較（數字變化看效果）
 
@@ -57,7 +57,7 @@ Trace Monitor 預設只顯示 root trace。
 
 最新的 trace 清單，可搜尋輸入/輸出/agent 名稱。
 
-- **Mode / 意圖** 欄：若顯示橘色箭頭（e.g. `retrieval → research`）代表這次請求被自動升級路由
+- **Route Intent / 意圖** 欄：若顯示橘色箭頭（e.g. `retrieval → research`）代表這次請求被自動升級路由
 - 點擊任一列 → 右側展開 **Trace Detail**
 
 ---
@@ -67,16 +67,16 @@ Trace Monitor 預設只顯示 root trace。
 分五個 tab：
 
 ### 總覽 tab
-- 顯示 mode、agent、prompt、版本、意圖路由、延遲、token 數
+- 顯示 route_intent、agent、prompt、版本、意圖路由、延遲、token 數
 - **品質細項**（跑過批次評分後才有）：五條 progress bar
   - 接地性：回答有 chunk 佐證的比例
   - 完整性：覆蓋所有 research slot 的比例
   - 來源品質：來源多樣性
-  - 格式適切：格式符合 mode 期望
+  - 格式適切：格式符合 route_intent 期望
   - 限制誠實：限制段有無混淆前人批評與本文限制
 - **Quality score / Feedback**：可手動打分（0-5）並留下評語
 
-### 事件流 tab（research mode 才有）
+### 事件流 tab（research route_intent 才有）
 顯示整個 research 執行過程的時間軸：
 
 | 事件類型 | 顏色 | 說明 |
@@ -124,7 +124,7 @@ Trace Monitor 預設只顯示 root trace。
 
 ## 批次自動評分
 
-對最近 50 筆沒有品質分的 trace 執行 quality_agent 評分，寫入五個維度細項。**評分需要幾分鐘**，結束後重新整理頁面才會看到分數。
+對最近 50 筆沒有品質分的 trace 執行 evaluation_agent 評分，寫入五個維度細項。**評分需要幾分鐘**，結束後重新整理頁面才會看到分數。
 
 ---
 
@@ -163,9 +163,9 @@ Trace Monitor 預設只顯示 root trace。
 1. 改完 prompt 後跑幾次請求
 2. Prompt 版本比較選新舊兩個 `#xxxxxx`，看品質分和錯誤率變化
 
-**「哪個 mode 最慢？」**
-1. 看 By Mode 的 Avg latency 欄位
-2. 過濾 Mode=research，看 Recent Runs 確認慢的是哪幾筆
+**「哪個 route_intent 最慢？」**
+1. 看 By Route Intent 的 Avg latency 欄位
+2. 過濾 route_intent=research，看 Recent Runs 確認慢的是哪幾筆
 
 **「某個文件的所有 trace 在哪？」**
 文件詳情頁有「查看追蹤」功能，或是 research 完後在 trace 的總覽 tab 會顯示相關文件 ID。
@@ -229,7 +229,7 @@ Langfuse 使用 **Web Container → Redis Queue → Worker Container** 的架構
 
 **現狀問題**
 - `get_document_traces` 使用 `LIKE` 比對 JSON 陣列（Line 248-253），例如 `col.like(f'[{id_str},%')`
-- `trace_stats`、`traces_by_mode`、`traces_by_prompt` 每次都載入 1000 條 root trace 到記憶體做 Python 分組
+- `trace_stats`、`traces_by_route_intent`、`traces_by_prompt` 每次都載入 1000 條 root trace 到記憶體做 Python 分組
 - `slow_runs` 也是先撈 1000 條再用 Python 過濾延遲
 
 **優化方案**
@@ -255,17 +255,17 @@ traces = db.query(Trace).limit(1000).all()
 
 # 應改為：SQL 端聚合
 db.query(
-    Trace.mode,
+    Trace.route_intent,
     func.count().label("runs"),
     func.avg(extract("epoch", Trace.end_time - Trace.start_time)).label("avg_latency"),
-).filter(...).group_by(Trace.mode).all()
+).filter(...).group_by(Trace.route_intent).all()
 ```
 
 #### 2c. 索引補齊
 ```sql
 -- 目前可能缺少的索引（依查詢頻率建議）
 CREATE INDEX ix_trace_parent_start ON traces (parent_run_id, start_time DESC);
-CREATE INDEX ix_trace_mode ON traces (mode) WHERE parent_run_id IS NULL;
+CREATE INDEX ix_trace_route_intent ON traces (route_intent) WHERE parent_run_id IS NULL;
 CREATE INDEX ix_trace_prompt_version ON traces (prompt_name, prompt_version);
 CREATE INDEX ix_trace_quality_null ON traces (start_time DESC) 
     WHERE parent_run_id IS NULL AND quality_score IS NULL AND error IS NULL;
@@ -300,7 +300,7 @@ AdminTracesPage.tsx (容器, ~100 行)
 interface TracePageState {
   // 篩選器
   filters: {
-    mode: string | null
+    routeIntent: string | null
     promptName: string | null
     promptVersion: string | null
     status: string | null
@@ -383,7 +383,7 @@ TOKEN_COSTS = {
 ### 方向 6：評分系統深化 🟢 中優先
 
 **現狀亮點**
-你的 `batch-score` 端點和 `quality_agent` 已經是很完整的自動評分基礎設施。
+你的 `batch-score` 端點和 `evaluation_agent` 已經是很完整的自動評分基礎設施。
 
 **可擴展方向**
 
@@ -512,7 +512,7 @@ Phase D（長期規劃）
 
 #### 2. 篩選器（可收折）
 
-**目前展示**: Mode / Prompt / Version / Status / Min Latency / 路由升級
+**目前展示**: Route Intent / Prompt / Version / Status / Min Latency / 路由升級
 
 | 維度 | 評估 |
 |------|------|
@@ -531,7 +531,7 @@ Phase D（長期規劃）
 
 #### 3. Recent Runs（左側主列表）
 
-**目前展示**: 卡片式列表（Mode 色點 + Prompt 名稱 + 延遲 + 狀態）
+**目前展示**: 卡片式列表（Route Intent 色點 + Prompt 名稱 + 延遲 + 狀態）
 
 | 維度 | 評估 |
 |------|------|
@@ -580,7 +580,7 @@ Phase D（長期規劃）
 
 ---
 
-#### 6. By Mode / By Prompt / By Prompt Version 分組表格
+#### 6. By Route Intent / By Prompt / By Prompt Version 分組表格
 
 **目前展示**: 分組的次數 / 錯誤 / 平均延遲 / 平均品質
 
@@ -594,8 +594,8 @@ Phase D（長期規劃）
 - `By Prompt Version` 是你做 Prompt 迭代的核心武器。每改一次 Prompt 文字，SHA256 會自動變更，你就能在這裡直接看到新舊版的品質對比。
 
 **🟡 建議增加**:
-- 點擊某行時，應該能 **drill down** 到該分組的 trace 列表。例如點 `research` mode → 自動篩選出所有 research trace。目前這個聯動是斷裂的。
-- 加入 **Token 總消耗列**。`research` mode 每次消耗 8000 token，`retrieval` 只消耗 2000 → 這影響成本估算。
+- 點擊某行時，應該能 **drill down** 到該分組的 trace 列表。例如點 `research` route_intent → 自動篩選出所有 research trace。目前這個聯動是斷裂的。
+- 加入 **Token 總消耗列**。`research` route_intent 每次消耗 8000 token，`retrieval` 只消耗 2000 → 這影響成本估算。
 
 ---
 
@@ -606,14 +606,14 @@ Phase D（長期規劃）
 這是整個 Monitor 中最精華的部分。我逐一分析：
 
 ##### 7a. 總覽 Tab
-- Mode / Agent / Prompt / Version / Stack / Latency / Tokens
+- Route Intent / Agent / Prompt / Version / Stack / Latency / Tokens
 - 品質細項橫條圖（grounding / completeness / source_quality / format_fit / limitations_honesty）
 - Feedback 輸入框
 
 **這個 Tab 回答的問題**: 「這次回答好不好？哪個維度拖後腿了？」
 
 **🟡 擴充建議**:
-- 品質橫條圖下方應加入 **文字摘要解釋**（quality_agent 已經產出了 explanation，但目前只存在 `user_feedback` 欄位，沒有獨立展示）。
+- 品質橫條圖下方應加入 **文字摘要解釋**（evaluation_agent 已經產出了 explanation，但目前只存在 `user_feedback` 欄位，沒有獨立展示）。
 - 缺少對 **retrieval chunks** 的品質判斷。你能看到 `source_quality` 分數是 2.5/5，但看不到「到底檢索到了什麼 chunks」—— 需要跳到 evidence tab 才能看。應該在總覽頁加一個「關鍵來源」摘要區塊。
 
 ##### 7b. 事件流 Tab
@@ -688,7 +688,7 @@ Phase D（長期規劃）
 
 #### 10. 批次自動評分
 
-**目前展示**: 對 N 條未評分 trace 啟動 quality_agent 評分
+**目前展示**: 對 N 條未評分 trace 啟動 evaluation_agent 評分
 
 | 維度 | 評估 |
 |------|------|
@@ -787,7 +787,7 @@ Phase D（長期規劃）
 - 命中的 section 是什麼？（結果/方法/摘要）
 - 有多少 chunks 最終被 Agent 使用（vs 被丟棄）？
 
-**能讓你做到**: 發現「research mode 的品質分低是因為 retrieval 只撈到了摘要段落，沒撈到實驗數據」→ 調整 chunking 策略或 section 權重。
+**能讓你做到**: 發現「research route_intent 的品質分低是因為 retrieval 只撈到了摘要段落，沒撈到實驗數據」→ 調整 chunking 策略或 section 權重。
 
 ---
 
@@ -798,7 +798,7 @@ Phase D（長期規劃）
 
 **應該呈現的資訊**:
 - 每日/每週 API 成本趨勢圖
-- 按 Mode 的成本佔比（research 佔 70%？chat 佔 5%？）
+- 按 Route Intent 的成本佔比（research 佔 70%？chat 佔 5%？）
 - 按 Prompt 版本的成本效率（v2 品質更高但成本只增 10%？太棒了）
 - 單次對話的成本估算（顯示在 Trace Detail 的總覽頁）
 

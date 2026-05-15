@@ -195,5 +195,100 @@ class TestGetJobs(unittest.TestCase):
         self.assertEqual(len(js._active_jobs), 1)
 
 
+class TestConcurrentAccess(unittest.TestCase):
+    """Verify that _active_jobs stays consistent under concurrent mutation.
+
+    These tests catch race conditions that the sequential state-machine tests
+    cannot exercise.  We use threads rather than asyncio tasks because the
+    real risk is mixing asyncio callbacks (main loop) with to_thread workers.
+    """
+
+    def setUp(self):
+        _reset()
+
+    def test_concurrent_enqueue_no_duplicates(self):
+        """100 threads enqueue the same 10 doc_ids — each doc should appear at most once."""
+        import threading
+        barrier = threading.Barrier(100)
+
+        def worker():
+            barrier.wait()
+            for doc_id in range(1, 11):
+                js.jobs_enqueue([(doc_id, f"doc{doc_id}.pdf")], job_type="reindex")
+
+        threads = [threading.Thread(target=worker) for _ in range(100)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        with js._jobs_lock:
+            doc_ids = [j["doc_id"] for j in js._active_jobs]
+        self.assertEqual(len(doc_ids), len(set(doc_ids)), "Duplicate doc_ids found after concurrent enqueue")
+        self.assertLessEqual(len(doc_ids), 10)
+
+    def test_concurrent_set_stage_no_corruption(self):
+        """50 threads simultaneously update stages for different docs — no KeyError or corruption."""
+        import threading
+        for doc_id in range(1, 11):
+            js.jobs_enqueue([(doc_id, f"doc{doc_id}.pdf")])
+            js.jobs_set_running(doc_id)
+
+        errors: list[Exception] = []
+
+        def worker(doc_id: int):
+            for i in range(50):
+                try:
+                    js.jobs_set_stage(doc_id, f"stage_{i}")
+                except Exception as exc:
+                    errors.append(exc)
+
+        threads = [threading.Thread(target=worker, args=(d,)) for d in range(1, 11)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(errors, [], f"Exceptions during concurrent set_stage: {errors}")
+        with js._jobs_lock:
+            for j in js._active_jobs:
+                self.assertIn("stage", j)
+
+    def test_concurrent_enqueue_and_remove(self):
+        """Interleave enqueue and remove across threads — list must never go negative."""
+        import threading
+        barrier = threading.Barrier(20)
+        errors: list[Exception] = []
+
+        def enqueue_worker():
+            barrier.wait()
+            for doc_id in range(1, 6):
+                try:
+                    js.jobs_enqueue([(doc_id, f"doc{doc_id}.pdf")])
+                except Exception as exc:
+                    errors.append(exc)
+
+        def remove_worker():
+            barrier.wait()
+            for doc_id in range(1, 6):
+                try:
+                    js.jobs_remove(doc_id)
+                except Exception as exc:
+                    errors.append(exc)
+
+        threads = (
+            [threading.Thread(target=enqueue_worker) for _ in range(10)]
+            + [threading.Thread(target=remove_worker) for _ in range(10)]
+        )
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(errors, [], f"Exceptions during concurrent enqueue/remove: {errors}")
+        with js._jobs_lock:
+            self.assertGreaterEqual(len(js._active_jobs), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

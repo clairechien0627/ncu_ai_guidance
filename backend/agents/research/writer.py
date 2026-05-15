@@ -4,9 +4,10 @@ import json
 import logging
 
 from langchain_core.messages import HumanMessage
+from observability import ainvoke_traced_generation
 from pydantic import BaseModel, Field
 
-from .runtime_prompts import research_node_system_messages
+from .runtime_prompts import research_node_stack_metadata, research_node_system_messages
 from .state import ResearchState
 
 logger = logging.getLogger(__name__)
@@ -138,20 +139,29 @@ async def write_summary(llm, state: ResearchState) -> ResearchWriteup:
         "sources": state.sources[:8],
     }
     try:
-        result: ResearchStructuredWriteup = await writer.ainvoke(
-            [
-                *research_node_system_messages("research_writer"),
-                HumanMessage(
-                    content="\n\n".join([
-                        f"問題：{state.question}",
-                        f"任務目標：{state.task_goal}",
-                        f"輸出規範：{state.output_contract}",
-                        f"文件摘要：\n{state.document_context[:2000]}",
-                        f"Coverage 狀態與累積證據：\n{json.dumps(structured, ensure_ascii=False)}",
-                        "優先使用 evidence_details 中的 filename/page/quote/interpretation。若某個必要項目沒有直接證據，請明確說明，不要自行補充。",
-                    ])
-                ),
-            ]
+        messages = [
+            *research_node_system_messages("research_writer"),
+            HumanMessage(
+                content="\n\n".join([
+                    f"問題：{state.question}",
+                    f"任務目標：{state.task_goal}",
+                    f"輸出規範：{state.output_contract}",
+                    f"文件摘要：\n{state.document_context[:2000]}",
+                    f"Coverage 狀態與累積證據：\n{json.dumps(structured, ensure_ascii=False)}",
+                    "優先使用 evidence_details 中的 filename/page/quote/interpretation。若某個必要項目沒有直接證據，請明確說明，不要自行補充。",
+                ])
+            ),
+        ]
+        result: ResearchStructuredWriteup = await ainvoke_traced_generation(
+            writer,
+            messages,
+            prompt_name="research_writer",
+            metadata={
+                "task_type": "research_task",
+                "route_intent": "research",
+                "agent_name": "research_agent",
+                **research_node_stack_metadata("research_writer"),
+            },
         )
         writeup = _to_writeup(result, state)
     except Exception as exc:

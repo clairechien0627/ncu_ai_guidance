@@ -26,7 +26,7 @@ load_dotenv(os.path.join(BACKEND_DIR, ".env"))
 
 from langchain_community.document_loaders import PyMuPDFLoader
 
-from database import SessionLocal, Document
+from db import SessionLocal, Document
 from rag import (
     _clean_text,
     _detect_language,

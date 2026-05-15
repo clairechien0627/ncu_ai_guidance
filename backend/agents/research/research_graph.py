@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -9,12 +10,26 @@ import unicodedata
 from typing import Literal
 
 from langchain_core.runnables import RunnableConfig
+from langfuse import observe
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import RetryPolicy, Send
 
-from .planner import PlannerDecision, _fallback_decision, build_slot_decision, plan_next_query, should_use_hyde
+from observability import update_current_observation_io
+
+from .orchestrator import decide_next_batch, get_candidate_slots
+from .planner import PlannerDecision, build_slot_decision, plan_query_for_slot, should_use_hyde
 from .reflector import apply_reflection, reflect_results
 from .retriever import retrieve_evidence
-from .state import ResearchGraphState, ResearchState, SearchStep
+from .state import (
+    ResearchGraphState,
+    ResearchState,
+    SearchStep,
+    WorkerState,
+    _FLAGS_CLEAR,
+    _merge_dict_overwrite,
+    _merge_evidence_dict,
+    _merge_unique_list,
+)
 from .writer import ResearchWriteup, write_summary
 
 logger = logging.getLogger(__name__)
@@ -30,7 +45,6 @@ _COMMON_TERMS = {
     "purpose",
     "pdf",
 }
-
 _MAX_STATE_KEYWORDS = 80
 _TRACE_CHUNK_LIMIT = 900
 _TRACE_CHUNKS_PER_QUERY = 4
@@ -41,7 +55,6 @@ def _normalize_query(q: str) -> str:
 
 
 def _seed_keywords(text: str) -> list[str]:
-    """Extract lightweight seed terms from document abstracts or chunks."""
     candidates: list[str] = []
 
     def add(item: str) -> None:
@@ -56,18 +69,11 @@ def _seed_keywords(text: str) -> list[str]:
             candidates.append(item)
 
     for keyword_block in re.findall(r"(?:keywords?|關鍵詞|關鍵字)\s*[:：]\s*([^\n]+)", text, flags=re.I):
-        for term in re.split(r"[,;，、；\s]+", keyword_block):
+        for term in re.split(r"[,;、，\s]+", keyword_block):
             add(term)
             if len(candidates) >= 24:
                 return candidates
-
-    patterns = (
-        r"《[^》]{1,24}》",
-        r"〈[^〉]{1,24}〉",
-        r"[A-Za-z][A-Za-z0-9_\-]{1,24}",
-        r"[一-鿿]{2,8}",
-    )
-    for pattern in patterns:
+    for pattern in (r"[A-Za-z][A-Za-z0-9_\-]{1,24}", r"[\u4e00-\u9fff]{2,8}"):
         for match in re.findall(pattern, text):
             add(match)
             if len(candidates) >= 24:
@@ -102,28 +108,58 @@ def _compact_evidence_details(evidence: dict[str, list[dict]], limit: int = 8) -
     return {slot: notes[:limit] for slot, notes in evidence.items()}
 
 
-def _slot_label(state: ResearchGraphState | ResearchState, slot: str) -> str:
-    if isinstance(state, ResearchState):
-        return state.coverage_label(slot)
-    for item in state.get("coverage_items", []) or []:
+def _evidence_counts(state: ResearchGraphState | ResearchState) -> dict[str, int]:
+    evidence = state.evidence if isinstance(state, ResearchState) else state.get("evidence", {})
+    return {slot: len(notes or []) for slot, notes in evidence.items()}
+
+
+def _coverage_status_for_trace(state: ResearchGraphState | ResearchState) -> dict[str, str]:
+    statuses = state.slot_status if isinstance(state, ResearchState) else state.get("slot_status", {})
+    return {str(slot): str(status) for slot, status in statuses.items()}
+
+
+def _safe_update_current_observation(*, input=None, output=None, metadata: dict | None = None) -> None:
+    update_current_observation_io(input=input, output=output, metadata=metadata)
+
+
+def _slot_label(state: ResearchGraphState | ResearchState | dict, slot: str) -> str:
+    items = state.coverage_items if isinstance(state, ResearchState) else state.get("coverage_items", [])
+    for item in items or []:
         if item.get("id") == slot:
-            return str(item.get("label") or slot)
+            return str(item.get("label") or slot)[:16]
     return slot.replace("_", " ")
 
 
+def _public_steps(state: ResearchGraphState) -> list[dict]:
+    return [
+        {
+            "round": index + 1,
+            "slot": step.get("slot"),
+            "slot_label": _slot_label(state, str(step.get("slot") or "")),
+            "display_intent": step.get("display_intent"),
+            "quality": step.get("quality"),
+            "chunk_count": step.get("chunk_count", 0),
+            "updated_slots": step.get("updated_slots", []),
+            "missing_gap": step.get("missing_gap"),
+            "next_search_angle": step.get("next_search_angle"),
+        }
+        for index, step in enumerate(state.get("steps_json", []))
+    ]
+
+
 def _trace_summary(state: ResearchGraphState) -> dict:
-    steps = state.get("steps_json", [])
     return {
         "task": {
             "question": state.get("question", ""),
             "document_ids": state.get("document_ids", []),
-            "mode": state.get("metadata", {}).get("mode"),
+            "task_type": state.get("metadata", {}).get("task_type"),
+            "route_intent": state.get("metadata", {}).get("route_intent"),
             "goal": state.get("task_goal", ""),
         },
         "limits": {
             "effective_max_searches": _hard_max_searches(state),
             "max_searches_per_slot": _per_slot_cap(state),
-            "max_consecutive_no_new": state.get("max_consecutive_no_new", 2),
+            "max_consecutive_no_new": state.get("max_consecutive_no_new", 4),
         },
         "coverage": [
             {
@@ -141,26 +177,7 @@ def _trace_summary(state: ResearchGraphState) -> dict:
             "verification_done": state.get("verification_done", False),
             "slot_status": state.get("slot_status", {}),
         },
-        "steps": [
-            {
-                "round": index + 1,
-                "slot": step.get("slot"),
-                "slot_label": _slot_label(state, str(step.get("slot") or "")),
-                "display_intent": step.get("display_intent"),
-                "quality": step.get("quality"),
-                "chunk_count": step.get("chunk_count", 0),
-                "updated_slots": step.get("updated_slots", []),
-                "missing_gap": step.get("missing_gap"),
-                "next_search_angle": step.get("next_search_angle"),
-                "query_bundle": {
-                    "keyword_query": step.get("keyword_query"),
-                    "semantic_query": step.get("semantic_query"),
-                    "section_terms": step.get("section_terms", []),
-                    "use_hyde": step.get("use_hyde", False),
-                },
-            }
-            for index, step in enumerate(steps)
-        ],
+        "steps": _public_steps(state),
         "final": {
             "sources": state.get("final_sources", []),
             "answer_preview": str(state.get("final_answer", ""))[:500],
@@ -168,67 +185,17 @@ def _trace_summary(state: ResearchGraphState) -> dict:
     }
 
 
-def _public_steps(state: ResearchGraphState) -> list[dict]:
-    """Small step log for root LangSmith fields; full queries stay in trace_summary."""
-    return [
-        {
-            "round": index + 1,
-            "slot": step.get("slot"),
-            "slot_label": _slot_label(state, str(step.get("slot") or "")),
-            "display_intent": step.get("display_intent"),
-            "quality": step.get("quality"),
-            "chunk_count": step.get("chunk_count", 0),
-            "updated_slots": step.get("updated_slots", []),
-            "missing_gap": step.get("missing_gap"),
-            "next_search_angle": step.get("next_search_angle"),
-        }
-        for index, step in enumerate(state.get("steps_json", []))
-    ]
-
-
 def _clean_query_term(term: str) -> str:
     term = _normalize_query(term).strip(" \t\r\n_-.,;:()[]{}\"'")
     if not term:
         return ""
     lower = term.lower()
-    blocked = (
-        "search for",
-        "describe",
-        "provide",
-        "success",
-        "criteria",
-        "evidence",
-        "output",
-        "contract",
-        "research_",
-        "coverage",
-        "slot",
-        "query",
-    )
+    blocked = ("search for", "describe", "provide", "research_", "coverage", "expected_evidence", "slot")
     if any(token in lower for token in blocked):
         return ""
-    if len(term) > 28 or len(term.split()) > 4:
-        return ""
-    if lower in _COMMON_TERMS:
+    if len(term) > 48:
         return ""
     return term
-
-
-def _verification_query(state: ResearchState, slot: str) -> str:
-    item = state.coverage_item(slot)
-    terms: list[str] = []
-    for raw in [
-        *(item.get("search_hints") or []),
-        *state.suggested_query_terms,
-        *state.known_keywords,
-    ]:
-        term = _clean_query_term(str(raw))
-        if term and term not in terms and term not in state.avoid_query_terms:
-            terms.append(term)
-        if len(terms) >= 5:
-            break
-    suffix = ["研究限制", "未明示", "不足", "結論"] if "limit" in slot else ["研究成果", "證據", "結論"]
-    return _normalize_query(" ".join([*terms, *suffix]))
 
 
 def _per_slot_cap(state: ResearchGraphState) -> int:
@@ -239,9 +206,8 @@ def _per_slot_cap(state: ResearchGraphState) -> int:
 
 
 def _hard_max_searches(state: ResearchGraphState) -> int:
-    required_count = len([
-        item for item in state.get("coverage_items", []) if item.get("required", True)
-    ]) or len(state.get("coverage_items", [])) or 1
+    required_count = len([item for item in state.get("coverage_items", []) if item.get("required", True)])
+    required_count = required_count or len(state.get("coverage_items", [])) or 1
     derived = required_count * _per_slot_cap(state) + 1
     try:
         configured = int(state.get("max_searches") or 0)
@@ -272,45 +238,37 @@ def _next_coverage_slot(state: ResearchGraphState, rs: ResearchState) -> str | N
     cap = _per_slot_cap(state)
     required_order = rs.required_coverage_ids()
     required = [
-        slot for slot in required_order
+        slot
+        for slot in required_order
         if rs.slot_status.get(slot, "NOT_FILLED") not in ("FILLED", "EXHAUSTED")
         and counts.get(slot, 0) < cap
     ]
     if not required:
         return None
-
-    # Prefer factual (non-HyDE) untried slots over interpretive (HyDE) ones so that
-    # HyDE searches have prior evidence context available before they run.
     untried = [slot for slot in required if counts.get(slot, 0) == 0]
     if untried:
-        # 1. Untried + NOT_FILLED + non-HyDE (highest priority)
         candidates = [
-            s for s in untried
-            if rs.slot_status.get(s, "NOT_FILLED") == "NOT_FILLED" and not _slot_uses_hyde(rs, s)
+            slot
+            for slot in untried
+            if rs.slot_status.get(slot, "NOT_FILLED") == "NOT_FILLED" and not _slot_uses_hyde(rs, slot)
         ]
         if candidates:
             return candidates[0]
-
-        # 2. Untried + non-HyDE (already got cross-slot evidence but never directly searched)
-        candidates = [s for s in untried if not _slot_uses_hyde(rs, s)]
+        candidates = [slot for slot in untried if not _slot_uses_hyde(rs, slot)]
         if candidates:
             return candidates[0]
-
-        # 3. Untried HyDE slots — only after all non-HyDE untried slots are done
         return untried[0]
-
     recent = list(state.get("steps_json", []))[-2:]
     stalled_slot = ""
     if len(recent) == 2 and recent[0].get("slot") == recent[1].get("slot"):
         if all(step.get("quality") in ("NO_RESULTS", "NOT_USEFUL") for step in recent):
             stalled_slot = str(recent[-1].get("slot") or "")
-
     status_rank = {"NOT_FILLED": 0, "PARTIAL": 1, "EXHAUSTED": 2, "FILLED": 3}
     ranked = sorted(
         required,
         key=lambda slot: (
             slot == stalled_slot,
-            _slot_uses_hyde(rs, slot),           # HyDE slots ranked lower
+            _slot_uses_hyde(rs, slot),
             status_rank.get(rs.slot_status.get(slot, "NOT_FILLED"), 0),
             counts.get(slot, 0),
             required_order.index(slot),
@@ -334,24 +292,10 @@ def _verification_display_intent(rs: ResearchState, slot: str) -> str:
 
 def _verification_section_terms(rs: ResearchState, slot: str) -> list[str]:
     item = rs.coverage_item(slot)
-    label = rs.coverage_label(slot)
-    description = str(item.get("description") or "")
-    text = f"{slot} {label} {description}"
-    terms = [label, *(item.get("search_hints") or [])]
-    if any(token in text for token in ("method", "方法", "步驟", "procedure")):
-        terms.extend(["研究方法", "研究步驟", "分類歸納", "對比詮釋"])
-    elif any(token in text for token in ("finding", "result", "成果", "發現", "例子", "分類")):
-        terms.extend(["研究成果", "結論", "小結", "分類", "代表性例子"])
-    elif any(token in text for token in ("limit", "限制", "不足", "未解決")):
-        terms.extend(["研究限制", "未明示", "不足", "結論"])
-    elif any(token in text for token in ("motivation", "動機", "目的", "背景")):
-        terms.extend(["研究動機", "研究目的", "研究背景"])
-    else:
-        terms.extend(["結論", "討論", "證據"])
-
+    terms = [rs.coverage_label(slot), *(item.get("search_hints") or [])]
     out: list[str] = []
     for term in terms:
-        cleaned = _clean_query_term(str(term)) or str(term).strip()
+        cleaned = _clean_query_term(str(term))
         if cleaned and cleaned not in out:
             out.append(cleaned)
         if len(out) >= 6:
@@ -359,14 +303,15 @@ def _verification_section_terms(rs: ResearchState, slot: str) -> list[str]:
     return out
 
 
+def _verification_query(rs: ResearchState, slot: str) -> str:
+    terms = _verification_section_terms(rs, slot)
+    return _normalize_query(" ".join(terms[:6])) or rs.coverage_label(slot)
+
+
 def _query_for_slot(rs: ResearchState, slot: str) -> str:
     item = rs.coverage_item(slot)
     terms: list[str] = []
-    for raw in [
-        *(item.get("search_hints") or []),
-        *rs.suggested_query_terms,
-        *rs.known_keywords,
-    ]:
+    for raw in [*(item.get("search_hints") or []), *rs.suggested_query_terms, *rs.known_keywords]:
         term = _clean_query_term(str(raw))
         if term and term not in terms and term not in rs.avoid_query_terms:
             terms.append(term)
@@ -388,19 +333,30 @@ def _force_decision_slot(decision: PlannerDecision, rs: ResearchState, slot: str
     )
 
 
+def _force_next_angle_if_stalled(decision: PlannerDecision, state: ResearchGraphState) -> PlannerDecision:
+    last = next(
+        (step for step in reversed(state.get("steps_json", [])) if step.get("slot") == decision.next_slot),
+        None,
+    )
+    if not last or last.get("quality") not in ("NOT_USEFUL", "NO_RESULTS"):
+        return decision
+    angle = _normalize_query(str(last.get("next_search_angle") or ""))
+    if not angle:
+        return decision
+    return decision.model_copy(update={"keyword_query": angle})
+
+
 def _unique_query(query: str, state: ResearchState, slot: str) -> str:
     cleaned = _normalize_query(query)
     used = {_normalize_query(q) for q in state.used_queries}
     if cleaned and cleaned not in used:
         return cleaned
-
     for term in [*state.suggested_query_terms, *state.known_keywords, state.next_search_angle]:
         cleaned_term = _clean_query_term(term)
         if cleaned_term and cleaned_term not in cleaned and cleaned_term not in state.avoid_query_terms:
             candidate = _normalize_query(f"{cleaned} {cleaned_term}")
             if candidate and candidate not in used:
                 return candidate
-
     candidate = _verification_query(state, slot) or _normalize_query(slot)
     if candidate and candidate not in used:
         return candidate
@@ -424,14 +380,36 @@ def _reserve_query(query: str, used_keys: set[str], slot: str, count: int) -> st
     candidate = _normalize_query(query)
     if candidate in used_keys:
         for alternative in (
-            _normalize_query(f"{query} 證據"),
-            _normalize_query(f"{slot} 第{count + 1}輪 證據"),
+            _normalize_query(f"{query} evidence"),
+            _normalize_query(f"{slot} round {count + 1} evidence"),
         ):
             if alternative not in used_keys:
                 candidate = alternative
                 break
     used_keys.add(candidate)
     return candidate
+
+
+def _chunk_key(chunk: dict) -> str:
+    return hashlib.md5(str(chunk.get("content", "")).encode("utf-8", errors="replace")).hexdigest()
+
+
+def _merge_stream_patch(state: dict, patch: dict) -> dict:
+    merged = dict(state)
+    for key, value in patch.items():
+        if key in {"known_keywords", "sources", "seen_chunk_keys", "used_query_keys"}:
+            merged[key] = _merge_unique_list(merged.get(key, []), value)
+        elif key in {"evidence", "evidence_details"}:
+            merged[key] = _merge_evidence_dict(merged.get(key, {}), value)
+        elif key == "slot_status":
+            merged[key] = _merge_dict_overwrite(merged.get(key, {}), value)
+        elif key in {"used_queries", "steps_json", "chunks_by_query_json", "messages", "_batch_evidence_flags"}:
+            merged[key] = list(merged.get(key, [])) + list(value or [])
+        elif key in {"search_count", "llm_call_count"}:
+            merged[key] = int(merged.get(key, 0) or 0) + int(value or 0)
+        else:
+            merged[key] = value
+    return merged
 
 
 def _graph_to_rs(state: ResearchGraphState) -> ResearchState:
@@ -451,7 +429,6 @@ def _graph_to_rs(state: ResearchGraphState) -> ResearchState:
         evidence={slot: list(notes) for slot, notes in state["evidence"].items()},
         evidence_details={slot: list(notes) for slot, notes in state.get("evidence_details", {}).items()},
         sources=list(state["sources"]),
-        steps=[],
         last_reflection=state.get("last_reflection", ""),
         next_search_angle=state.get("next_search_angle", ""),
         suggested_query_terms=list(state.get("suggested_query_terms", [])),
@@ -459,212 +436,141 @@ def _graph_to_rs(state: ResearchGraphState) -> ResearchState:
     )
 
 
-def _rs_to_patch(rs: ResearchState) -> dict:
-    return {
-        "search_count": rs.search_count,
-        "consecutive_no_new": rs.consecutive_no_new,
-        "verification_done": rs.verification_done,
-        "known_keywords": rs.known_keywords,
-        "used_queries": rs.used_queries,
-        "slot_status": rs.slot_status,
-        "evidence": rs.evidence,
-        "evidence_details": rs.evidence_details,
-        "sources": rs.sources,
-        "last_reflection": rs.last_reflection,
-        "next_search_angle": rs.next_search_angle,
-        "suggested_query_terms": rs.suggested_query_terms,
-        "avoid_query_terms": rs.avoid_query_terms,
-    }
-
-
 def _tool_result_content(chunks: list[dict]) -> str:
     return json.dumps(
         {
-            "results": [
+            "result_count": len(chunks),
+            "chunks": [
                 {
-                    "filename": chunk.get("filename", ""),
+                    "filename": chunk.get("filename"),
                     "page": chunk.get("page"),
                     "page_end": chunk.get("page_end"),
                     "section": chunk.get("section"),
                     "content": str(chunk.get("content", ""))[:_TRACE_CHUNK_LIMIT],
                 }
                 for chunk in chunks[:_TRACE_CHUNKS_PER_QUERY]
-            ]
+            ],
         },
         ensure_ascii=False,
     )
 
 
-async def planner_node(state: ResearchGraphState, config: RunnableConfig) -> dict:
+@observe(as_type="chain", name="orchestrator", capture_input=False, capture_output=False)
+async def orchestrator_node(state: ResearchGraphState, config: RunnableConfig) -> dict:
     llm = config["configurable"]["llm"]
     on_stage = config["configurable"].get("on_stage")
-
     rs = _graph_to_rs(state)
-    is_verification = _ready_for_verification(state, rs)
-    scheduled_slot = _next_coverage_slot(state, rs)
+    counts = _slot_search_counts(state)
+    candidates = get_candidate_slots(state, rs, counts, _per_slot_cap(state))
+    _safe_update_current_observation(
+        input={
+            "coverage_status": _coverage_status_for_trace(state),
+            "candidate_slots": candidates,
+            "slot_search_counts": counts,
+            "search_count": state.get("search_count", 0),
+        }
+    )
+    if not candidates:
+        _safe_update_current_observation(output={"batch_plan": [], "rationale": "no candidates"})
+        return {"batch_plan": []}
+    decision = await decide_next_batch(llm, rs, candidates)
+    batch_plan = [
+        {"slot": item.slot_id, "hint": item.hint}
+        for item in decision.slots[:3]
+        if item.slot_id in candidates
+    ]
+    if on_stage and batch_plan:
+        try:
+            labels = ", ".join(_slot_label(state, item["slot"]) for item in batch_plan)
+            on_stage(f"批次派工：{labels}")
+        except Exception:
+            pass
+    _safe_update_current_observation(output={"batch_plan": batch_plan, "rationale": decision.rationale})
+    return {"batch_plan": batch_plan, "llm_call_count": 1}
+
+
+@observe(as_type="chain", name="slot_worker", capture_input=False, capture_output=False)
+async def slot_worker_node(state: WorkerState, config: RunnableConfig) -> dict:
+    llm = config["configurable"]["llm"]
+    on_stage = config["configurable"].get("on_stage")
+    rs = _graph_to_rs(state)
+    slot = state["worker_slot"]
+    hint = state.get("worker_hint", "")
+    round_index = int(state.get("search_count", 0)) + 1
+    is_verification = _ready_for_verification(state, rs) and slot == rs.weakest_slot()
+    _safe_update_current_observation(
+        input={
+            "round": round_index,
+            "slot": slot,
+            "hint": hint,
+            "coverage_status": _coverage_status_for_trace(state),
+            "evidence_counts": _evidence_counts(state),
+        }
+    )
 
     try:
-        decision = await plan_next_query(llm, rs)
+        decision = await plan_query_for_slot(llm, rs, slot, hint)
     except Exception as exc:
-        logger.warning("planner_node LLM failed: %s", exc)
-        decision = _fallback_decision(rs)
-
+        logger.warning("slot_worker planner failed for %s: %s", slot, exc)
+        decision = build_slot_decision(rs, slot)
+    decision = _force_decision_slot(decision, rs, slot)
+    if hint:
+        decision = decision.model_copy(update={"keyword_query": _normalize_query(hint)})
+    decision = _force_next_angle_if_stalled(decision, state)
     if is_verification:
-        weakest = rs.weakest_slot()
-        verification_query = _verification_query(rs, weakest)
-        label = rs.coverage_label(weakest)
-        decision = decision.model_copy(
-            update={
-                "next_slot": weakest,
-                "keyword_query": verification_query or decision.keyword_query,
-                "display_intent": _verification_display_intent(rs, weakest),
-                "section_terms": _verification_section_terms(rs, weakest),
-                "thought": f"所有必要檢索項目已至少嘗試一次，現在補強「{label}」的薄弱證據。",
-                "rationale": f"所有 required 檢索項目已至少嘗試，補一次最薄弱的「{label}」證據。",
-                "use_hyde": should_use_hyde(rs, weakest, requested=decision.use_hyde),
-            }
-        )
-
-    if not is_verification and scheduled_slot:
-        decision = _force_decision_slot(decision, rs, scheduled_slot)
-
+        decision = decision.model_copy(update={
+            "keyword_query": _verification_query(rs, slot) or decision.keyword_query,
+            "display_intent": _verification_display_intent(rs, slot),
+            "section_terms": _verification_section_terms(rs, slot),
+            "thought": f"Verification pass for {rs.coverage_label(slot)}.",
+            "rationale": f"Verify weakest slot {rs.coverage_label(slot)}.",
+            "use_hyde": should_use_hyde(rs, slot, requested=decision.use_hyde),
+        })
     decision = _force_unique_decision(decision, rs)
-    used_keys: set[str] = set(state["used_query_keys"])
-    final_query = _reserve_query(decision.keyword_query, used_keys, decision.next_slot, state["search_count"])
+    used_keys: set[str] = set(state.get("used_query_keys", []))
+    final_query = _reserve_query(decision.keyword_query, used_keys, slot, state.get("search_count", 0))
     decision = decision.model_copy(update={"keyword_query": final_query})
-
-    tool_call_id = f"research_search_{state['search_count'] + 1}"
+    tool_call_id = f"research_search_{slot}_{state.get('search_count', 0) + 1}"
 
     if on_stage:
         try:
-            on_stage(f"規劃搜尋（第 {state['search_count'] + 1} 輪）：{decision.display_intent}")
+            on_stage(f"搜尋 {_slot_label(state, slot)}：{decision.display_intent}")
         except Exception:
             pass
 
-    current_step = {
-        "slot": decision.next_slot,
-        "query": final_query,
-        "keyword_query": final_query,
-        "semantic_query": decision.semantic_query,
-        "section_terms": decision.section_terms,
-        "use_hyde": decision.use_hyde,
-        "display_intent": decision.display_intent,
-        "tool_call_id": tool_call_id,
-        "thought": decision.thought,
-        "expected_evidence": decision.expected_evidence,
-        "planner_rationale": decision.rationale,
-        "is_verification": is_verification,
-    }
-
-    return {
-        "current_step": current_step,
-        "used_query_keys": list(used_keys),
-        "messages": [{
-            "type": "ai",
-            "content": decision.thought or decision.rationale,
-            "tool_calls": [{
-                "name": "search_report",
-                "id": tool_call_id,
-                "args": {
-                    "keyword_query": final_query,
-                    "semantic_query": decision.semantic_query,
-                    "section_terms": decision.section_terms,
-                    "use_hyde": decision.use_hyde,
-                    "slot": decision.next_slot,
-                    "display_intent": decision.display_intent,
-                    "expected_evidence": decision.expected_evidence,
-                },
-            }],
-        }],
-        "llm_call_count": state["llm_call_count"] + 1,
-    }
-
-
-async def retriever_node(state: ResearchGraphState, config: RunnableConfig) -> dict:
-    step = state["current_step"]
-    seen: set[str] = set(state["seen_chunk_keys"])
-
+    seen: set[str] = set(state.get("seen_chunk_keys", []))
     chunks, sources = await retrieve_evidence(
-        query=step.get("query", ""),
-        display_intent=step.get("display_intent", ""),
-        keyword_query=step.get("keyword_query", ""),
-        semantic_query=step.get("semantic_query", ""),
-        section_terms=step.get("section_terms", []),
-        use_hyde=bool(step.get("use_hyde", False)),
+        query=final_query,
+        display_intent=decision.display_intent,
+        keyword_query=final_query,
+        semantic_query=decision.semantic_query,
+        section_terms=decision.section_terms,
+        use_hyde=bool(decision.use_hyde),
         document_ids=state["document_ids"],
         seen_chunks=seen,
         on_stage=None,
-        search_count=state["search_count"],
-        consecutive_empty=state["consecutive_no_new"],
+        search_count=state.get("search_count", 0),
+        consecutive_empty=state.get("consecutive_no_new", 0),
         max_searches=_hard_max_searches(state),
         max_consecutive_empty=state["max_consecutive_no_new"],
-        mode=str(state["metadata"].get("mode") or "research"),
+        task_type=str(state.get("metadata", {}).get("task_type") or "research"),
+        route_intent=str(state.get("metadata", {}).get("route_intent") or "research"),
     )
+    seed_keywords = _seed_keywords("\n".join(str(chunk.get("content", ""))[:1200] for chunk in chunks))
 
-    merged_sources = list(state["sources"])
-    for source in sources:
-        if source not in merged_sources:
-            merged_sources.append(source)
-
-    chunk_text = "\n".join(str(chunk.get("content", ""))[:1200] for chunk in chunks)
-    new_keywords = list(state["known_keywords"])
-    for keyword in _seed_keywords(chunk_text):
-        if keyword not in new_keywords:
-            new_keywords.append(keyword)
-    new_keywords = _cap_list(new_keywords, _MAX_STATE_KEYWORDS)
-
-    used_queries = list(state["used_queries"])
-    query = step.get("query", "")
-    if query and query not in used_queries:
-        used_queries.append(query)
-
-    return {
-        "current_chunks": chunks,
-        "seen_chunk_keys": list(seen),
-        "sources": merged_sources,
-        "known_keywords": new_keywords,
-        "used_queries": used_queries,
-        "messages": [{
-            "type": "tool",
-            "name": "search_report",
-            "tool_call_id": step.get("tool_call_id", ""),
-            "content": _tool_result_content(chunks),
-        }],
-    }
-
-
-async def reflector_node(state: ResearchGraphState, config: RunnableConfig) -> dict:
-    llm = config["configurable"]["llm"]
-
-    rs = _graph_to_rs(state)
-    step = state["current_step"]
-    chunks = state["current_chunks"]
-    slot = step.get("slot", "")
-    query = step.get("query", "")
-
-    # Snapshot before apply so we can detect real evidence progress vs keyword-only updates
     status_before = dict(rs.slot_status)
     evidence_counts_before = {k: len(v) for k, v in rs.evidence.items()}
-
-    reflection = await reflect_results(llm, state=rs, slot=slot, query=query, chunks=chunks)
+    details_counts_before = {k: len(v) for k, v in rs.evidence_details.items()}
+    known_before = set(rs.known_keywords)
+    reflection = await reflect_results(llm, state=rs, slot=slot, query=final_query, chunks=chunks)
     apply_reflection(rs, reflection)
-
-    # Only reset consecutive_no_new when slot status improved OR evidence notes were added.
-    # Keyword-only updates (new_keywords) are too weak a signal.
     evidence_progress = bool(chunks) and (
         rs.slot_status != status_before
-        or any(
-            len(rs.evidence.get(k, [])) > evidence_counts_before.get(k, 0)
-            for k in rs.evidence
-        )
+        or any(len(rs.evidence.get(k, [])) > evidence_counts_before.get(k, 0) for k in rs.evidence)
     )
-    useful = evidence_progress
-    if useful:
-        consecutive_no_new = 0
-        same_slot_no_new = 0
-    else:
-        consecutive_no_new = state["consecutive_no_new"] + 1
-        prior_same_no_new = 0
+
+    prior_same_no_new = 0
+    if not evidence_progress:
         for previous in reversed(state.get("steps_json", [])):
             if previous.get("slot") != slot:
                 break
@@ -672,34 +578,28 @@ async def reflector_node(state: ResearchGraphState, config: RunnableConfig) -> d
                 prior_same_no_new += 1
             else:
                 break
-        same_slot_no_new = prior_same_no_new + 1
+    same_slot_no_new = 0 if evidence_progress else prior_same_no_new + 1
 
     slot_status = dict(rs.slot_status)
     if same_slot_no_new >= state["max_consecutive_no_new"]:
         slot_status[slot] = "EXHAUSTED"
-        # Do NOT reset consecutive_no_new here: EXHAUSTED means we failed to
-        # fill the slot, not that we found new evidence. Resetting would hide
-        # the fact that no useful content exists and keep the loop running.
-
     current_slot_count = _slot_search_counts(state).get(slot, 0) + 1
     if current_slot_count >= _per_slot_cap(state) and slot_status.get(slot) != "FILLED":
         slot_status[slot] = "EXHAUSTED"
-    # Only reset consecutive_no_new on FILLED (genuine progress), not EXHAUSTED.
-    if slot_status.get(slot) == "FILLED":
-        consecutive_no_new = 0
 
     updated_slots = [update.item_id for update in reflection.updates if update.notes]
     step_dict = {
         "slot": slot,
-        "query": query,
-        "display_intent": step.get("display_intent", ""),
-        "keyword_query": step.get("keyword_query", query),
-        "semantic_query": step.get("semantic_query", ""),
-        "section_terms": step.get("section_terms", []),
-        "use_hyde": bool(step.get("use_hyde", False)),
-        "thought": step.get("thought", ""),
-        "expected_evidence": step.get("expected_evidence", ""),
-        "planner_rationale": step.get("planner_rationale", ""),
+        "query": final_query,
+        "display_intent": decision.display_intent,
+        "keyword_query": final_query,
+        "semantic_query": decision.semantic_query,
+        "section_terms": decision.section_terms,
+        "use_hyde": bool(decision.use_hyde),
+        "thought": decision.thought,
+        "expected_evidence": decision.expected_evidence,
+        "planner_rationale": decision.rationale,
+        "is_verification": is_verification,
         "quality": reflection.quality,
         "new_keywords": reflection.new_keywords,
         "note": reflection.rationale,
@@ -709,122 +609,199 @@ async def reflector_node(state: ResearchGraphState, config: RunnableConfig) -> d
         "updated_slots": updated_slots,
     }
     cbq_entry = {"step": step_dict, "chunks": _compact_chunks(chunks)}
-
-    reflector_message = {
-        "type": "ai",
-        "content": (
-            f"整理證據（{_slot_label(state, slot)}）：{reflection.quality}。"
-            f"{reflection.rationale} 缺口：{reflection.missing_gap} "
-            f"下一輪方向：{reflection.next_search_angle}"
-        ),
+    evidence_delta = {
+        item_id: rs.evidence.get(item_id, [])[evidence_counts_before.get(item_id, 0):]
+        for item_id in rs.evidence
+        if len(rs.evidence.get(item_id, [])) > evidence_counts_before.get(item_id, 0)
+    }
+    details_delta = {
+        item_id: rs.evidence_details.get(item_id, [])[details_counts_before.get(item_id, 0):]
+        for item_id in rs.evidence_details
+        if len(rs.evidence_details.get(item_id, [])) > details_counts_before.get(item_id, 0)
+    }
+    status_delta = {item_id: slot_status.get(item_id, "NOT_FILLED") for item_id in {slot, *updated_slots}}
+    new_keywords = [
+        keyword
+        for keyword in [*seed_keywords, *rs.known_keywords]
+        if keyword and keyword not in known_before
+    ]
+    _safe_update_current_observation(
+        output={
+            "round": round_index,
+            "slot": slot,
+            "query": final_query,
+            "chunk_count": len(chunks),
+            "quality": reflection.quality,
+            "updated_slots": updated_slots,
+            "missing_gap": reflection.missing_gap,
+            "next_search_angle": reflection.next_search_angle,
+            "slot_status": status_delta,
+            "found_new_evidence": evidence_progress,
+            "sources": sources[:5],
+        }
+    )
+    return {
+        "slot_status": status_delta,
+        "evidence": _compact_evidence(evidence_delta, limit=12),
+        "evidence_details": _compact_evidence_details(details_delta, limit=12),
+        "sources": sources,
+        "known_keywords": _cap_list(new_keywords, _MAX_STATE_KEYWORDS),
+        "used_queries": [final_query],
+        "used_query_keys": [final_query],
+        "seen_chunk_keys": [_chunk_key(chunk) for chunk in chunks],
+        "last_reflection": reflection.rationale,
+        "next_search_angle": reflection.next_search_angle,
+        "suggested_query_terms": [term.strip() for term in reflection.suggested_query_terms if term.strip()],
+        "avoid_query_terms": [term.strip() for term in reflection.avoid_query_terms if term.strip()],
+        "search_count": 1,
+        "llm_call_count": 2,
+        "steps_json": [step_dict],
+        "chunks_by_query_json": [cbq_entry],
+        "_batch_evidence_flags": [bool(evidence_progress or slot_status.get(slot) == "FILLED")],
+        "messages": [
+            {
+                "type": "ai",
+                "content": decision.thought or decision.rationale,
+                "tool_calls": [{
+                    "name": "search_report",
+                    "id": tool_call_id,
+                    "args": {
+                        "keyword_query": final_query,
+                        "semantic_query": decision.semantic_query,
+                        "section_terms": decision.section_terms,
+                        "use_hyde": decision.use_hyde,
+                        "slot": slot,
+                        "display_intent": decision.display_intent,
+                        "expected_evidence": decision.expected_evidence,
+                    },
+                }],
+            },
+            {
+                "type": "tool",
+                "name": "search_report",
+                "tool_call_id": tool_call_id,
+                "content": _tool_result_content(chunks),
+            },
+            {
+                "type": "ai",
+                "content": f"slot={slot} quality={reflection.quality}; gap={reflection.missing_gap}; next={reflection.next_search_angle}",
+            },
+        ],
     }
 
-    patch = _rs_to_patch(rs)
-    patch["known_keywords"] = _cap_list(patch.get("known_keywords", []), _MAX_STATE_KEYWORDS)
-    patch["evidence"] = _compact_evidence(patch.get("evidence", {}), limit=12)
-    patch["evidence_details"] = _compact_evidence_details(patch.get("evidence_details", {}), limit=12)
-    patch.update({
-        "slot_status": slot_status,
-        "consecutive_no_new": consecutive_no_new,
-        "verification_done": state["verification_done"] or bool(step.get("is_verification")),
-        "search_count": state["search_count"] + 1,
-        "llm_call_count": state["llm_call_count"] + 1,
-        "steps_json": list(state["steps_json"]) + [step_dict],
-        "chunks_by_query_json": list(state["chunks_by_query_json"]) + [cbq_entry],
-        "messages": [reflector_message],
-    })
-    return patch
+
+def batch_complete_node(state: ResearchGraphState) -> dict:
+    flags = state.get("_batch_evidence_flags", [])
+    found = any(flags)
+    rs = _graph_to_rs(state)
+    verification_done = state["verification_done"] or (
+        not _required_slots_without_direct_search(state, rs)
+        and rs.ready_for_verification()
+    )
+    return {
+        "consecutive_no_new": 0 if found else state["consecutive_no_new"] + 1,
+        "verification_done": verification_done,
+        "batch_plan": [],
+        "_batch_evidence_flags": _FLAGS_CLEAR,
+    }
 
 
+@observe(as_type="chain", name="writer", capture_input=False, capture_output=False)
 async def writer_node(state: ResearchGraphState, config: RunnableConfig) -> dict:
     llm = config["configurable"]["llm"]
     on_stage = config["configurable"].get("on_stage")
-
     if on_stage:
         try:
-            on_stage("撰寫摘要")
+            on_stage("產生研究整理")
         except Exception:
             pass
-
     rs = _graph_to_rs(state)
+    _safe_update_current_observation(
+        input={
+            "coverage_status": _coverage_status_for_trace(state),
+            "evidence_counts": _evidence_counts(state),
+            "source_count": len(state.get("sources", [])),
+            "search_count": state.get("search_count", 0),
+        }
+    )
     writeup: ResearchWriteup = await write_summary(llm, rs)
-
-    # Quality gate: if answer is suspiciously short or missing required slot labels,
-    # fall back to an evidence-stitched answer rather than surfacing a garbled LLM output.
-    required_labels = {rs.coverage_label(s) for s in rs.required_coverage_ids() if rs.coverage_label(s)}
+    required_labels = {rs.coverage_label(slot) for slot in rs.required_coverage_ids() if rs.coverage_label(slot)}
     answer_ok = bool(
         writeup.answer
         and len(writeup.answer.strip()) >= 150
         and all(label in writeup.answer for label in required_labels)
     )
     if not answer_ok:
-        logger.warning("writer_node: answer failed quality gate (len=%d), using evidence fallback",
-                       len(writeup.answer) if writeup.answer else 0)
+        logger.warning("writer_node: answer failed quality gate (len=%d), using evidence fallback", len(writeup.answer or ""))
         from .writer import _fallback_writeup
-        writeup = _fallback_writeup(rs)
 
+        writeup = _fallback_writeup(rs)
     final_sources = writeup.sources if writeup.sources else rs.sources[:5]
     final_state = dict(state)
-    final_state.update({
-        "final_answer": writeup.answer,
-        "final_sources": final_sources,
-    })
+    final_state.update({"final_answer": writeup.answer, "final_sources": final_sources})
+    _safe_update_current_observation(
+        output={
+            "answer_preview": writeup.answer[:600],
+            "answer_length": len(writeup.answer),
+            "sources": final_sources[:8],
+            "source_count": len(final_sources),
+            "used_fallback": not answer_ok,
+        }
+    )
     return {
         "final_answer": writeup.answer,
         "final_sources": final_sources,
         "messages": [{"type": "ai", "content": writeup.answer, "sources": final_sources}],
-        "known_keywords": _cap_list(list(state.get("known_keywords", [])), _MAX_STATE_KEYWORDS),
-        "evidence": _compact_evidence(state.get("evidence", {}), limit=12),
-        "evidence_details": _compact_evidence_details(state.get("evidence_details", {}), limit=12),
-        # clear in-flight fields
-        "current_step": {},
-        "current_chunks": [],
-        "seen_chunk_keys": [],
-        "used_query_keys": [],
-        "steps_json": _public_steps(final_state),
-        "chunks_by_query_json": [],
-        "suggested_query_terms": _cap_list(list(state.get("suggested_query_terms", [])), 12),
-        "avoid_query_terms": _cap_list(list(state.get("avoid_query_terms", [])), 12),
         "trace_summary": _trace_summary(final_state),
-        "llm_call_count": state["llm_call_count"] + 1,
+        "llm_call_count": 1,
     }
 
 
-def should_continue(state: ResearchGraphState) -> Literal["planner", "writer"]:
+def should_continue(state: ResearchGraphState) -> Literal["orchestrator", "writer"]:
     if state["search_count"] >= _hard_max_searches(state):
         return "writer"
     rs = _graph_to_rs(state)
     min_ev = state.get("min_evidence_per_slot", 0)
     if rs.done(min_evidence_per_slot=min_ev):
         return "writer"
-    # Allow one verification pass before applying consecutive_no_new gate, so
-    # that at least one follow-up search runs on the weakest slot.
     if not state["verification_done"] and _ready_for_verification(state, rs):
-        return "planner"
-    # If consecutive rounds produced nothing new, document content is exhausted.
-    max_no_new = state.get("max_consecutive_no_new", 2)
+        return "orchestrator"
+    max_no_new = state.get("max_consecutive_no_new", 4)
     if state["consecutive_no_new"] >= max_no_new:
+        if not _required_slots_without_direct_search(state, rs):
+            return "writer"
+    if not get_candidate_slots(state, rs, _slot_search_counts(state), _per_slot_cap(state)):
         return "writer"
-    if _next_coverage_slot(state, rs) is None:
+    return "orchestrator"
+
+
+def assign_workers(state: ResearchGraphState):
+    batch_plan = state.get("batch_plan", [])
+    if not batch_plan:
         return "writer"
-    return "planner"
+    return [
+        Send(
+            "slot_worker",
+            {
+                **state,
+                "worker_slot": item["slot"],
+                "worker_hint": item.get("hint", ""),
+            },
+        )
+        for item in batch_plan
+    ]
 
 
 def _build() -> object:
     builder = StateGraph(ResearchGraphState)
-    builder.add_node("planner", planner_node)
-    builder.add_node("search_report", retriever_node)
-    builder.add_node("reflector", reflector_node)
-    builder.add_node("writer", writer_node)
-
-    builder.add_edge(START, "planner")
-    builder.add_edge("planner", "search_report")
-    builder.add_edge("search_report", "reflector")
-    builder.add_conditional_edges(
-        "reflector",
-        should_continue,
-        {"planner": "planner", "writer": "writer"},
-    )
+    builder.add_node("orchestrator", orchestrator_node)
+    builder.add_node("slot_worker", slot_worker_node, retry_policy=RetryPolicy(max_attempts=3, initial_interval=1.0))
+    builder.add_node("batch_complete", batch_complete_node)
+    builder.add_node("writer", writer_node, retry_policy=RetryPolicy(max_attempts=2, initial_interval=2.0))
+    builder.add_edge(START, "orchestrator")
+    builder.add_conditional_edges("orchestrator", assign_workers, ["slot_worker", "writer"])
+    builder.add_edge("slot_worker", "batch_complete")
+    builder.add_conditional_edges("batch_complete", should_continue, {"orchestrator": "orchestrator", "writer": "writer"})
     builder.add_edge("writer", END)
     return builder.compile(checkpointer=False)
 
@@ -849,7 +826,6 @@ def final_rs_from_result(result: ResearchGraphState) -> ResearchState:
         evidence=result["evidence"],
         evidence_details=result.get("evidence_details", {}),
         sources=result["sources"],
-        steps=[],
         last_reflection=result.get("last_reflection", ""),
         next_search_angle=result.get("next_search_angle", ""),
         suggested_query_terms=result.get("suggested_query_terms", []),

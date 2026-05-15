@@ -6,9 +6,10 @@ import re
 from typing import Literal
 
 from langchain_core.messages import HumanMessage
+from observability import ainvoke_traced_generation
 from pydantic import BaseModel, ConfigDict, Field
 
-from .runtime_prompts import research_node_system_messages
+from .runtime_prompts import research_node_stack_metadata, research_node_system_messages
 from .state import ResearchState, SlotStatus
 
 logger = logging.getLogger(__name__)
@@ -137,9 +138,8 @@ def _is_limitation_slot(slot: str) -> bool:
 def _looks_like_prior_work_limitation(text: str) -> bool:
     has_limitation_word = any(term in text for term in ("不足", "未能", "未詳述", "未仔細", "較少", "薄弱", "殊為可惜"))
     has_prior_marker = any(term in text for term in (
-        "前人", "學者", "文獻回顧", "近代", "康氏", "周文", "趙氏", "劉氏",
-        "王氏", "聞一多", "研究者", "其研究", "該文", "該論文",
-    ))
+        "前人", "學者", "文獻回顧", "近代", "研究者", "其研究", "該文", "該論文",
+    )) or bool(re.search(r'[一-鿿]{1,2}氏', text))
     has_this_work_marker = any(term in text for term in (
         "本文", "本研究", "本計畫", "本論文", "筆者", "作者指出本研究",
     ))
@@ -233,13 +233,13 @@ def _cross_slot_updates(
         if not slot or slot in by_slot:
             continue
         score = _slot_match_score(item, slot, combined_text)
-        if slot != target_slot and score < 2:
+        if slot != target_slot and score < 3:
             continue
         notes: list[str] = []
         evidence: list[EvidenceItem] = []
         for chunk in chunks[:4]:
             text = str(chunk.get("content", ""))
-            if _slot_match_score(item, slot, text) >= 1:
+            if _slot_match_score(item, slot, text) >= 2:
                 note = _chunk_note(chunk)
                 if note and note not in notes:
                     notes.append(note)
@@ -281,19 +281,28 @@ async def reflect_results(
     ]
     try:
         reflector = llm.with_structured_output(Reflection, strict=True)
-        reflection: Reflection = await reflector.ainvoke(
-            [
-                *research_node_system_messages("research_reflector"),
-                HumanMessage(
-                    content="\n\n".join([
-                        f"本輪 query：{query}",
-                        f"目標 coverage item：{slot}",
-                        f"目前研究狀態：\n{json.dumps(state.as_prompt_dict(), ensure_ascii=False)}",
-                        f"搜尋片段（最多 4 筆）：\n{json.dumps(compact_chunks, ensure_ascii=False)}",
-                        "請列出所有被片段直接支撐的 coverage item 更新。",
-                    ])
-                ),
-            ]
+        messages = [
+            *research_node_system_messages("research_reflector"),
+            HumanMessage(
+                content="\n\n".join([
+                    f"本輪 query：{query}",
+                    f"目標 coverage item：{slot}",
+                    f"目前研究狀態：\n{json.dumps(state.as_prompt_dict(), ensure_ascii=False)}",
+                    f"搜尋片段（最多 4 筆）：\n{json.dumps(compact_chunks, ensure_ascii=False)}",
+                    "請列出所有被片段直接支撐的 coverage item 更新。",
+                ])
+            ),
+        ]
+        reflection: Reflection = await ainvoke_traced_generation(
+            reflector,
+            messages,
+            prompt_name="research_reflector",
+            metadata={
+                "task_type": "research_task",
+                "route_intent": "research",
+                "agent_name": "research_agent",
+                **research_node_stack_metadata("research_reflector"),
+            },
         )
     except Exception as exc:
         logger.warning("reflect_results failed (slot=%s, query=%r): %s", slot, query[:60], exc)

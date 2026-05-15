@@ -31,22 +31,54 @@ def research_node_system_messages(node_prompt_name: str) -> list[SystemMessage]:
 
 def research_base_stack_metadata() -> dict:
     prompt = resolve(RESEARCH_CORE_PROMPT_NAME)
+    prompt_json = {
+        "name": prompt.name,
+        "base_name": prompt.base_name,
+        "source_name": prompt.source_name,
+        "version": prompt.version,
+    }
+    stack_json = json.dumps([prompt_json], ensure_ascii=False)
     return {
         "prompt_stack_name": RESEARCH_BASE_STACK,
-        "prompt_stack_json": json.dumps(
-            [
-                {
-                    "name": prompt.name,
-                    "base_name": prompt.base_name,
-                    "source_name": prompt.source_name,
-                    "version": prompt.version,
-                }
-            ],
-            ensure_ascii=False,
-        ),
+        "prompt_stack_json": stack_json,
+        "primary_prompt_json": json.dumps(prompt_json, ensure_ascii=False),
+        "workflow_prompts_json": stack_json,
         "prompt_stack_tokens": max(1, len(prompt.content) // 4),
         "base_prompt_name": prompt.name,
         "base_prompt_hash": prompt.version,
         "prompt_name": prompt.name,
         "prompt_version": prompt.version,
+    }
+
+
+def research_node_stack_metadata(node_prompt_name: str) -> dict:
+    core = resolve(RESEARCH_CORE_PROMPT_NAME)
+    node = resolve(node_prompt_name)
+    prompts = [core, node]
+    prompt_json = [
+        {
+            "name": prompt.name,
+            "base_name": prompt.base_name,
+            "source_name": prompt.source_name,
+            "version": prompt.version,
+        }
+        for prompt in prompts
+    ]
+    primary_prompt_json = {
+        "name": node.name,
+        "base_name": node.base_name,
+        "source_name": node.source_name,
+        "version": node.version,
+    }
+    stack_json = json.dumps(prompt_json, ensure_ascii=False)
+    return {
+        "prompt_stack_name": "research_runtime",
+        "prompt_stack_json": stack_json,
+        "primary_prompt_json": json.dumps(primary_prompt_json, ensure_ascii=False),
+        "workflow_prompts_json": stack_json,
+        "prompt_stack_tokens": max(1, len("\n".join(prompt.content for prompt in prompts)) // 4),
+        "base_prompt_name": core.name,
+        "base_prompt_hash": core.version,
+        "prompt_name": node.name,
+        "prompt_version": node.version,
     }

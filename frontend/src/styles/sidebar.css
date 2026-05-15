@@ -1,0 +1,313 @@
+.app-layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 12% 16%, rgba(201, 240, 229, 0.88) 0%, rgba(201, 240, 229, 0) 26%),
+    radial-gradient(circle at 86% 16%, rgba(255, 236, 200, 0.82) 0%, rgba(255, 236, 200, 0) 24%),
+    linear-gradient(180deg, #fbfdff 0%, #edf4ff 100%);
+  color: #334155;
+}
+
+.app-layout.loading-center {
+  display: grid;
+  place-items: center;
+}
+
+.sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  margin: 14px 0 14px 14px;
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(207, 219, 232, 0.9);
+  border-radius: 24px;
+  backdrop-filter: blur(18px);
+  box-shadow: 0 14px 32px rgba(148, 163, 184, 0.18);
+  transition: width 0.2s ease, margin 0.2s ease;
+}
+
+.sidebar.sidebar-collapsed {
+  width: 68px;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 4px 10px;
+  border-bottom: 1px solid rgba(222, 230, 240, 0.9);
+}
+
+.sidebar-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #163257;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.sidebar-toggle,
+.new-chat-icon-btn,
+.conv-delete-btn,
+.sidebar-search-clear,
+.topbar-icon-btn,
+.input-icon-btn,
+.input-attachment-remove,
+.doc-delete-btn,
+.pdf-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.sidebar-toggle,
+.new-chat-icon-btn,
+.topbar-icon-btn,
+.input-icon-btn,
+.pdf-close-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+}
+
+.sidebar-toggle:hover,
+.new-chat-icon-btn:hover:not(:disabled),
+.topbar-icon-btn:hover,
+.input-icon-btn:hover:not(:disabled),
+.pdf-close-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.92);
+  color: #19376b;
+  border-color: rgba(191, 209, 235, 0.95);
+  box-shadow: 0 8px 18px rgba(148, 163, 184, 0.14);
+}
+
+.new-chat-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(207, 219, 232, 0.92);
+  background: rgba(255, 255, 255, 0.78);
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
+}
+
+.new-chat-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(191, 209, 235, 0.95);
+  color: #163257;
+  box-shadow: 0 10px 22px rgba(148, 163, 184, 0.14);
+}
+
+.new-chat-btn:disabled,
+.new-chat-icon-btn:disabled,
+.conv-delete-btn:disabled,
+.input-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.section-label {
+  padding: 4px 6px 0;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+}
+
+.sidebar-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.sidebar-search-icon {
+  position: absolute;
+  left: 14px;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.sidebar-search {
+  width: 100%;
+  height: 40px;
+  padding: 0 36px 0 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(207, 219, 232, 0.92);
+  background: rgba(255, 255, 255, 0.84);
+  color: #334155;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.sidebar-search::placeholder {
+  color: #94a3b8;
+}
+
+.sidebar-search:focus {
+  border-color: #a9c7ff;
+  box-shadow: 0 0 0 4px rgba(186, 211, 255, 0.28);
+  background: #fff;
+}
+
+.sidebar-search-clear {
+  position: absolute;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+}
+
+.conv-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: #c6d0dd transparent;
+}
+
+.conv-list::-webkit-scrollbar { width: 6px; }
+.conv-list::-webkit-scrollbar-thumb { background: #c6d0dd; border-radius: 999px; }
+
+.conv-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(222, 230, 240, 0.9);
+  background: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.conv-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(191, 209, 235, 0.95);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 12px 24px rgba(148, 163, 184, 0.12);
+}
+
+.conv-item.selected {
+  border-color: #adc8ff;
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(238,244,255,0.92));
+  box-shadow: 0 14px 28px rgba(148, 163, 184, 0.14);
+}
+
+.conv-icon {
+  flex-shrink: 0;
+  color: #6b7f97;
+}
+
+.conv-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.conv-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #163257;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conv-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.conv-dot {
+  color: #c2cfdd;
+}
+
+.conv-delete-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  color: #94a3b8;
+  opacity: 0;
+}
+
+.conv-item:hover .conv-delete-btn {
+  opacity: 1;
+}
+
+.conv-delete-btn:hover:not(:disabled),
+.doc-delete-btn:hover:not(:disabled),
+.input-attachment-remove:hover {
+  color: #d44e39;
+  background: #fff0eb;
+  border-color: rgba(250, 201, 192, 0.9);
+}
+
+.conv-confirm-row,
+.doc-confirm-row,
+.doc-action-btns {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.conv-confirm-yes, .conv-confirm-no,
+.doc-confirm-yes, .doc-confirm-no {
+  border: none;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.conv-confirm-yes, .doc-confirm-yes {
+  background: #ffebe9;
+  color: #c2410c;
+}
+
+.conv-confirm-no, .doc-confirm-no {
+  background: #eef2f7;
+  color: #64748b;
+}
+
+.doc-empty {
+  display: grid;
+  place-items: center;
+  padding: 18px 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+

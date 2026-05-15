@@ -1,6 +1,6 @@
 import asyncio
 
-from agents.main_agent import classify_intent
+from agents.router_agent import classify_intent
 from agents.research.research_graph import (
     _hard_max_searches,
     _next_coverage_slot,
@@ -8,7 +8,7 @@ from agents.research.research_graph import (
     _verification_display_intent,
 )
 from agents.research.state import ResearchState
-from agents.research_agent import trace_metadata as summary_trace_metadata
+from agents.research import trace_metadata as summary_trace_metadata
 from agents.research.task_planner import CoverageItemModel, ResearchPlan, _clean_plan, fallback_research_plan
 from prompting.loader import PROMPT_STACKS, load_stack
 from prompting.registry import list_known_names
@@ -19,13 +19,14 @@ CANONICAL_PROMPTS = [
     "core",
     "retrieval_capability",
     "chat_mode",
-    "summary_mode",
     "summary_quality",
     "question_skill",
     "summary_structure",
     "question_generator",
     "intent_router",
+    "evaluation_agent",
     "task_planner",
+    "research_orchestrator",
     "research_planner",
     "research_reflector",
     "research_writer",
@@ -64,17 +65,17 @@ def test_router_reports_prompt_hash_version():
 
 
 def test_prompt_ab_selects_configured_variant(monkeypatch):
-    monkeypatch.setenv("PROMPT_AB_TESTS", '{"summary_task":["summary_structure"]}')
+    monkeypatch.setenv("PROMPT_AB_TESTS", '{"question_task":["question_generator"]}')
 
-    assert select("summary_task", "thread-1") == "summary_structure"
-    prompt = resolve("summary_task", "thread-1")
-    assert prompt.base_name == "summary_task"
-    assert prompt.name == "summary_structure"
-    assert prompt.version == version("summary_structure")
+    assert select("question_task", "thread-1") == "question_generator"
+    prompt = resolve("question_task", "thread-1")
+    assert prompt.base_name == "question_task"
+    assert prompt.name == "question_generator"
+    assert prompt.version == version("question_generator")
 
 
 def test_router_reports_research_runtime_prompt(monkeypatch):
-    monkeypatch.setenv("PROMPT_AB_TESTS", '{"summary_task":["summary_structure"]}')
+    monkeypatch.setenv("PROMPT_AB_TESTS", '{"question_task":["question_generator"]}')
 
     route = asyncio.run(classify_intent("summary this document", [1], thread_id="thread-1"))
 
@@ -83,8 +84,8 @@ def test_router_reports_research_runtime_prompt(monkeypatch):
     assert route.prompt_version == version("research_writer")
 
 
-def test_summary_task_ab_test_no_longer_changes_research_runtime_route(monkeypatch):
-    monkeypatch.setenv("PROMPT_AB_TESTS", '{"summary_task":["summary_quality"]}')
+def test_prompt_ab_test_no_longer_changes_research_runtime_route(monkeypatch):
+    monkeypatch.setenv("PROMPT_AB_TESTS", '{"question_task":["question_generator"]}')
 
     route = asyncio.run(classify_intent("summary this document", [1], thread_id="thread-1"))
 
@@ -102,23 +103,10 @@ def test_summary_trace_metadata_includes_prompt_stack():
     assert meta["base_prompt_hash"] == version("core")
     assert meta["task_prompt_hash"] == version("research_writer")
     assert "prompt_stack_json" in meta
+    assert "primary_prompt_json" in meta
+    assert "workflow_prompts_json" in meta
     assert isinstance(meta["prompt_stack_tokens"], int)
     assert meta["prompt_stack_tokens"] > 0
-
-
-def test_prompt_stack_loader_uses_canonical_names_and_alias_sources():
-    stack = load_stack("research_summary", "thread-1:1")
-
-    assert stack.name == "research_summary"
-    assert [prompt.base_name for prompt in stack.prompts] == [
-        "core",
-        "retrieval_capability",
-        "summary_mode",
-        "summary_quality",
-    ]
-    assert stack.prompts[1].source_name == "retrieval_capability"
-    assert stack.prompts[2].source_name == "summary_mode"
-    assert stack.metadata()["prompt_stack_name"] == "research_summary"
 
 
 def test_research_runtime_stack_lists_actual_graph_prompts():
@@ -128,11 +116,48 @@ def test_research_runtime_stack_lists_actual_graph_prompts():
     assert [prompt.base_name for prompt in stack.prompts] == [
         "core",
         "task_planner",
+        "research_orchestrator",
         "research_planner",
         "research_reflector",
         "research_writer",
     ]
     assert stack.metadata()["prompt_name"] == "research_writer"
+
+
+def test_research_node_stack_metadata_uses_node_as_primary_prompt():
+    from agents.research.runtime_prompts import research_node_stack_metadata
+
+    meta = research_node_stack_metadata("research_planner")
+    stack_json = meta["prompt_stack_json"]
+
+    assert meta["prompt_stack_name"] == "research_runtime"
+    assert meta["base_prompt_name"] == "core"
+    assert meta["prompt_name"] == "research_planner"
+    assert "research_planner" in stack_json
+    assert "research_planner" in meta["primary_prompt_json"]
+    assert meta["workflow_prompts_json"] == stack_json
+
+
+def test_evaluation_default_stack_lists_evaluation_prompt():
+    stack = load_stack("evaluation_default", "thread-1:1")
+
+    assert stack.name == "evaluation_default"
+    assert [prompt.base_name for prompt in stack.prompts] == [
+        "core",
+        "evaluation_agent",
+    ]
+    assert stack.metadata()["prompt_name"] == "evaluation_agent"
+
+
+def test_extract_step4_stack_lists_summary_quality_prompt():
+    stack = load_stack("extract_step4", "thread-1:1")
+
+    assert stack.name == "extract_step4"
+    assert [prompt.base_name for prompt in stack.prompts] == [
+        "core",
+        "summary_quality",
+    ]
+    assert stack.metadata()["prompt_name"] == "summary_quality"
 
 
 def _coverage_items():
@@ -319,4 +344,5 @@ def test_task_planner_fallback_uses_method_coverage_for_method_only_questions():
 def test_prompt_stack_loader_keeps_extract_step1_alias():
     stack = load_stack("extract_step1", "thread-1:1")
 
-    assert stack.name == "research_summary"
+    assert stack.name == "research_runtime"
+    assert stack.metadata()["prompt_name"] == "research_writer"

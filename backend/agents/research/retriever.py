@@ -29,7 +29,8 @@ async def retrieve_evidence(
     consecutive_empty: int = 0,
     max_searches: int | None = None,
     max_consecutive_empty: int | None = None,
-    mode: str | None = None,
+    task_type: str | None = None,
+    route_intent: str | None = None,
 ) -> tuple[list[dict], list[str]]:
     ctx = AgentContext(
         document_ids=document_ids,
@@ -37,7 +38,8 @@ async def retrieve_evidence(
         search_count=search_count,
         consecutive_empty=consecutive_empty,
         on_stage=on_stage,
-        mode=mode,
+        task_type=task_type,
+        route_intent=route_intent,
         max_searches=max_searches,
         max_consecutive_empty=max_consecutive_empty,
     )

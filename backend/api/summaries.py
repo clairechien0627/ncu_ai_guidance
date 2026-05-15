@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from config import settings
-from database import get_db, Document, SessionLocal
+from db import get_db, Document, SessionLocal
 from rag import process_pdf
 from services import job_service
 
@@ -76,7 +76,16 @@ async def reload_prompts():
         raise HTTPException(status_code=500, detail=str(e))
 
 _DEFAULT_BATCH_FOLDER = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "各系大專生計畫(104-114)"))
-BATCH_FOLDER = settings.batch_folder or _DEFAULT_BATCH_FOLDER
+
+def _get_batch_folder() -> str:
+    folder = settings.batch_folder or _DEFAULT_BATCH_FOLDER
+    if not settings.batch_folder:
+        logger.warning(
+            "BATCH_FOLDER not set in environment; falling back to default path '%s'. "
+            "Set BATCH_FOLDER in .env for production use.",
+            _DEFAULT_BATCH_FOLDER,
+        )
+    return folder
 
 
 @router.post("/api/documents/{doc_id}/extract")
@@ -165,14 +174,15 @@ def list_summaries(db: Session = Depends(get_db)):
 
 @router.post("/api/summaries/batch-import")
 async def batch_import(db: Session = Depends(get_db)):
-    if not os.path.isdir(BATCH_FOLDER):
-        raise HTTPException(status_code=404, detail=f"找不到資料夾: {BATCH_FOLDER}")
+    batch_folder = _get_batch_folder()
+    if not os.path.isdir(batch_folder):
+        raise HTTPException(status_code=404, detail=f"找不到資料夾: {batch_folder}")
 
     all_pdfs = []
-    for root, _dirs, files in os.walk(BATCH_FOLDER):
+    for root, _dirs, files in os.walk(batch_folder):
         for fname in sorted(files):
             if fname.lower().endswith(".pdf"):
-                dept = os.path.basename(root) if root != BATCH_FOLDER else "未分類"
+                dept = os.path.basename(root) if root != batch_folder else "未分類"
                 all_pdfs.append((os.path.join(root, fname), fname, dept))
 
     existing_docs = {

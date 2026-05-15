@@ -33,7 +33,8 @@ def make_trace(**overrides):
         "completion_tokens": 5,
         "thread_id": "thread-1",
         "document_ids": json.dumps([1, 2]),
-        "mode": "retrieval",
+        "task_type": "retrieval_qa",
+        "route_intent": "retrieval",
         "agent_name": "retrieval_agent",
         "prompt_name": "chat",
         "prompt_version": "sha256:abc123",
@@ -45,6 +46,11 @@ def make_trace(**overrides):
         "quality_prompt_hash": None,
         "prompt_stack_name": "chat_default",
         "prompt_stack_json": json.dumps([
+            {"name": "core", "version": "sha256:core"},
+            {"name": "chat_mode", "version": "sha256:task"},
+        ]),
+        "primary_prompt_json": json.dumps({"name": "chat_mode", "version": "sha256:task"}),
+        "workflow_prompts_json": json.dumps([
             {"name": "core", "version": "sha256:core"},
             {"name": "chat_mode", "version": "sha256:task"},
         ]),
@@ -72,7 +78,8 @@ def test_trace_payload_preserves_additive_trace_metadata():
     assert payload["latency"] == 2
     assert payload["input"] == "hello"
     assert payload["output"] == "final answer"
-    assert payload["mode"] == "retrieval"
+    assert payload["task_type"] == "retrieval_qa"
+    assert payload["route_intent"] == "retrieval"
     assert payload["agent_name"] == "retrieval_agent"
     assert payload["prompt_name"] == "chat"
     assert payload["prompt_version"] == "sha256:abc123"
@@ -81,6 +88,8 @@ def test_trace_payload_preserves_additive_trace_metadata():
     assert payload["base_prompt_hash"] == "sha256:base"
     assert payload["prompt_stack_name"] == "chat_default"
     assert payload["prompt_stack_json"][0]["name"] == "core"
+    assert payload["primary_prompt_json"]["name"] == "chat_mode"
+    assert payload["workflow_prompts_json"][1]["name"] == "chat_mode"
     assert payload["prompt_stack_tokens"] == 123
     assert payload["tool_count"] == 2
     assert payload["llm_call_count"] == 3
@@ -90,11 +99,11 @@ def test_trace_payload_preserves_additive_trace_metadata():
 def test_grouped_trace_stats_keeps_unknown_bucket():
     rows = _grouped_trace_stats(
         [
-            make_trace(run_id="a", mode="retrieval", error=None, quality_score=4, user_feedback="useful"),
-            make_trace(run_id="b", mode="retrieval", error="boom", end_time=None, quality_score=2),
-            make_trace(run_id="c", mode=None, prompt_tokens=None, completion_tokens=None),
+            make_trace(run_id="a", route_intent="retrieval", error=None, quality_score=4, user_feedback="useful"),
+            make_trace(run_id="b", route_intent="retrieval", error="boom", end_time=None, quality_score=2),
+            make_trace(run_id="c", route_intent=None, prompt_tokens=None, completion_tokens=None),
         ],
-        "mode",
+        "route_intent",
     )
 
     assert rows[0]["key"] == "retrieval"
@@ -109,39 +118,39 @@ def test_grouped_trace_stats_keeps_unknown_bucket():
 def test_grouped_prompt_version_stats_separates_versions():
     rows = _grouped_prompt_version_stats(
         [
-            make_trace(run_id="a", prompt_name="summary_agent", prompt_version="sha256:a", quality_score=5),
-            make_trace(run_id="b", prompt_name="summary_agent", prompt_version="sha256:b", error="boom", quality_score=2),
-            make_trace(run_id="c", prompt_name="summary_agent", prompt_version="sha256:a", quality_score=3, user_feedback="ok"),
+            make_trace(run_id="a", prompt_name="research_writer", prompt_version="sha256:a", quality_score=5),
+            make_trace(run_id="b", prompt_name="research_writer", prompt_version="sha256:b", error="boom", quality_score=2),
+            make_trace(run_id="c", prompt_name="research_writer", prompt_version="sha256:a", quality_score=3, user_feedback="ok"),
         ],
     )
 
-    assert rows[0]["key"] == "summary_agent@sha256:a"
+    assert rows[0]["key"] == "research_writer@sha256:a"
     assert rows[0]["runs"] == 2
     assert rows[0]["errors"] == 0
     assert rows[0]["avg_quality_score"] == 4
     assert rows[0]["feedback_count"] == 1
-    assert rows[1]["key"] == "summary_agent@sha256:b"
+    assert rows[1]["key"] == "research_writer@sha256:b"
     assert rows[1]["runs"] == 1
     assert rows[1]["errors"] == 1
 
 
 def test_trace_filters_match_metadata_status_and_latency():
-    trace = make_trace(mode="summary", prompt_name="summary_agent", prompt_version="sha256:one")
+    trace = make_trace(task_type="document_extraction", prompt_name="research_writer", prompt_version="sha256:one")
 
-    assert _matches_trace_filters(trace, mode="summary")
-    assert _matches_trace_filters(trace, prompt_name="summary_agent")
+    assert _matches_trace_filters(trace, task_type="document_extraction")
+    assert _matches_trace_filters(trace, prompt_name="research_writer")
     assert _matches_trace_filters(trace, prompt_version="sha256:one")
     assert _matches_trace_filters(trace, status="success")
     assert _matches_trace_filters(trace, min_latency=1.5)
-    assert not _matches_trace_filters(trace, mode="retrieval")
+    assert not _matches_trace_filters(trace, task_type="retrieval_qa")
     assert not _matches_trace_filters(trace, status="error")
     assert not _matches_trace_filters(trace, min_latency=2.5)
 
 
 def test_trace_filters_can_select_unknown_metadata():
-    trace = make_trace(mode=None, prompt_name=None, prompt_version=None)
+    trace = make_trace(task_type=None, prompt_name=None, prompt_version=None)
 
-    assert _matches_trace_filters(trace, mode="unknown")
+    assert _matches_trace_filters(trace, task_type="unknown")
     assert _matches_trace_filters(trace, prompt_name="unknown")
     assert _matches_trace_filters(trace, prompt_version="unknown")
 

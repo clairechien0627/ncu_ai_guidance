@@ -9,41 +9,38 @@ from . import registry
 
 
 PROMPT_STACKS: dict[str, list[str]] = {
-    "chat_default": ["core", "retrieval_capability", "chat_mode"],
-    "chat_summary": [
-        "core",
-        "retrieval_capability",
-        "chat_mode",
-        "summary_mode",
-        "summary_quality",
-    ],
-    "chat_question": ["core", "retrieval_capability", "chat_mode", "question_skill"],
+    "chat_default": ["core", "chat_mode"],
+    "question_default": ["core", "question_skill"],
     "retrieval_default": ["core", "retrieval_capability"],
-    "research_summary": ["core", "retrieval_capability", "summary_mode", "summary_quality"],
+    "evaluation_default": ["core", "evaluation_agent"],
+    "router_default": ["core", "route_coordinator"],
     "research_runtime": [
         "core",
         "task_planner",
+        "research_orchestrator",
         "research_planner",
         "research_reflector",
         "research_writer",
     ],
     "extract_step2": ["core", "summary_structure"],
     "extract_step3": ["core", "question_generator"],
+    "extract_step4": ["core", "summary_quality"],
 }
 
 STACK_ALIASES: dict[str, str] = {
-    "extract_step1": "research_summary",
+    "extract_step1": "research_runtime",
 }
 
 PRIMARY_PROMPT_BY_STACK: dict[str, str] = {
     "chat_default": "chat_mode",
-    "chat_summary": "summary_mode",
-    "chat_question": "question_skill",
+    "question_default": "question_skill",
     "retrieval_default": "retrieval_capability",
-    "research_summary": "summary_mode",
+    "evaluation_default": "evaluation_agent",
+    "router_default": "route_coordinator",
     "research_runtime": "research_writer",
     "extract_step2": "summary_structure",
     "extract_step3": "question_generator",
+    "extract_step4": "summary_quality",
 }
 
 
@@ -88,6 +85,16 @@ class PromptStack:
             data["base_prompt_hash"] = self.prompts[0].version
             data["prompt_name"] = primary.name
             data["prompt_version"] = primary.version
+            data["primary_prompt_json"] = json.dumps(
+                {
+                    "name": primary.name,
+                    "base_name": primary.base_name,
+                    "source_name": primary.source_name,
+                    "version": primary.version,
+                },
+                ensure_ascii=False,
+            )
+            data["workflow_prompts_json"] = data["prompt_stack_json"]
         if len(self.prompts) >= 2:
             data["task_prompt_name"] = data["prompt_name"]
             data["task_prompt_hash"] = data["prompt_version"]

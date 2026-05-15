@@ -9,7 +9,7 @@ from sqlalchemy import engine_from_config, pool
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from config import settings
-from database import Base
+from db import Base
 
 config = context.config
 if config.config_file_name:

@@ -29,27 +29,40 @@ _dense_embeddings: AzureOpenAIEmbeddings | None = None
 _vectorstore: QdrantVectorStore | None = None
 _dense_vectorstore: QdrantVectorStore | None = None
 _reranker: FlashrankRerank | None = None
+_qdrant_client: QdrantClient | None = None
 
 
 def _build_client() -> QdrantClient:
     kwargs: dict = {"url": settings.qdrant_url}
-    if settings.qdrant_api_key:
-        kwargs["api_key"] = settings.qdrant_api_key
+    if settings.qdrant_api_key.get_secret_value():
+        kwargs["api_key"] = settings.qdrant_api_key.get_secret_value()
     return QdrantClient(**kwargs)
 
 
 def _ensure_collection(client: QdrantClient) -> None:
     """Create collection with hybrid (dense + sparse) vectors.
-    If an old single-vector collection exists, drop and recreate it."""
+    If an old single-vector collection exists, drop and recreate it only when
+    the environment variable ALLOW_COLLECTION_REBUILD=true is explicitly set.
+    """
+    import os
     if client.collection_exists(COLLECTION_NAME):
         info = client.get_collection(COLLECTION_NAME)
         has_sparse = bool(info.config.params.sparse_vectors)
         if has_sparse:
             return
+        point_count = client.count(COLLECTION_NAME).count
+        allow_rebuild = os.getenv("ALLOW_COLLECTION_REBUILD", "").lower() in {"1", "true", "yes"}
+        if not allow_rebuild:
+            raise RuntimeError(
+                f"Collection '{COLLECTION_NAME}' is missing sparse vectors "
+                f"({point_count} vectors would be lost). "
+                "Set ALLOW_COLLECTION_REBUILD=true to permit deletion and recreation, "
+                "then re-upload all documents."
+            )
         logger.warning(
-            "Collection '%s' is missing sparse vectors — recreating for hybrid search. "
-            "Please re-upload all documents.",
+            "ALLOW_COLLECTION_REBUILD=true: deleting '%s' (%d vectors) and recreating with sparse vectors.",
             COLLECTION_NAME,
+            point_count,
         )
         client.delete_collection(COLLECTION_NAME)
 
@@ -88,7 +101,7 @@ def get_dense_embeddings() -> AzureOpenAIEmbeddings:
         _dense_embeddings = AzureOpenAIEmbeddings(
             azure_deployment=settings.azure_embedding_deployment,
             azure_endpoint=settings.azure_openai_endpoint,
-            api_key=settings.azure_openai_api_key,
+            api_key=settings.azure_openai_api_key.get_secret_value(),
             api_version=settings.azure_openai_api_version,
         )
     return _dense_embeddings
@@ -120,19 +133,34 @@ def get_dense_vectorstore() -> QdrantVectorStore:
 def get_reranker() -> FlashrankRerank:
     global _reranker
     if _reranker is None:
+        # top_n is set to the maximum batch size; search_documents slices the
+        # final result to the caller's requested top_n, so over-ranking is
+        # intentional — it preserves the option to ask for more results later.
         _reranker = FlashrankRerank(top_n=RERANK_MAX)
     return _reranker
 
 
 def get_qdrant_client() -> QdrantClient:
-    return _build_client()
+    global _qdrant_client
+    if _qdrant_client is None:
+        _qdrant_client = _build_client()
+    return _qdrant_client
 
 
 # ── Language detection (needs Qdrant) ─────────────────────────────────────────
 
+def _is_cjk(c: str) -> bool:
+    cp = ord(c)
+    return (
+        0x4E00 <= cp <= 0x9FFF or   # CJK Unified Ideographs
+        0x3400 <= cp <= 0x4DBF or   # CJK Extension A
+        0xF900 <= cp <= 0xFAFF      # CJK Compatibility Ideographs
+    )
+
+
 def _lang_from_text(text: str) -> str:
     """Return 'en' or 'zh' based on CJK vs ASCII-alpha ratio."""
-    cjk = sum(1 for c in text if "一" <= c <= "鿿")
+    cjk = sum(1 for c in text if _is_cjk(c))
     ascii_alpha = sum(1 for c in text if c.isascii() and c.isalpha())
     total = cjk + ascii_alpha
     if total == 0:
@@ -159,7 +187,7 @@ def get_document_language(document_ids: list[int] | None = None) -> str:
     results, _ = client.scroll(
         collection_name=COLLECTION_NAME,
         scroll_filter=scroll_filter,
-        limit=20,
+        limit=50,
         with_payload=True,
         with_vectors=False,
     )
@@ -246,19 +274,22 @@ def delete_pending_document_vectors(document_id: int, ts: int) -> None:
 
 
 def update_document_vector_filename(document_id: int, filename: str) -> int:
-    """Update filename metadata for all Qdrant points belonging to a document."""
+    """Update filename inside metadata payload for all Qdrant points belonging to a document.
+
+    Runs as a background task after rename so it does not block the HTTP response.
+    Each point carries its own page/chunk_index so updates are per-point;
+    scroll uses with_vectors=False for lighter reads.
+    """
     client = get_qdrant_client()
     updated = 0
     offset = None
+    doc_filter = Filter(
+        must=[FieldCondition(key="metadata.document_id", match=MatchValue(value=str(document_id)))]
+    )
     while True:
         points, offset = client.scroll(
             collection_name=COLLECTION_NAME,
-            scroll_filter=Filter(
-                must=[FieldCondition(
-                    key="metadata.document_id",
-                    match=MatchValue(value=str(document_id)),
-                )]
-            ),
+            scroll_filter=doc_filter,
             limit=256,
             with_payload=True,
             with_vectors=False,

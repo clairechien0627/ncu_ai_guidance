@@ -1,4 +1,4 @@
-import contextlib
+﻿import contextlib
 import json
 import logging
 import re
@@ -12,8 +12,8 @@ from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-from langfuse.langchain import CallbackHandler
 from langfuse import observe, propagate_attributes
+from .request_context import get_user_id
 
 warnings.filterwarnings(
     "ignore",
@@ -28,19 +28,17 @@ from tools.rag_tool import (
     TOOLS,
     set_query_expander_llm,
 )
-from prompting.registry import get_langfuse_obj
-from .agent_tools import AGENT_TOOLS
-
-ORCHESTRATOR_TOOLS = TOOLS + AGENT_TOOLS
-
+from observability import (
+    langfuse_callbacks_from_metadata,
+    langfuse_prompt_metadata_from_metadata,
+)
 logger = logging.getLogger(__name__)
 
 
 def _get_abstracts(document_ids: list[int] | None) -> list[dict]:
     """Fetch abstract_text for the given documents from PostgreSQL."""
-    from database import SessionLocal, Document as DocModel
-    db = SessionLocal()
-    try:
+    from db import db_session, Document as DocModel
+    with db_session() as db:
         q = db.query(DocModel.id, DocModel.filename, DocModel.abstract_text).filter(
             DocModel.status == "ready"
         )
@@ -51,29 +49,11 @@ def _get_abstracts(document_ids: list[int] | None) -> list[dict]:
             for row in q.all()
             if row.abstract_text
         ]
-    finally:
-        db.close()
-
-
-def _attach_langfuse_prompt(metadata: dict | None) -> dict:
-    """Attach Langfuse prompt object so CallbackHandler can link prompt->generation."""
-    merged = dict(metadata or {})
-    if merged.get("langfuse_prompt") is not None:
-        return merged
-    prompt_name = merged.get("prompt_name")
-    if isinstance(prompt_name, str) and prompt_name:
-        prompt_obj = get_langfuse_obj(prompt_name)
-        if prompt_obj is not None:
-            merged["langfuse_prompt"] = prompt_obj
-    return merged
-
 
 
 _checkpointer: AsyncPostgresSaver | None = None
-_specialist_agent = None
-_specialist_agent_mini = None
-_orchestrator_agent = None
-_orchestrator_agent_mini = None
+_tool_agent = None
+_tool_agent_mini = None
 
 # Runtime prompt behavior now comes from prompting.loader stacks injected per
 # request.  Keep the agent-level system prompt intentionally small so prompt
@@ -87,28 +67,37 @@ class AgentResponse(BaseModel):
     sources: list[str] = Field(
         default_factory=list,
         description='Most relevant sources referenced (max 3), each as "filename p.N" (e.g. "report.pdf p.3")',
+        max_length=3,
     )
 
 
 
-_llm = AzureChatOpenAI(
-    azure_deployment=settings.azure_chat_deployment,
-    azure_endpoint=settings.azure_openai_endpoint,
-    api_key=settings.azure_openai_api_key,
-    api_version=settings.azure_openai_api_version,
-    temperature=0.3,
-)
-_agent_llm = _llm.bind(parallel_tool_calls=False)
-set_query_expander_llm(_llm)
+try:
+    _llm = AzureChatOpenAI(
+        azure_deployment=settings.azure_chat_deployment,
+        azure_endpoint=settings.azure_openai_endpoint,
+        api_key=settings.azure_openai_api_key.get_secret_value(),
+        api_version=settings.azure_openai_api_version,
+        temperature=0.3,
+    )
+    _agent_llm = _llm.bind(parallel_tool_calls=False)
+    set_query_expander_llm(_llm)
 
-_mini_llm = AzureChatOpenAI(
-    azure_deployment=settings.azure_mini_deployment,
-    azure_endpoint=settings.azure_openai_endpoint,
-    api_key=settings.azure_openai_api_key,
-    api_version=settings.azure_openai_api_version,
-    temperature=0.3,
-)
-_mini_agent_llm = _mini_llm.bind(parallel_tool_calls=False)
+    _mini_llm = AzureChatOpenAI(
+        azure_deployment=settings.azure_mini_deployment,
+        azure_endpoint=settings.azure_openai_endpoint,
+        api_key=settings.azure_openai_api_key.get_secret_value(),
+        api_version=settings.azure_openai_api_version,
+        temperature=0.3,
+    )
+    _mini_agent_llm = _mini_llm.bind(parallel_tool_calls=False)
+except Exception as _llm_init_err:
+    logger.error(
+        "Failed to initialise Azure OpenAI clients at startup: %s. "
+        "Check AZURE_OPENAI_API_KEY / AZURE_OPENAI_ENDPOINT in .env.",
+        _llm_init_err,
+    )
+    raise
 
 
 @before_model
@@ -122,13 +111,16 @@ def _trim_messages(state: dict, runtime) -> dict | None:
         if isinstance(msg, HumanMessage):
             tail = tail[i:]
             break
+    else:
+        # No HumanMessage in the tail (e.g. long tool-call chain) — keep last 10
+        tail = tail[-10:]
     return {"messages": tail}
 
 
 
 async def setup_checkpointer():
     """Initialize AsyncPostgresSaver and build the agent. Called once at startup."""
-    global _checkpointer, _specialist_agent, _specialist_agent_mini
+    global _checkpointer, _tool_agent, _tool_agent_mini
     from psycopg_pool import AsyncConnectionPool
     pool = AsyncConnectionPool(
         conninfo=settings.database_url,
@@ -156,27 +148,19 @@ async def setup_checkpointer():
             context_schema=AgentContext,
         )
 
-    _specialist_agent = _make_agent(_agent_llm, TOOLS)
-    _specialist_agent_mini = _make_agent(_mini_agent_llm, TOOLS)
-
-    global _orchestrator_agent, _orchestrator_agent_mini
-    _orchestrator_agent = _make_agent(_agent_llm, ORCHESTRATOR_TOOLS)
-    _orchestrator_agent_mini = _make_agent(_mini_agent_llm, ORCHESTRATOR_TOOLS)
+    _tool_agent = _make_agent(_agent_llm, TOOLS)
+    _tool_agent_mini = _make_agent(_mini_agent_llm, TOOLS)
 
 
-def _get_specialist_agent(mini: bool = False):
-    return _specialist_agent_mini if mini else _specialist_agent
+def _get_tool_agent(mini: bool = False):
+    return _tool_agent_mini if mini else _tool_agent
 
 
-def _get_orchestrator_agent(mini: bool = False):
-    return _orchestrator_agent_mini if mini else _orchestrator_agent
-
-
-def generate_title(messages: list[dict]) -> str:
+async def generate_title(messages: list[dict]) -> str:
     context = "\n".join(
         f"{m['role']}: {m['content'][:300]}" for m in messages[:4]
     )
-    response = _llm.invoke([
+    response = await _mini_llm.ainvoke([
         SystemMessage(content=(
             "根據以下對話內容，用繁體中文生成一個簡潔的對話標題（5-10字）。"
             "只回傳標題本身，不要加引號或其他說明。"
@@ -218,35 +202,42 @@ async def _get_structured_response(thread_id: str) -> AgentResponse | None:
     return checkpoint_tuple.checkpoint.get("channel_values", {}).get("structured_response")
 
 
-def _get_last_research_context(thread_id: str) -> str | None:
-    """Return a short excerpt from the most recent research/summary trace for this thread."""
-    from database import SessionLocal, Trace
+def _get_conversation_context(thread_id: str) -> str | None:
+    """Read the compressed context_summary for this conversation.
+
+    Falls back to the latest research trace (pre-memory-service data) when
+    context_summary has not been populated yet.
+    """
+    from services.memory_service import get_context_summary_text
+    text = get_context_summary_text(thread_id)
+    if text:
+        return text
+    # Fallback: query Trace table for conversations that predate context_summary
+    from db import db_session, Trace
     import json as _json
-    db = SessionLocal()
     try:
-        row = (
-            db.query(Trace.display)
-            .filter(
-                Trace.parent_run_id.is_(None),
-                Trace.thread_id == thread_id,
-                Trace.mode.in_(["research", "summary"]),
-                Trace.error.is_(None),
+        with db_session() as db:
+            row = (
+                db.query(Trace.display)
+                .filter(
+                    Trace.thread_id == thread_id,
+                    Trace.task_type.in_(["research_task", "document_extraction"]),
+                    Trace.display.isnot(None),
+                    Trace.error.is_(None),
+                )
+                .order_by(Trace.start_time.desc())
+                .first()
             )
-            .order_by(Trace.start_time.desc())
-            .first()
-        )
-        if not row or not row[0]:
-            return None
-        display = _json.loads(row[0])
-        answer = str(display.get("answer") or "").strip()
-        if len(answer) < 50:
-            return None
-        # Keep at most 800 chars so we don't bloat the context window
-        return answer[:800] + ("…" if len(answer) > 800 else "")
-    except Exception:
+            if not row or not row[0]:
+                return None
+            display = _json.loads(row[0])
+            answer = str(display.get("answer") or "").strip()
+            if len(answer) < 50:
+                return None
+            return answer[:600] + ("…" if len(answer) > 600 else "")
+    except Exception as _e:
+        logger.debug("_get_conversation_context(%s): failed to parse trace display: %s", thread_id, _e)
         return None
-    finally:
-        db.close()
 
 
 def _build_messages(
@@ -255,13 +246,15 @@ def _build_messages(
     task_prompt: str | list[str] | None = None,
     include_document_abstracts: bool = True,
     thread_id: str | None = None,
+    include_research_context: bool = True,
+    long_term_memories: list[str] | None = None,
 ) -> list:
     """Build the message list for one agent turn.
 
     Injection order (all SystemMessages before the HumanMessage):
-      1. task_prompt  — per-request instructions (e.g. extraction rules)
-      2. document abstracts — background context for the referenced docs
-      3. HumanMessage — the actual user question / trigger
+      1. task_prompt  ??per-request instructions (e.g. extraction rules)
+      2. document abstracts ??background context for the referenced docs
+      3. HumanMessage ??the actual user question / trigger
     """
     messages = []
     if task_prompt:
@@ -279,47 +272,36 @@ def _build_messages(
                 "以下是本次對話引用的文件摘要，請以此作為背景資訊回答問題：\n\n"
                 f"{block}"
             )))
-    # If there is a prior research/summary result for this conversation, inject it
-    # so follow-up questions can reference the structured evidence without re-searching.
-    if thread_id:
-        research_ctx = _get_last_research_context(thread_id)
+    if include_research_context and thread_id:
+        research_ctx = _get_conversation_context(thread_id)
         if research_ctx:
             messages.append(SystemMessage(content=(
-                "【前次研究摘要】以下是這段對話中最近一次研究或摘要分析的結果，"
-                "可作為追問的參考背景，但仍以文件原文為準：\n\n"
+                "【對話記憶】以下是這段對話的研究摘要，可作為追問的參考背景，"
+                "但仍以文件原文為準：\n"
                 f"{research_ctx}"
             )))
+    if long_term_memories:
+        memory_block = "\n".join(long_term_memories)
+        messages.append(SystemMessage(content=(
+            "【歷史研究記憶】以下是你過去研究過的相關主題摘要，供參考：\n"
+            f"{memory_block}"
+        )))
     messages.append(HumanMessage(content=user_message))
     return messages
 
 
-@observe(as_type="agent")
-async def run_specialist_agent(
-    user_message: str,
+def _build_tracer(
     thread_id: str,
-    document_ids: list[int] | None = None,
-    metadata: dict | None = None,
-    tracer_metadata: dict | None = None,
-    run_id: str | None = None,
-    on_stage: Callable[[str], None] | None = None,
-    task_prompt: str | list[str] | None = None,
-    recursion_limit: int = 30,
-    include_document_abstracts: bool = True,
-    max_searches: int | None = None,
-    max_consecutive_empty: int | None = None,
+    document_ids: list[int] | None,
+    metadata: dict,
     parent_run_id: str | None = None,
-    use_mini: bool = False,
-) -> tuple[str, list[str]]:
-    import uuid as _uuid
-    from tracer import LocalTracer
-    agent = _get_specialist_agent(mini=use_mini)
-    metadata = {**(metadata or {}), **(tracer_metadata or {})}
-    metadata = _attach_langfuse_prompt(metadata)
-    with propagate_attributes(version=metadata.get("prompt_version")) if metadata.get("prompt_version") else contextlib.nullcontext():
-        tracer = LocalTracer(
+):
+    from observability.tracer import LocalTracer
+    return LocalTracer(
         thread_id=thread_id,
         document_ids=document_ids,
-        mode=metadata.get("mode"),
+        task_type=metadata.get("task_type"),
+        route_intent=metadata.get("route_intent"),
         agent_name=metadata.get("agent_name"),
         prompt_name=metadata.get("prompt_name"),
         prompt_version=metadata.get("prompt_version"),
@@ -331,6 +313,8 @@ async def run_specialist_agent(
         quality_prompt_hash=metadata.get("quality_prompt_hash"),
         prompt_stack_name=metadata.get("prompt_stack_name"),
         prompt_stack_json=metadata.get("prompt_stack_json"),
+        primary_prompt_json=metadata.get("primary_prompt_json"),
+        workflow_prompts_json=metadata.get("workflow_prompts_json"),
         prompt_stack_tokens=metadata.get("prompt_stack_tokens"),
         quality_score=metadata.get("quality_score"),
         user_feedback=metadata.get("user_feedback"),
@@ -338,21 +322,62 @@ async def run_specialist_agent(
         original_intent=metadata.get("original_intent"),
         resolved_intent=metadata.get("resolved_intent"),
     )
-    langfuse_handler = CallbackHandler()
-    config: dict = {"configurable": {"thread_id": thread_id}, "callbacks": [tracer, langfuse_handler], "recursion_limit": recursion_limit}
-    config["metadata"] = metadata
+
+
+@observe(as_type="agent")
+async def run_tool_agent(
+    user_message: str,
+    thread_id: str,
+    document_ids: list[int] | None = None,
+    metadata: dict | None = None,
+    tracer_metadata: dict | None = None,
+    run_id: str | None = None,
+    on_stage: Callable[[str], None] | None = None,
+    task_prompt: str | list[str] | None = None,
+    recursion_limit: int = 30,
+    include_document_abstracts: bool = True,
+    include_research_context: bool = True,
+    max_searches: int | None = None,
+    max_consecutive_empty: int | None = None,
+    parent_run_id: str | None = None,
+    use_mini: bool = False,
+) -> tuple[str, list[str]]:
+    import uuid as _uuid
+    agent = _get_tool_agent(mini=use_mini)
+    metadata = {**(metadata or {}), **(tracer_metadata or {})}
+    with propagate_attributes(version=metadata.get("prompt_version")) if metadata.get("prompt_version") else contextlib.nullcontext():
+        tracer = _build_tracer(thread_id, document_ids, metadata, parent_run_id)
+    config_metadata = {**metadata, **langfuse_prompt_metadata_from_metadata(metadata)}
+    config: dict = {
+        "configurable": {"thread_id": thread_id},
+        "callbacks": [tracer, *langfuse_callbacks_from_metadata(metadata)],
+        "recursion_limit": recursion_limit,
+    }
+    config["metadata"] = config_metadata
     if run_id:
         config["run_id"] = _uuid.UUID(run_id)
 
+    # Fetch long-term memories for chat/research when user is identified
+    _long_term: list[str] = []
+    if include_research_context and get_user_id():
+        _intent = metadata.get("route_intent", "")
+        if _intent in ("chat", "research"):
+            try:
+                from services.memory_service import search_research_memories
+                _long_term = await search_research_memories(get_user_id(), user_message)
+            except Exception as _mem_exc:
+                logger.debug("Long-term memory search failed: %s", _mem_exc)
+
     async def _invoke():
-        with propagate_attributes(session_id=thread_id):
+        with propagate_attributes(session_id=thread_id, user_id=get_user_id()):
             return await agent.ainvoke(
-                {"messages": _build_messages(user_message, document_ids, task_prompt, include_document_abstracts, thread_id=thread_id)},
+                {"messages": _build_messages(user_message, document_ids, task_prompt, include_document_abstracts, thread_id=thread_id, include_research_context=include_research_context, long_term_memories=_long_term or None)},
                 config,
                 context=AgentContext(
                     document_ids=document_ids,
                     on_stage=on_stage,
-                    mode=metadata.get("mode"),
+                    task_type=metadata.get("task_type"),
+                    route_intent=metadata.get("route_intent"),
                     max_searches=max_searches,
                     max_consecutive_empty=max_consecutive_empty,
                     thread_id=thread_id,
@@ -426,15 +451,17 @@ def _strip_abstracts_block(text: str) -> str:
 
 
 @observe(as_type="agent")
-async def run_specialist_agent_stream(
+async def run_tool_agent_stream(
     user_message: str,
     thread_id: str,
     document_ids: list[int] | None = None,
     metadata: dict | None = None,
     tracer_metadata: dict | None = None,
     run_id: str | None = None,
+    on_stage: Callable[[str], None] | None = None,
     task_prompt: str | list[str] | None = None,
     include_document_abstracts: bool = True,
+    include_research_context: bool = True,
     max_searches: int | None = None,
     max_consecutive_empty: int | None = None,
     parent_run_id: str | None = None,
@@ -442,47 +469,31 @@ async def run_specialist_agent_stream(
 ):
     """Async generator yielding (token, is_done, sources) tuples."""
     import uuid as _uuid
-    from tracer import LocalTracer
-    agent = _get_specialist_agent(mini=use_mini)
+    agent = _get_tool_agent(mini=use_mini)
     metadata = {**(metadata or {}), **(tracer_metadata or {})}
-    metadata = _attach_langfuse_prompt(metadata)
     with propagate_attributes(version=metadata.get("prompt_version")) if metadata.get("prompt_version") else contextlib.nullcontext():
-        tracer = LocalTracer(
-        thread_id=thread_id,
-        document_ids=document_ids,
-        mode=metadata.get("mode"),
-        agent_name=metadata.get("agent_name"),
-        prompt_name=metadata.get("prompt_name"),
-        prompt_version=metadata.get("prompt_version"),
-        base_prompt_name=metadata.get("base_prompt_name"),
-        task_prompt_name=metadata.get("task_prompt_name"),
-        quality_prompt_name=metadata.get("quality_prompt_name"),
-        base_prompt_hash=metadata.get("base_prompt_hash"),
-        task_prompt_hash=metadata.get("task_prompt_hash"),
-        quality_prompt_hash=metadata.get("quality_prompt_hash"),
-        prompt_stack_name=metadata.get("prompt_stack_name"),
-        prompt_stack_json=metadata.get("prompt_stack_json"),
-        prompt_stack_tokens=metadata.get("prompt_stack_tokens"),
-        quality_score=metadata.get("quality_score"),
-        user_feedback=metadata.get("user_feedback"),
-        parent_run_id=parent_run_id,
-        original_intent=metadata.get("original_intent"),
-        resolved_intent=metadata.get("resolved_intent"),
-    )
-    langfuse_handler = CallbackHandler()
-    config = {"configurable": {"thread_id": thread_id}, "callbacks": [tracer, langfuse_handler], "recursion_limit": 30, "metadata": metadata}
+        tracer = _build_tracer(thread_id, document_ids, metadata, parent_run_id)
+    config_metadata = {**metadata, **langfuse_prompt_metadata_from_metadata(metadata)}
+    config = {
+        "configurable": {"thread_id": thread_id},
+        "callbacks": [tracer, *langfuse_callbacks_from_metadata(metadata)],
+        "recursion_limit": 30,
+        "metadata": config_metadata,
+    }
     if run_id:
         config["run_id"] = _uuid.UUID(run_id)
 
     async def _run_stream() -> str:
-        with propagate_attributes(session_id=thread_id):
+        with propagate_attributes(session_id=thread_id, user_id=get_user_id()):
             content = ""
             async for chunk in agent.astream(
-                {"messages": _build_messages(user_message, document_ids, task_prompt, include_document_abstracts, thread_id=thread_id)},
+                {"messages": _build_messages(user_message, document_ids, task_prompt, include_document_abstracts, thread_id=thread_id, include_research_context=include_research_context)},
                 config,
                 context=AgentContext(
                     document_ids=document_ids,
-                    mode=metadata.get("mode"),
+                    on_stage=on_stage,
+                    task_type=metadata.get("task_type"),
+                    route_intent=metadata.get("route_intent"),
                     max_searches=max_searches,
                     max_consecutive_empty=max_consecutive_empty,
                     thread_id=thread_id,
@@ -517,189 +528,4 @@ async def run_specialist_agent_stream(
     if structured:
         sources = structured.sources
 
-    yield "", True, sources
-
-
-@observe(as_type="agent")
-async def run_orchestrator_agent(
-    user_message: str,
-    thread_id: str,
-    document_ids: list[int] | None = None,
-    metadata: dict | None = None,
-    tracer_metadata: dict | None = None,
-    run_id: str | None = None,
-    on_stage: Callable[[str], None] | None = None,
-    task_prompt: str | list[str] | None = None,
-    recursion_limit: int = 30,
-    include_document_abstracts: bool = True,
-    max_searches: int | None = None,
-    max_consecutive_empty: int | None = None,
-    use_mini: bool = False,
-) -> tuple[str, list[str]]:
-    """Like run_agent but uses the orchestrator agent with agent_tools."""
-    import uuid as _uuid
-    from tracer import LocalTracer
-    agent = _get_orchestrator_agent(mini=use_mini)
-    metadata = {**(metadata or {}), **(tracer_metadata or {})}
-    metadata = _attach_langfuse_prompt(metadata)
-    with propagate_attributes(version=metadata.get("prompt_version")) if metadata.get("prompt_version") else contextlib.nullcontext():
-        tracer = LocalTracer(
-        thread_id=thread_id,
-        document_ids=document_ids,
-        mode=metadata.get("mode"),
-        agent_name=metadata.get("agent_name"),
-        prompt_name=metadata.get("prompt_name"),
-        prompt_version=metadata.get("prompt_version"),
-        base_prompt_name=metadata.get("base_prompt_name"),
-        task_prompt_name=metadata.get("task_prompt_name"),
-        quality_prompt_name=metadata.get("quality_prompt_name"),
-        base_prompt_hash=metadata.get("base_prompt_hash"),
-        task_prompt_hash=metadata.get("task_prompt_hash"),
-        quality_prompt_hash=metadata.get("quality_prompt_hash"),
-        prompt_stack_name=metadata.get("prompt_stack_name"),
-        prompt_stack_json=metadata.get("prompt_stack_json"),
-        prompt_stack_tokens=metadata.get("prompt_stack_tokens"),
-        quality_score=metadata.get("quality_score"),
-        user_feedback=metadata.get("user_feedback"),
-        original_intent=metadata.get("original_intent"),
-        resolved_intent=metadata.get("resolved_intent"),
-    )
-    langfuse_handler = CallbackHandler()
-    config: dict = {"configurable": {"thread_id": thread_id}, "callbacks": [tracer, langfuse_handler], "recursion_limit": recursion_limit}
-    config["metadata"] = metadata
-    if run_id:
-        config["run_id"] = _uuid.UUID(run_id)
-
-    _ctx: AgentContext | None = None
-
-    async def _invoke():
-        nonlocal _ctx
-        with propagate_attributes(session_id=thread_id):
-            _ctx = AgentContext(
-                document_ids=document_ids,
-                on_stage=on_stage,
-                mode=metadata.get("mode"),
-                max_searches=max_searches,
-                max_consecutive_empty=max_consecutive_empty,
-                thread_id=thread_id,
-                run_id=run_id,
-            )
-            return await agent.ainvoke(
-                {"messages": _build_messages(user_message, document_ids, task_prompt, include_document_abstracts, thread_id=thread_id)},
-                config,
-                context=_ctx,
-            )
-
-    try:
-        result = await _invoke()
-    except Exception as e:
-        if "StructuredOutputValidationError" in str(e) or "Extra data" in str(e):
-            logger.warning("StructuredOutputValidationError on first attempt, retrying: %s", e)
-            result = await _invoke()
-        else:
-            raise
-
-    tool_sources: list[str] = _ctx.tool_sources if _ctx else []
-    structured: AgentResponse | None = result.get("structured_response")
-    if structured:
-        merged = list(dict.fromkeys(structured.sources + tool_sources))
-        return structured.answer, merged
-    ai_messages = [m for m in result["messages"] if isinstance(m, AIMessage) and m.content]
-    raw = ai_messages[-1].content if ai_messages else "Unable to generate a response."
-    return _extract_answer(raw), tool_sources
-
-
-@observe(as_type="agent")
-async def run_orchestrator_agent_stream(
-    user_message: str,
-    thread_id: str,
-    document_ids: list[int] | None = None,
-    metadata: dict | None = None,
-    tracer_metadata: dict | None = None,
-    run_id: str | None = None,
-    on_stage: Callable[[str], None] | None = None,
-    task_prompt: str | list[str] | None = None,
-    include_document_abstracts: bool = True,
-    max_searches: int | None = None,
-    max_consecutive_empty: int | None = None,
-    use_mini: bool = False,
-):
-    """Like run_agent_stream but uses the orchestrator agent with agent_tools."""
-    import uuid as _uuid
-    from tracer import LocalTracer
-    agent = _get_orchestrator_agent(mini=use_mini)
-    metadata = {**(metadata or {}), **(tracer_metadata or {})}
-    metadata = _attach_langfuse_prompt(metadata)
-    with propagate_attributes(version=metadata.get("prompt_version")) if metadata.get("prompt_version") else contextlib.nullcontext():
-        tracer = LocalTracer(
-        thread_id=thread_id,
-        document_ids=document_ids,
-        mode=metadata.get("mode"),
-        agent_name=metadata.get("agent_name"),
-        prompt_name=metadata.get("prompt_name"),
-        prompt_version=metadata.get("prompt_version"),
-        base_prompt_name=metadata.get("base_prompt_name"),
-        task_prompt_name=metadata.get("task_prompt_name"),
-        quality_prompt_name=metadata.get("quality_prompt_name"),
-        base_prompt_hash=metadata.get("base_prompt_hash"),
-        task_prompt_hash=metadata.get("task_prompt_hash"),
-        quality_prompt_hash=metadata.get("quality_prompt_hash"),
-        prompt_stack_name=metadata.get("prompt_stack_name"),
-        prompt_stack_json=metadata.get("prompt_stack_json"),
-        prompt_stack_tokens=metadata.get("prompt_stack_tokens"),
-        quality_score=metadata.get("quality_score"),
-        user_feedback=metadata.get("user_feedback"),
-        original_intent=metadata.get("original_intent"),
-        resolved_intent=metadata.get("resolved_intent"),
-    )
-    langfuse_handler = CallbackHandler()
-    config = {"configurable": {"thread_id": thread_id}, "callbacks": [tracer, langfuse_handler], "recursion_limit": 30, "metadata": metadata}
-    if run_id:
-        config["run_id"] = _uuid.UUID(run_id)
-
-    _ctx: AgentContext | None = None
-
-    async def _run_stream() -> str:
-        nonlocal _ctx
-        with propagate_attributes(session_id=thread_id):
-            _ctx = AgentContext(
-                document_ids=document_ids,
-                on_stage=on_stage,
-                mode=metadata.get("mode"),
-                max_searches=max_searches,
-                max_consecutive_empty=max_consecutive_empty,
-                thread_id=thread_id,
-                run_id=run_id,
-            )
-            content = ""
-            async for chunk in agent.astream(
-                {"messages": _build_messages(user_message, document_ids, task_prompt, include_document_abstracts, thread_id=thread_id)},
-                config,
-                context=_ctx,
-                stream_mode="messages",
-            ):
-                token, chunk_metadata = chunk
-                if (
-                    isinstance(token, AIMessage)
-                    and token.content
-                    and chunk_metadata.get("langgraph_node") == "model"
-                ):
-                    content += token.content
-            return content
-
-    try:
-        full_content = await _run_stream()
-    except Exception as e:
-        if "StructuredOutputValidationError" in str(e) or "Extra data" in str(e):
-            logger.warning("StructuredOutputValidationError in orchestrator stream, retrying: %s", e)
-            full_content = await _run_stream()
-        else:
-            raise
-
-    if full_content:
-        yield _extract_answer(full_content), False, []
-
-    tool_sources: list[str] = _ctx.tool_sources if _ctx else []
-    structured = await _get_structured_response(thread_id)
-    sources = list(dict.fromkeys((structured.sources if structured else []) + tool_sources))
     yield "", True, sources

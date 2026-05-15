@@ -15,7 +15,8 @@ export interface UploadResponse {
   id: number
   filename: string
   status: string
-  chunks: number
+  chunks?: number
+  queued?: boolean
   duplicate: boolean
   duplicate_reason?: 'same_file_hash' | 'same_filename_legacy' | string
 }

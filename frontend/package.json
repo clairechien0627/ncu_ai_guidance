@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.100.10",
     "axios": "^1.7.7",
     "highlight.js": "^11.11.1",
     "lucide-react": "^0.577.0",
@@ -19,7 +20,8 @@
     "rehype-highlight": "^7.0.2",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0"
+    "remark-math": "^6.0.0",
+    "zustand": "^5.0.13"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
@@ -29,7 +31,6 @@
     "jsdom": "^29.1.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.10",
-    "vite-plugin-static-copy": "^4.1.0",
     "vitest": "^4.1.5"
   }
 }

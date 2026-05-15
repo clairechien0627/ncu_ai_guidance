@@ -9,7 +9,7 @@ DATASET_PATH = Path(__file__).parent / "dataset.json"
 
 
 async def run_eval_suite(dataset_path: str | None = None) -> dict:
-    from agents.main_agent import classify_intent
+    from agents.router_agent import classify_intent
 
     path = dataset_path or str(DATASET_PATH)
     with open(path, encoding="utf-8") as f:

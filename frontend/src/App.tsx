@@ -1,9 +1,9 @@
 import { Suspense, lazy, useState, useEffect, useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Sidebar from './components/Sidebar'
-import ChatWindow from './components/ChatWindow'
+import ChatWindow from './components/chat/ChatWindow'
 import {
   uploadDocument,
-  sendMessageStream,
   getDocuments,
   deleteDocument,
   reindexDocument,
@@ -11,12 +11,13 @@ import {
   getConversationMessages,
   deleteConversation,
 } from './api'
-import type { ChatResponse, DocumentItem, ConversationItem, UploadResponse } from './api'
+import type { DocumentItem, ConversationItem, UploadResponse } from './api'
+import { useChat } from './hooks/useChat'
 import './App.css'
 
-const PdfPanel = lazy(() => import('./components/PdfPanel'))
-const SummaryPage = lazy(() => import('./components/SummaryPage'))
-const AdminTracesPage = lazy(() => import('./components/AdminTracesPage'))
+const PdfPanel = lazy(() => import('./components/viewer/PdfPanel'))
+const SummaryPage = lazy(() => import('./pages/SummaryPage'))
+const AdminTracesPage = lazy(() => import('./pages/AdminTracesPage'))
 
 export interface Message {
   role: 'user' | 'assistant'
@@ -32,15 +33,10 @@ export interface Message {
 }
 
 export default function App() {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [conversationId, setConversationId] = useState<number | null>(null)
-  const [documents, setDocuments] = useState<DocumentItem[]>([])
-  const [conversations, setConversations] = useState<ConversationItem[]>([])
-  const [selectedDocIds, setSelectedDocIds] = useState<number[]>([])
-  const model = 'openai'
-  const [loading, setLoading] = useState(false)
+  const queryClient = useQueryClient()
   const [uploadingFiles, setUploadingFiles] = useState<string[]>([])
-  const [error, setError] = useState<string | null>(null)
+  const [convLoading, setConvLoading] = useState(false)
+  const model = 'openai'
   const [pdfOpen, setPdfOpen] = useState(false)
   const [pdfViewDocId, setPdfViewDocId] = useState<number | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -48,165 +44,77 @@ export default function App() {
     () => (localStorage.getItem('activePage') as 'chat' | 'summaries' | 'traces') ?? 'chat'
   )
 
+  // ── Server state ───────────────────────────────────────────────────────────
+
+  const { data: documents = [] } = useQuery({
+    queryKey: ['documents'],
+    queryFn: getDocuments,
+    // Auto-poll every 3 s while any document is processing.
+    refetchInterval: (query) =>
+      query.state.data?.some((d: DocumentItem) => d.status === 'processing') ? 3000 : false,
+  })
+
+  const { data: conversations = [] } = useQuery({
+    queryKey: ['conversations'],
+    queryFn: getConversations,
+  })
+
+  // ── Navigation ─────────────────────────────────────────────────────────────
+
   const navigateTo = useCallback((p: 'chat' | 'summaries' | 'traces') => {
     localStorage.setItem('activePage', p)
     setPage(p)
   }, [])
+
   const handleTogglePdf = () => {
     setPdfOpen((v) => {
-      if (!v) setSidebarCollapsed(true)   // opening PDF → collapse sidebar
+      if (!v) setSidebarCollapsed(true)
       return !v
     })
   }
 
   const handleToggleSidebar = () => {
     setSidebarCollapsed((v) => {
-      if (v) setPdfOpen(false)            // expanding sidebar → close PDF
+      if (v) setPdfOpen(false)
       return !v
     })
   }
 
-  const refreshDocuments = useCallback(async () => {
-    try {
-      setDocuments(await getDocuments())
-    } catch {
-      // silently ignore
-    }
-  }, [])
+  // ── Chat ───────────────────────────────────────────────────────────────────
 
-  const refreshConversations = useCallback(async () => {
-    try {
-      setConversations(await getConversations())
-    } catch {
-      // silently ignore
-    }
-  }, [])
+  const {
+    messages, setMessages,
+    loading,
+    error, setError,
+    conversationId, setConversationId,
+    selectedDocIds, setSelectedDocIds,
+    handleSend,
+  } = useChat({
+    model,
+    documents,
+    onConversationUpdate: useCallback((convId: number, title?: string) => {
+      if (title) {
+        queryClient.setQueryData(['conversations'], (prev: ConversationItem[] | undefined) =>
+          prev?.map((c) => (c.id === convId ? { ...c, title } : c)) ?? []
+        )
+      }
+      queryClient.invalidateQueries({ queryKey: ['conversations'] })
+    }, [queryClient]),
+  })
 
-  useEffect(() => {
-    refreshDocuments()
-    refreshConversations()
-  }, [refreshDocuments, refreshConversations])
+  // ── Persist attachment badges ───────────────────────────────────────────────
 
-  // Auto-poll while any document is still processing
-  useEffect(() => {
-    if (!documents.some((d) => d.status === 'processing')) return
-    const id = setInterval(refreshDocuments, 3000)
-    return () => clearInterval(id)
-  }, [documents, refreshDocuments])
-
-  // Persist attachment badges to localStorage whenever messages change
   useEffect(() => {
     if (!conversationId) return
     const map: Record<number, { name: string; id: number }[]> = {}
     messages.forEach((msg, i) => {
-      if (msg.role === 'user' && msg.attachedDocs?.length)
-        map[i] = msg.attachedDocs
+      if (msg.role === 'user' && msg.attachedDocs?.length) map[i] = msg.attachedDocs
     })
     if (Object.keys(map).length > 0)
       localStorage.setItem(`att_${conversationId}`, JSON.stringify(map))
   }, [messages, conversationId])
 
-  const handleSend = useCallback(
-    async (text: string) => {
-      if (loading) return
-      // If empty input with docs selected → auto-summarize
-      const actualText = text.trim() || (selectedDocIds.length > 0 ? '請幫我摘要這份文件' : '')
-      if (!actualText) return
-      setLoading(true)
-      setError(null)
-      setSelectedDocIds([])
-      const attachedDocs = documents
-        .filter((d) => selectedDocIds.includes(d.id))
-        .map((d) => ({ name: d.filename, id: d.id }))
-      setMessages((prev) => [
-        ...prev,
-        { role: 'user', content: actualText, attachedDocs: attachedDocs.length ? attachedDocs : undefined },
-        { role: 'assistant', content: '' },
-      ])
-
-      const isFirst = !conversationId
-
-      await sendMessageStream(
-        actualText,
-        conversationId,
-        model,
-        selectedDocIds,
-        (token) => {
-          setMessages((prev) => {
-            const next = [...prev]
-            next[next.length - 1] = {
-              ...next[next.length - 1],
-              content: next[next.length - 1].content + token,
-            }
-            return next
-          })
-        },
-        (newConvId, sources, title, meta) => {
-          setMessages((prev) => {
-            const next = [...prev]
-            next[next.length - 1] = {
-              ...next[next.length - 1],
-              stage: null,
-              ...(sources.length > 0 ? {
-                sources,
-                mode: meta?.mode,
-                agentName: meta?.agent_name,
-                promptName: meta?.prompt_name,
-                promptVersion: meta?.prompt_version,
-                traceRunId: meta?.trace_run_id,
-              } : {}),
-            }
-            return next
-          })
-          setConversationId(newConvId)
-          setLoading(false)
-          if (isFirst && title) {
-            setConversations((prev) =>
-              prev.map((c) => c.id === newConvId ? { ...c, title } : c)
-            )
-          }
-          refreshConversations()
-        },
-        (msg) => {
-          setError(msg)
-          setLoading(false)
-        },
-        (meta: ChatResponse) => {
-          setMessages((prev) => {
-            const next = [...prev]
-            const last = next[next.length - 1]
-            if (last?.role === 'assistant') {
-              next[next.length - 1] = {
-                ...last,
-                mode: meta.mode,
-                agentName: meta.agent_name,
-                promptName: meta.prompt_name,
-                promptVersion: meta.prompt_version,
-                traceRunId: meta.trace_run_id,
-              }
-            }
-            return next
-          })
-        },
-        (stage: string) => {
-          setMessages((prev) => {
-            const next = [...prev]
-            next[next.length - 1] = { ...next[next.length - 1], stage }
-            return next
-          })
-        },
-        () => {
-          // clear: chat handoff to retrieval — reset the assistant message content
-          setMessages((prev) => {
-            const next = [...prev]
-            next[next.length - 1] = { ...next[next.length - 1], content: '', stage: '切換文件檢索模式' }
-            return next
-          })
-        },
-      )
-    },
-    [loading, conversationId, model, selectedDocIds, documents, refreshConversations],
-  )
+  // ── Document handlers ──────────────────────────────────────────────────────
 
   const handleUpload = useCallback(
     async (files: File[]) => {
@@ -214,49 +122,59 @@ export default function App() {
       setUploadingFiles(files.map((f) => f.name))
       const results = await Promise.allSettled(files.map((f) => uploadDocument(f)))
       setUploadingFiles([])
-      await refreshDocuments()
+      queryClient.invalidateQueries({ queryKey: ['documents'] })
       const failed = results.filter((r) => r.status === 'rejected')
       if (failed.length > 0) setError(`${failed.length} 個檔案上傳失敗`)
-      // add all successfully uploaded docs to selection
       const newIds = results
         .filter((r): r is PromiseFulfilledResult<UploadResponse> => r.status === 'fulfilled')
         .map((r) => r.value.id)
       if (newIds.length > 0) setSelectedDocIds((prev) => [...new Set([...prev, ...newIds])])
     },
-    [refreshDocuments],
+    [queryClient],
   )
 
   const handleDeleteDoc = useCallback(
     async (id: number) => {
-      setDocuments((prev) => prev.filter((d) => d.id !== id))
+      // Optimistic remove
+      queryClient.setQueryData(['documents'], (prev: DocumentItem[] | undefined) =>
+        prev?.filter((d) => d.id !== id) ?? []
+      )
       setSelectedDocIds((prev) => prev.filter((d) => d !== id))
       try {
         await deleteDocument(id)
       } catch {
         setError('刪除失敗')
-        await refreshDocuments()
+        queryClient.invalidateQueries({ queryKey: ['documents'] })
       }
     },
-    [refreshDocuments],
+    [queryClient],
   )
 
   const handleReindexDoc = useCallback(
     async (id: number) => {
-      setDocuments((prev) => prev.map((d) => d.id === id ? { ...d, status: 'processing' } : d))
+      // Optimistic status change
+      queryClient.setQueryData(['documents'], (prev: DocumentItem[] | undefined) =>
+        prev?.map((d) => (d.id === id ? { ...d, status: 'processing' } : d)) ?? []
+      )
       try {
         await reindexDocument(id)
-        await refreshDocuments()
       } catch {
         setError('重新嵌入失敗')
-        await refreshDocuments()
+      } finally {
+        queryClient.invalidateQueries({ queryKey: ['documents'] })
       }
     },
-    [refreshDocuments],
+    [queryClient],
   )
+
+  // ── Conversation handlers ──────────────────────────────────────────────────
 
   const handleDeleteConversation = useCallback(
     async (id: number) => {
-      setConversations((prev) => prev.filter((c) => c.id !== id))
+      // Optimistic remove
+      queryClient.setQueryData(['conversations'], (prev: ConversationItem[] | undefined) =>
+        prev?.filter((c) => c.id !== id) ?? []
+      )
       localStorage.removeItem(`att_${id}`)
       if (conversationId === id) {
         setMessages([])
@@ -267,29 +185,16 @@ export default function App() {
         await deleteConversation(id)
       } catch {
         setError('刪除對話失敗')
-        await refreshConversations()
+        queryClient.invalidateQueries({ queryKey: ['conversations'] })
       }
     },
-    [conversationId, refreshConversations],
+    [conversationId, queryClient],
   )
-
-  const handleOpenDoc = useCallback((docId: number) => {
-    setPdfViewDocId(docId)
-    setSidebarCollapsed(true)
-    setPdfOpen(true)
-  }, [])
-
-  const handleNewChat = () => {
-    setMessages([])
-    setConversationId(null)
-    setError(null)
-    setSelectedDocIds([])
-  }
 
   const handleLoadConversation = useCallback(
     async (id: number) => {
-      if (loading) return
-      setLoading(true)
+      if (convLoading) return
+      setConvLoading(true)
       setError(null)
       try {
         const msgs = await getConversationMessages(id)
@@ -315,15 +220,30 @@ export default function App() {
       } catch {
         setError('無法載入對話')
       } finally {
-        setLoading(false)
+        setConvLoading(false)
       }
     },
-    [loading],
+    [convLoading],
   )
+
+  const handleOpenDoc = useCallback((docId: number) => {
+    setPdfViewDocId(docId)
+    setSidebarCollapsed(true)
+    setPdfOpen(true)
+  }, [])
+
+  const handleNewChat = () => {
+    setMessages([])
+    setConversationId(null)
+    setError(null)
+    setSelectedDocIds([])
+  }
+
+  // ── Pages ──────────────────────────────────────────────────────────────────
 
   if (page === 'summaries') {
     return (
-      <Suspense fallback={<div className="app-layout" style={{ display: 'grid', placeItems: 'center' }}>載入摘要頁中…</div>}>
+      <Suspense fallback={<div className="app-layout loading-center">載入摘要頁中…</div>}>
         <SummaryPage onBack={() => navigateTo('chat')} />
       </Suspense>
     )
@@ -331,7 +251,7 @@ export default function App() {
 
   if (page === 'traces') {
     return (
-      <Suspense fallback={<div className="app-layout" style={{ display: 'grid', placeItems: 'center' }}>Loading traces</div>}>
+      <Suspense fallback={<div className="app-layout loading-center">Loading traces</div>}>
         <AdminTracesPage onBack={() => navigateTo('chat')} />
       </Suspense>
     )
@@ -345,10 +265,12 @@ export default function App() {
         onLoadConversation={handleLoadConversation}
         onDeleteConversation={handleDeleteConversation}
         onRenameConversation={(id, title) =>
-          setConversations(prev => prev.map(c => c.id === id ? { ...c, title } : c))
+          queryClient.setQueryData(['conversations'], (prev: ConversationItem[] | undefined) =>
+            prev?.map((c) => (c.id === id ? { ...c, title } : c)) ?? []
+          )
         }
         activeConversationId={conversationId}
-        loading={loading}
+        loading={loading || convLoading}
         collapsed={sidebarCollapsed}
         onToggleCollapse={handleToggleSidebar}
         onOpenSummaries={() => navigateTo('summaries')}
@@ -374,7 +296,9 @@ export default function App() {
         conversationId={conversationId}
         conversationTitle={conversations.find(c => c.id === conversationId)?.title ?? null}
         onRenameConversation={(id, title) =>
-          setConversations(prev => prev.map(c => c.id === id ? { ...c, title } : c))
+          queryClient.setQueryData(['conversations'], (prev: ConversationItem[] | undefined) =>
+            prev?.map((c) => (c.id === id ? { ...c, title } : c)) ?? []
+          )
         }
       />
       {pdfOpen && (

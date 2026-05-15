@@ -2,39 +2,45 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
+import logging
 import os
 from dataclasses import dataclass
+
+from config import settings
 
 _PROMPTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "prompts"))
 _EXTENDS_PREFIX = "# extends:"
 _cache: dict[str, str] = {}
+_hash_cache: dict[str, str] = {}              # source_name → sha256[:12] hash
 _langfuse_obj_cache: dict[str, object] = {}   # source_name → Langfuse PromptClient
 _langfuse_version_cache: dict[str, int] = {}  # source_name → Langfuse version number
+logger = logging.getLogger(__name__)
 
 
 ALIASES: dict[str, str] = {
     "core": "core",
     "retrieval_capability": "retrieval_capability",
     "chat_mode": "chat_mode",
-    "summary_mode": "summary_mode",
     "summary_quality": "summary_quality",
     "question_skill": "question_skill",
     "summary_structure": "summary_structure",
     "question_generator": "question_generator",
     "intent_router": "intent_router",
+    "route_coordinator": "route_coordinator",
+    "evaluation_agent": "evaluation_agent",
     "task_planner": "task_planner",
+    "research_orchestrator": "research_orchestrator",
     "research_planner": "research_planner",
     "research_reflector": "research_reflector",
     "research_writer": "research_writer",
     "chat": "chat_mode",
-    "summary_agent": "summary_mode",
     "question_system": "question_generator",
-    "router": "intent_router",
+    "router": "route_coordinator",
     "base_research": "retrieval_capability",
     "chat_task": "chat_mode",
-    "summary_task": "summary_mode",
     "question_task": "question_skill",
 }
 
@@ -98,29 +104,55 @@ def get(name: str) -> str:
         return _cache[src]
 
     # Try Langfuse first
-    try:
-        from langfuse import get_client
-        langfuse = get_client()
-        # Fetch with 'production' label by default
-        lp = langfuse.get_prompt(src, label="production")
-        if lp:
-            # If it's a chat prompt, join messages with newlines for legacy compatibility
-            if lp.type == "chat":
-                content = "\n\n".join(
-                    f"[{m.get('role', 'user')}]: {m.get('content', '')}"
-                    if isinstance(m, dict) else str(m)
-                    for m in lp.prompt
-                )
-            else:
-                content = lp.prompt
+    if settings.langfuse_enabled and settings.langfuse_public_key.get_secret_value() and settings.langfuse_secret_key.get_secret_value():
+        base_url = (
+            os.getenv("LANGFUSE_BASE_URL")
+            or settings.langfuse_base_url
+            or settings.langfuse_host
+        )
+        if base_url:
+            os.environ.setdefault("LANGFUSE_BASE_URL", base_url)
 
-            _cache[src] = content
-            _langfuse_obj_cache[src] = lp
-            _langfuse_version_cache[src] = getattr(lp, "version", None)
-            return content
-    except Exception:
-        # Fallback to local file if Langfuse is unavailable or prompt doesn't exist
-        pass
+        try:
+            from langfuse import get_client
+
+            langfuse = get_client()
+            # Try production first, then fall back to latest if production is missing
+            lp = None
+            try:
+                lp = langfuse.get_prompt(src, label="production")
+            except Exception:
+                pass
+
+            if not lp:
+                try:
+                    lp = langfuse.get_prompt(src)  # default is latest
+                    if lp:
+                        logger.info(f"Prompt '{src}' found in Langfuse (latest), but missing 'production' label.")
+                except Exception:
+                    pass
+
+            if lp:
+                # If it's a chat prompt, join messages with newlines for legacy compatibility
+                prompt_type = getattr(lp, "type", "text")
+                if prompt_type == "chat":
+                    content = "\n\n".join(
+                        f"[{m.get('role', 'user')}]: {m.get('content', '')}"
+                        if isinstance(m, dict) else str(m)
+                        for m in lp.prompt
+                    )
+                else:
+                    content = lp.prompt
+
+                _cache[src] = content
+                _langfuse_obj_cache[src] = lp
+                _langfuse_version_cache[src] = getattr(lp, "version", None)
+                logger.info(f"Successfully loaded prompt '{src}' from Langfuse (v{getattr(lp, 'version', '?')})")
+                return content
+            else:
+                logger.warning(f"Prompt '{src}' not found in Langfuse. Falling back to local file.")
+        except Exception as e:
+            logger.warning(f"Langfuse prompt fetch error for '{src}': {e}")
 
     if src not in _cache:
         _cache[src] = _load_prompt(src, [])
@@ -137,8 +169,10 @@ def reload(name: str) -> str:
 
 def reload_all() -> None:
     _cache.clear()
+    _hash_cache.clear()
     _langfuse_obj_cache.clear()
     _langfuse_version_cache.clear()
+    _ab_tests_cached.cache_clear()
 
 
 def version(name: str) -> str:
@@ -147,13 +181,14 @@ def version(name: str) -> str:
     lf_ver = _langfuse_version_cache.get(src)
     if lf_ver is not None:
         return f"langfuse:{lf_ver}"
-    content = _cache.get(src, "")
-    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:12]
-    return f"sha256:{digest}"
+    if src not in _hash_cache:
+        content = _cache.get(src, "")
+        _hash_cache[src] = hashlib.sha256(content.encode("utf-8")).hexdigest()[:12]
+    return f"sha256:{_hash_cache[src]}"
 
 
-def _ab_tests() -> dict[str, list[str]]:
-    raw = os.getenv("PROMPT_AB_TESTS", "").strip()
+@functools.lru_cache(maxsize=8)
+def _ab_tests_cached(raw: str) -> dict[str, list[str]]:
     if not raw:
         return {}
     try:
@@ -183,6 +218,10 @@ def _ab_tests() -> dict[str, list[str]]:
     return result
 
 
+def _ab_tests() -> dict[str, list[str]]:
+    return _ab_tests_cached(os.getenv("PROMPT_AB_TESTS", "").strip())
+
+
 def select(name: str, key: str | None = None) -> str:
     variants = _ab_tests().get(name)
     if not variants:
@@ -195,8 +234,8 @@ def select(name: str, key: str | None = None) -> str:
 def get_langfuse_obj(name: str):
     """Return the raw Langfuse PromptClient for a prompt, or None if not in Langfuse cache.
 
-    Useful for passing as ``metadata={"langfuse_prompt": get_langfuse_obj(...)}`` to a
-    LangChain prompt template so Langfuse links traces to the specific prompt version.
+    The observability layer uses this object to link the active Langfuse
+    generation to the specific prompt version.
     """
     src = source_name(name)
     if src not in _langfuse_obj_cache:

@@ -23,7 +23,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
 from dotenv import load_dotenv
 load_dotenv(os.path.join(BACKEND_DIR, ".env"))
 
-from database import SessionLocal, Document
+from db import SessionLocal, Document
 from rag import (
     _LLAMAPARSE_CACHE_DIR,
     _PYMUPDF_CACHE_DIR,

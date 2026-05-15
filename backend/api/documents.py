@@ -6,13 +6,17 @@ import os
 import tempfile
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
+
+logger = logging.getLogger(__name__)
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from config import settings
-from database import get_db, Document, SessionLocal
+from db import get_db, Document, SessionLocal
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 from rag import (
     process_pdf, delete_document_vectors, get_qdrant_client, COLLECTION_NAME,
@@ -23,6 +27,13 @@ from rag import (
 from services import job_service, storage_service
 
 router = APIRouter()
+
+
+def _sync_vector_filename(doc_id: int, filename: str) -> None:
+    try:
+        update_document_vector_filename(doc_id, filename)
+    except Exception:
+        logger.warning("vector filename sync failed for doc %s", doc_id, exc_info=True)
 
 
 def _copy_upload_and_hash(file: UploadFile, file_path: str) -> str:
@@ -103,36 +114,16 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
     db.refresh(doc)
 
     job_service.jobs_enqueue([(doc.id, doc.filename)], job_type="reindex")
-    job_service.jobs_set_running(doc.id)
+    job_service._reindex_work_queue.append({
+        "doc_id": doc.id,
+        "file_path": file_path,
+        "tmp_path": None,
+        "parser": None,
+    })
+    job_service._reindex_event.set()
     await job_service.push_jobs()
 
-    loop = asyncio.get_running_loop()
-
-    def _stage_cb(label: str):
-        job_service.jobs_set_stage(doc.id, label)
-        asyncio.run_coroutine_threadsafe(job_service.push_jobs(), loop)
-
-    try:
-        chunks, abstract, quality_issue, parser_used = await asyncio.to_thread(
-            process_pdf, file_path, doc.id, _stage_cb
-        )
-        doc.status = "ready"
-        doc.abstract_text = abstract
-        doc.quality_issue = quality_issue
-        doc.parser_used = parser_used
-        db.commit()
-        job_service.jobs_mark_done(doc.id)
-    except Exception as e:
-        doc.status = "error"
-        db.commit()
-        job_service.jobs_mark_done(doc.id)
-        raise HTTPException(status_code=500, detail=f"Failed to process PDF: {e}")
-    finally:
-        await job_service.push_jobs()
-        if storage_service._USE_BLOB and os.path.exists(file_path):
-            os.remove(file_path)
-
-    return {"id": doc.id, "filename": doc.filename, "status": doc.status, "chunks": chunks, "duplicate": False}
+    return {"id": doc.id, "filename": doc.filename, "status": "processing", "queued": True, "duplicate": False}
 
 
 @router.get("/api/documents")
@@ -173,7 +164,7 @@ class RenameRequest(BaseModel):
 
 
 @router.patch("/api/documents/{doc_id}/rename")
-def rename_document(doc_id: int, req: RenameRequest, db: Session = Depends(get_db)):
+def rename_document(doc_id: int, req: RenameRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     import re
     from pathlib import Path
     new_title = req.new_title.strip()
@@ -187,9 +178,21 @@ def rename_document(doc_id: int, req: RenameRequest, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail="Document not found")
 
     old_filename = doc.filename
+    # Preserve the "projectNo_dept_" prefix (e.g. "112_CS_") if the original
+    # filename follows that convention; otherwise use the bare title.
     m = re.match(r'^([^_]+_[^_]+_)', old_filename)
     prefix = m.group(1) if m else ''
     new_filename = f"{prefix}{new_title}.pdf"
+
+    if new_filename == old_filename:
+        return {"id": doc_id, "filename": old_filename}
+
+    if db.query(Document).filter(
+        Document.filename == new_filename,
+        Document.deleted_at.is_(None),
+        Document.id != doc_id,
+    ).first():
+        raise HTTPException(status_code=409, detail="同名檔案已存在")
 
     if not storage_service._USE_BLOB and doc.file_path:
         old_path = Path(doc.file_path)
@@ -202,12 +205,8 @@ def rename_document(doc_id: int, req: RenameRequest, db: Session = Depends(get_d
                 raise HTTPException(status_code=500, detail=f"無法重新命名檔案：{e}")
 
     doc.filename = new_filename
-    try:
-        update_document_vector_filename(doc_id, new_filename)
-    except Exception:
-        # Rename should not fail just because vector metadata is temporarily unavailable.
-        pass
     db.commit()
+    background_tasks.add_task(_sync_vector_filename, doc_id, new_filename)
     return {"id": doc_id, "filename": new_filename}
 
 
@@ -396,7 +395,7 @@ def export_document(doc_id: int, db: Session = Depends(get_db)):
     import re
     import zipfile
     from datetime import datetime, timezone
-    from database import Trace
+    from db import Trace
 
     doc = db.query(Document).filter(Document.id == doc_id, Document.deleted_at.is_(None)).first()
     if not doc:
@@ -452,7 +451,7 @@ def export_document(doc_id: int, db: Session = Depends(get_db)):
     if not traces_raw:
         candidates = (
             db.query(Trace)
-            .filter(Trace.parent_run_id.is_(None), Trace.document_ids.isnot(None))
+            .filter(Trace.agent_name != "router_agent", Trace.document_ids.isnot(None), Trace.display.isnot(None))
             .order_by(Trace.start_time.desc()).limit(200).all()
         )
         for t in candidates:
@@ -485,49 +484,53 @@ def export_document(doc_id: int, db: Session = Depends(get_db)):
             "display": display,
         })
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("metadata.json", json.dumps(metadata, ensure_ascii=False, indent=2))
-        zf.writestr("chunks.json",   json.dumps(chunks_data, ensure_ascii=False, indent=2))
-        zf.writestr("traces.json",   json.dumps(traces_data, ensure_ascii=False, indent=2))
+    from starlette.background import BackgroundTask
 
-        # Parser cache files — include whichever exist
-        cache_files = {
-            "cache/llamaparse.md":   _llamaparse_cache_path(doc_id),
-            "cache/llamaparse.raw.json": _llamaparse_raw_cache_path(doc_id),
-            "cache/azure_di.md":     _azure_di_cache_path(doc_id),
-            "cache/pymupdf.md":      _pymupdf_cache_path(doc_id),
-        }
-        for zip_name, disk_path in cache_files.items():
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".zip")
+    os.close(tmp_fd)
+    try:
+        with zipfile.ZipFile(tmp_path, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("metadata.json", json.dumps(metadata, ensure_ascii=False, indent=2))
+            zf.writestr("chunks.json",   json.dumps(chunks_data, ensure_ascii=False, indent=2))
+            zf.writestr("traces.json",   json.dumps(traces_data, ensure_ascii=False, indent=2))
+
+            # Parser cache files — stream from disk, no full read into memory
+            cache_files = {
+                "cache/llamaparse.md":       _llamaparse_cache_path(doc_id),
+                "cache/llamaparse.raw.json": _llamaparse_raw_cache_path(doc_id),
+                "cache/azure_di.md":         _azure_di_cache_path(doc_id),
+                "cache/pymupdf.md":          _pymupdf_cache_path(doc_id),
+            }
+            for zip_name, disk_path in cache_files.items():
+                try:
+                    if os.path.exists(disk_path):
+                        zf.write(disk_path, arcname=zip_name)
+                except Exception:
+                    pass
+
             try:
-                if os.path.exists(disk_path):
-                    with open(disk_path, "rb") as f:
-                        zf.writestr(zip_name, f.read())
+                if storage_service._USE_BLOB:
+                    blob_tmp = storage_service.download_blob_to_tmp(doc.file_path)
+                    try:
+                        zf.write(blob_tmp, arcname=doc.filename)
+                    finally:
+                        os.unlink(blob_tmp)
+                else:
+                    if os.path.exists(doc.file_path):
+                        zf.write(doc.file_path, arcname=doc.filename)
             except Exception:
                 pass
-
-        try:
-            if storage_service._USE_BLOB:
-                tmp = storage_service.download_blob_to_tmp(doc.file_path)
-                try:
-                    with open(tmp, "rb") as f:
-                        zf.writestr(doc.filename, f.read())
-                finally:
-                    os.unlink(tmp)
-            else:
-                if os.path.exists(doc.file_path):
-                    with open(doc.file_path, "rb") as f:
-                        zf.writestr(doc.filename, f.read())
-        except Exception:
-            pass
-    buf.seek(0)
+    except Exception:
+        os.unlink(tmp_path)
+        raise
 
     safe_name = re.sub(r'[^\w\u4e00-\u9fff\-.]', '_', doc.filename.replace('.pdf', ''))
     zip_filename = f"{safe_name}_export.zip"
-    return Response(
-        content=buf.read(),
+    return FileResponse(
+        tmp_path,
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(zip_filename)}"},
+        background=BackgroundTask(os.unlink, tmp_path),
     )
 
 

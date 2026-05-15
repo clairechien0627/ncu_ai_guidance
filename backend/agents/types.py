@@ -9,14 +9,17 @@ class AgentRoute:
     prompt_version: str = "unknown"
     original_intent: str | None = None
     resolved_intent: str | None = None
+    compose_after: bool = False
+    evaluate_after: bool = False
 
 
-@dataclass
+@dataclass(frozen=True)
 class AgentResult:
     response: str
     sources: list[str] = field(default_factory=list)
-    mode: str = "chat"
-    agent_name: str = "orchestrator_agent"
+    task_type: str = "chat_turn"
+    route_intent: str | None = "chat"
+    agent_name: str = "chat_agent"
     prompt_name: str = "chat"
     prompt_version: str = "unknown"
     trace_run_id: str | None = None

@@ -6,7 +6,7 @@ Only pushes prompts that have actually changed, so it's safe to run repeatedly.
 Usage:
     python backend/scripts/sync_changed_prompts.py          # only changed prompts 自動偵測內容有變的才推
     python backend/scripts/sync_changed_prompts.py --all    # force-push all 強制全部推
-    python backend/scripts/sync_changed_prompts.py chat_mode summary_mode  # specific 只推特定幾個
+    python backend/scripts/sync_changed_prompts.py chat_mode research_writer  # specific 只推特定幾個
     python backend/scripts/sync_changed_prompts.py --dry-run  # 先看看會推哪些，不實際寫入
 """
 import argparse
@@ -17,7 +17,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env")))
 
 PROMPTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "prompts"))
 
@@ -37,7 +37,7 @@ def _local_content(name: str) -> str | None:
 def _langfuse_content(langfuse, name: str) -> str | None:
     try:
         lp = langfuse.get_prompt(name, label="production")
-        if lp.type == "chat":
+        if getattr(lp, "type", "text") == "chat":
             return "\n\n".join(
                 f"[{m.get('role', 'user')}]: {m.get('content', '')}"
                 if isinstance(m, dict) else str(m)
@@ -82,10 +82,10 @@ def sync_one(langfuse, name: str, force: bool = False, dry_run: bool = False) ->
             type="text",
             labels=["production"],
         )
-        print(f"  ✓ '{name}' pushed to Langfuse (production)")
+        print(f"  OK '{name}' pushed to Langfuse (production)")
         return "pushed"
     except Exception as e:
-        print(f"  ✗ '{name}' error: {e}")
+        print(f"  ERROR '{name}' error: {e}")
         return "error"
 
 

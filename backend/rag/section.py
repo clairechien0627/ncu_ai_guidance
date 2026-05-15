@@ -62,15 +62,21 @@ _SECTION_SYSTEM_PROMPT = (
 )
 
 
+_section_llm: AzureChatOpenAI | None = None
+
+
 def _get_section_llm() -> AzureChatOpenAI:
     """Lazy singleton — cheap model for section classification."""
-    return AzureChatOpenAI(
-        azure_deployment=settings.azure_chat_deployment,
-        azure_endpoint=settings.azure_openai_endpoint,
-        api_key=settings.azure_openai_api_key,
-        api_version=settings.azure_openai_api_version,
-        temperature=0,
-    )
+    global _section_llm
+    if _section_llm is None:
+        _section_llm = AzureChatOpenAI(
+            azure_deployment=settings.azure_chat_deployment,
+            azure_endpoint=settings.azure_openai_endpoint,
+            api_key=settings.azure_openai_api_key.get_secret_value(),
+            api_version=settings.azure_openai_api_version,
+            temperature=0,
+        )
+    return _section_llm
 
 
 def _extract_headings_by_font(file_path: str) -> list[dict]:
@@ -86,54 +92,55 @@ def _extract_headings_by_font(file_path: str) -> list[dict]:
         return []
 
     from collections import Counter
-    all_sizes: list[float] = []
-    for page in pdf:
-        for block in page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]:
-            if block.get("type") != 0:
-                continue
-            for line in block["lines"]:
-                for span in line["spans"]:
-                    if span["text"].strip():
-                        all_sizes.append(round(span["size"], 1))
-    if not all_sizes:
+    try:
+        all_sizes: list[float] = []
+        for page in pdf:
+            for block in page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]:
+                if block.get("type") != 0:
+                    continue
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        if span["text"].strip():
+                            all_sizes.append(round(span["size"], 1))
+        if not all_sizes:
+            return []
+        body_size = sorted(all_sizes)[len(all_sizes) // 2]  # median beats mode when headers/tables skew frequency
+
+        candidates: list[dict] = []
+        seen: set[str] = set()
+
+        for page_num, page in enumerate(pdf):
+            for block in page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]:
+                if block.get("type") != 0:
+                    continue
+                for line in block["lines"]:
+                    spans = [s for s in line["spans"] if s["text"].strip()]
+                    if not spans:
+                        continue
+                    line_text = "".join(s["text"] for s in spans).strip()
+                    if not line_text or line_text in seen:
+                        continue
+                    if len(line_text) > 60:
+                        continue
+                    if line_text.endswith(("。", "，", ",", "；", ".", ";")):
+                        continue
+                    if "，" in line_text:
+                        continue
+
+                    is_bold = any(
+                        "bold" in s["font"].lower() or bool(s.get("flags", 0) & 16)
+                        for s in spans
+                    )
+                    median_size = sorted(s["size"] for s in spans)[len(spans) // 2]
+                    is_larger = median_size > body_size + 1
+
+                    if is_bold or is_larger:
+                        seen.add(line_text)
+                        candidates.append({"page": page_num, "text": line_text})
+
+        return candidates
+    finally:
         pdf.close()
-        return []
-    body_size = Counter(all_sizes).most_common(1)[0][0]
-
-    candidates: list[dict] = []
-    seen: set[str] = set()
-
-    for page_num, page in enumerate(pdf):
-        for block in page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]:
-            if block.get("type") != 0:
-                continue
-            for line in block["lines"]:
-                spans = [s for s in line["spans"] if s["text"].strip()]
-                if not spans:
-                    continue
-                line_text = "".join(s["text"] for s in spans).strip()
-                if not line_text or line_text in seen:
-                    continue
-                if len(line_text) > 60:
-                    continue
-                if line_text.endswith(("。", "，", ",", "；", ".", ";")):
-                    continue
-                if "，" in line_text:
-                    continue
-
-                is_bold = any(
-                    "bold" in s["font"].lower() or bool(s.get("flags", 0) & 16)
-                    for s in spans
-                )
-                median_size = sorted(s["size"] for s in spans)[len(spans) // 2]
-                is_larger = median_size > body_size + 1
-
-                if is_bold or is_larger:
-                    seen.add(line_text)
-                    candidates.append({"page": page_num, "text": line_text})
-
-    pdf.close()
-    return candidates
 
 
 def _extract_candidate_headings(docs: list) -> list[dict]:
@@ -362,6 +369,8 @@ def _build_page_section_map_llm(docs: list, file_path: str | None = None) -> dic
                 if ("429" in _exc_str or "too_many_requests" in _exc_str.lower()) and _attempt < 2:
                     _wait = 10 * (2 ** _attempt)
                     logger.warning("LLM section extraction rate-limited, retrying in %ds (attempt %d/3)", _wait, _attempt + 1)
+                    # process_pdf always runs in asyncio.to_thread, so blocking
+                    # sleep here does not affect the FastAPI event loop.
                     _time.sleep(_wait)
                 else:
                     raise
@@ -379,7 +388,11 @@ def _build_page_section_map_llm(docs: list, file_path: str | None = None) -> dic
         return {}
 
     events: list[tuple[int, str]] = sorted(
-        ((s["page"], s["category"]) for s in sections if "page" in s and "category" in s),
+        (
+            (s["page"], s["category"])
+            for s in sections
+            if isinstance(s.get("page"), int) and isinstance(s.get("category"), str)
+        ),
         key=lambda x: x[0],
     )
     for c in candidates:
@@ -392,7 +405,10 @@ def _build_page_section_map_llm(docs: list, file_path: str | None = None) -> dic
 
     all_pages = sorted({doc.metadata.get("page", 0) for doc in docs})
     if all_pages:
-        early_cutoff = all_pages[int(len(all_pages) * 0.40)]
+        # 40% cutoff, but ensure at least the first 3 pages count as "early"
+        # so that short documents (≤ 5 pages) aren't over-aggressively filtered.
+        cutoff_idx = max(min(2, len(all_pages) - 1), int(len(all_pages) * 0.40))
+        early_cutoff = all_pages[cutoff_idx]
         _late_only = {"conclusion", "future_work"}
         events = [(pg, cat) for pg, cat in events if cat not in _late_only or pg >= early_cutoff]
 

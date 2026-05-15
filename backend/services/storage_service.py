@@ -3,11 +3,11 @@ import tempfile
 
 from config import settings
 
-_USE_BLOB = bool(settings.azure_storage_connection_string)
+_USE_BLOB = bool(settings.azure_storage_connection_string.get_secret_value())
 
 if _USE_BLOB:
     from azure.storage.blob import BlobServiceClient
-    _blob_service = BlobServiceClient.from_connection_string(settings.azure_storage_connection_string)
+    _blob_service = BlobServiceClient.from_connection_string(settings.azure_storage_connection_string.get_secret_value())
     _container = _blob_service.get_container_client(settings.azure_storage_container)
     try:
         _container.create_container()
