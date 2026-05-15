@@ -325,7 +325,7 @@ def load_document_research_cache(
                 "sources": _load_list(row.sources),
             }
     except Exception as exc:
-        logger.debug("load_document_research_cache(%d): %s", document_id, exc)
+        logger.debug("load_document_research_cache(%s): %s", document_ids, exc)
         return None
 
 
@@ -380,4 +380,4 @@ def save_document_research_cache(
                     setattr(row, k, v)
             db.commit()
     except Exception as exc:
-        logger.warning("save_document_research_cache(%d): %s", document_id, exc)
+        logger.warning("save_document_research_cache(%s): %s", document_ids, exc)

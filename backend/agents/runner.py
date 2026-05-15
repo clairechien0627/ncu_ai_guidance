@@ -1,4 +1,4 @@
-﻿import contextlib
+import contextlib
 import json
 import logging
 import re
@@ -17,6 +17,7 @@ from langchain.agents.middleware import (
     SummarizationMiddleware,
     ToolCallLimitMiddleware,
     ToolRetryMiddleware,
+    after_model,
     before_model,
     dynamic_prompt,
     ModelRequest,
@@ -115,6 +116,30 @@ except Exception as _llm_init_err:
         _llm_init_err,
     )
     raise
+
+
+@after_model
+def _track_model_cost(response: AIMessage, state: dict, runtime) -> None:
+    """Log token usage per model call for cost observability."""
+    try:
+        usage = getattr(response, "usage_metadata", None)
+        if not usage:
+            return
+        ctx = getattr(runtime, "context", None)
+        intent = getattr(ctx, "route_intent", None) or "unknown"
+        thread_id = (getattr(ctx, "thread_id", None) or "")[:8]
+        model_name = (getattr(response, "response_metadata", None) or {}).get("model_name", "")
+        logger.info(
+            "model_cost intent=%s thread=%s in=%d out=%d total=%d model=%s",
+            intent,
+            thread_id,
+            usage.get("input_tokens", 0),
+            usage.get("output_tokens", 0),
+            usage.get("total_tokens", 0),
+            model_name,
+        )
+    except Exception:
+        pass
 
 
 @before_model
@@ -242,6 +267,8 @@ async def setup_checkpointer():
                     edits=[ClearToolUsesEdit(trigger=60000, keep=3)],
                 ),
                 _trim_messages,                         # safety message-count cap
+                # ── Observability ────────────────────────────────────────
+                _track_model_cost,                      # log token usage per call (intent/thread/model)
                 # ── Cost & safety limits ─────────────────────────────────
                 ModelCallLimitMiddleware(               # per-request model call hard cap (tool agent only)
                     run_limit=15,                       # chat/retrieval/question are lightweight; research graph unaffected
@@ -261,7 +288,10 @@ async def setup_checkpointer():
                     retry_on=(ConnectionError, TimeoutError),
                     on_failure="return_message",
                 ),
-                # ── HITL ────────────────────────────────────────────────
+                # ── HITL ─────────────────────────────────────────────────
+                # interrupt_on={} = no interrupts (all current tools are read-only RAG search).
+                # Enable per tool when write operations are added, e.g.:
+                #   interrupt_on={"write_file": True, "execute_code": True}
                 HumanInTheLoopMiddleware(interrupt_on={}),
             ],
             response_format=ProviderStrategy(AgentResponse, strict=True),
@@ -772,3 +802,4 @@ async def run_tool_agent_resume_stream(
     if structured:
         sources = structured.sources
     yield "", True, sources
+

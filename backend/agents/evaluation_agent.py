@@ -203,29 +203,29 @@ def _trace_payload(trace: Trace) -> tuple[str, str, list[str], dict]:
 
 async def evaluate_trace_by_run_id(run_id: str) -> EvaluationResult | None:
     """Evaluate a root trace and persist score/detail back to the Trace row."""
-    with db_session() as db:
-        trace = db.query(Trace).filter(Trace.run_id == run_id).first()
-        if not trace:
-            return None
-        user_task, answer, sources, trace_summary = _trace_payload(trace)
-        result = await evaluate_output(
-            user_task=user_task,
-            answer=answer,
-            task_type=trace.task_type or "chat_turn",
-            route_intent=trace.route_intent,
-            sources=sources,
-            trace_summary=trace_summary,
-            extra_context={"run_id": run_id, "agent_name": trace.agent_name},
-        )
-        trace.quality_score = result.overall
-        trace.quality_detail = json.dumps(result.model_dump(), ensure_ascii=False)
-        if not trace.user_feedback:
-            trace.user_feedback = _format_evaluation(result)[:500]
-        db.commit()
-        return result
+    try:
+        with db_session() as db:
+            trace = db.query(Trace).filter(Trace.run_id == run_id).first()
+            if not trace:
+                return None
+            user_task, answer, sources, trace_summary = _trace_payload(trace)
+            result = await evaluate_output(
+                user_task=user_task,
+                answer=answer,
+                task_type=trace.task_type or "chat_turn",
+                route_intent=trace.route_intent,
+                sources=sources,
+                trace_summary=trace_summary,
+                extra_context={"run_id": run_id, "agent_name": trace.agent_name},
+            )
+            trace.quality_score = result.overall
+            trace.quality_detail = json.dumps(result.model_dump(), ensure_ascii=False)
+            if not trace.user_feedback:
+                trace.user_feedback = _format_evaluation(result)[:500]
+            db.commit()
+            return result
     except Exception as exc:
         logger.warning("evaluate_trace_by_run_id failed for %s: %s", run_id, exc)
-        db.rollback()
         return None
 
 

@@ -4,11 +4,17 @@ RAG-based research PDF assistant for academic report analysis. Users upload PDFs
 
 ## Start
 
-### PostgreSQL
+### PostgreSQL (with pgvector)
 
 ```powershell
 cd D:\try
 docker-compose up -d
+```
+
+After first start, enable pgvector (one-time):
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
 ### Backend
@@ -27,6 +33,7 @@ npm run dev
 
 - Frontend: <http://localhost:5173>
 - Backend docs: <http://localhost:8200/docs>
+- Health check: <http://localhost:8200/health>
 
 ## Architecture
 
@@ -79,15 +86,15 @@ POST /api/chat or POST /api/chat/stream
         -> router trace root
         -> ExecutionPlan
         -> intent = chat
-           -> chat_agent
+           -> chat_agent (streaming tokens)
         -> intent = retrieval
-           -> retrieval_agent
+           -> retrieval_agent (streaming tokens)
         -> intent = question
            -> if documents attached
               -> retrieval_agent
               -> question_agent
            -> else
-              -> question_agent
+              -> question_agent (streaming tokens)
         -> intent = research
            -> research_agent
         -> intent = evaluation
@@ -162,7 +169,7 @@ Used by chat-triggered research tasks and Extraction Pipeline Step 1.
 ```text
 research_agent.run_research_task()
   -> task_planner
-  -> research_graph
+  -> research_graph (AsyncPostgresSaver checkpointer + AsyncPostgresStore)
      -> orchestrator (LLM decides which slots are ready to search)
      -> slot_worker × N in parallel (plan + search + reflect per slot)
      -> batch_complete (merge results, update consecutive_no_new)
@@ -174,8 +181,8 @@ research_agent.run_research_task()
 | ---- | ---- | ------- |
 | task_planner | `agents/research/task_planner.py` | Creates coverage items and output contract |
 | orchestrator | `agents/research/orchestrator.py` | LLM decides which slots have enough context to search now; dispatches workers via Send API |
-| slot_worker | `agents/research/research_graph.py` | Per-slot worker: plan query → retrieve → reflect (combined into one node) |
-| batch_complete | `agents/research/research_graph.py` | Merges parallel worker results; updates `consecutive_no_new` |
+| slot_worker | `agents/research/graph_nodes.py` | Per-slot worker: plan query → retrieve → reflect (combined into one node) |
+| batch_complete | `agents/research/graph_nodes.py` | Merges parallel worker results; updates `consecutive_no_new` |
 | research_planner | `agents/research/planner.py` | Per-slot query planning (`plan_query_for_slot`) |
 | retriever | `agents/research/retriever.py` | Runs `search_report` |
 | research_reflector | `agents/research/reflector.py` | Evaluates chunks and updates slot status |
@@ -185,6 +192,59 @@ research_agent.run_research_task()
 #### Parallel Execution
 
 The research graph uses LangGraph's `Send` API to dispatch multiple `slot_worker` nodes in parallel. The orchestrator (an LLM call) decides which coverage slots have sufficient context to search in the current batch. Each worker independently runs plan → retrieve → reflect and returns a delta patch. Merge reducers on `ResearchGraphState` handle concurrent writes to `evidence`, `slot_status`, `known_keywords`, and related fields.
+
+#### Fault Tolerance
+
+Every graph node has a `RetryPolicy`, `TimeoutPolicy`, and `error_handler`. On exhausting retries, error handlers return a minimal state patch so the graph continues rather than crashing. The `slot_worker` checks `runtime.drain_requested` and skips expensive work on graceful shutdown, allowing the checkpoint to be saved before the process exits.
+
+#### Document Research Cache
+
+Research results are cached per document set and coverage template (`document_research_cache` table). The cache key is `(document_set_hash, coverage_hash)` where `document_set_hash = MD5(sorted doc IDs)`. Pre-filled slots are loaded before the graph starts, allowing the graph to skip already-covered items.
+
+### Memory System
+
+Three-layer memory with policy-based read/write:
+
+```text
+Short-term  context_summary column (per-thread)
+            Structured v2 format: coverage status + evidence notes per slot.
+            Updated after each research run without LLM compression.
+
+Long-term   LangGraph AsyncPostgresStore (per-user, pgvector semantic search)
+            Past research findings embedded and retrieved for new questions.
+            Stored under namespace (user_id, "research_memories").
+
+Document    document_research_cache table (per-document-set, per-coverage-template)
+            Pre-loads filled slots on subsequent runs to avoid redundant searches.
+```
+
+`services/agent_memory.py` owns the MemoryPolicy abstraction:
+
+| Intent | Read context_summary | Read long-term | Read doc cache | Write context_summary | Write long-term |
+| ------ | -------------------- | -------------- | -------------- | --------------------- | --------------- |
+| research | ✓ | ✓ | ✓ | ✓ | ✓ |
+| retrieval | ✓ | — | ✓ | — | — |
+| question | ✓ | — | — | — | — |
+| chat | ✓ | ✓ | — | — | — |
+
+### Tool Agent Middleware Stack
+
+`runner.py` builds the tool agent with a layered middleware stack:
+
+```text
+@dynamic_prompt _memory_prompt   dynamic system prompt + memory context per MemoryPolicy (cached per run)
+@after_model _track_model_cost   log token usage per call (intent / thread / model)
+@before_model _trim_messages     safety message-count cap (20 messages)
+SummarizationMiddleware          compress old messages instead of dropping
+ContextEditingMiddleware         clear stale tool results at token limit
+ModelCallLimitMiddleware         per-request model call hard cap (run_limit=15)
+ModelFallbackMiddleware          fallback to mini model when primary Azure OpenAI fails
+ModelRetryMiddleware             retry StructuredOutputValidationError
+ToolRetryMiddleware              retry transient tool failures (ConnectionError, TimeoutError)
+HumanInTheLoopMiddleware         interrupt_on={} — no interrupts (all tools are read-only RAG)
+```
+
+HITL is infrastructure-ready. Enable per-tool when write operations are added: `interrupt_on={"tool_name": True}`. SSE resume endpoint: `POST /api/conversations/{conv_id}/resume`.
 
 ### Extraction Pipeline
 
@@ -208,18 +268,23 @@ Step 2 and Step 3 run in parallel. Step 3 uses Step 1's raw summary as input.
 | `main.py` | FastAPI app entry, startup, routers, job workers |
 | `agents/router_agent.py` | Intent classification and request routing |
 | `agents/chat_agent.py` | No-tool chat and final response composition |
-| `agents/runner.py` | Tool-enabled LangGraph runner used by retrieval_agent |
+| `agents/runner.py` | Tool-enabled LangGraph runner (middleware stack, checkpointer, store) |
 | `agents/retrieval_agent.py` | Focused document Q&A task agent |
 | `agents/question_agent.py` | Question and tutoring task agent |
 | `agents/research/agent.py` | Research pipeline entry point (`run_research_task`, `run_research_summary`) |
 | `agents/research/orchestrator.py` | Batch orchestrator: slot readiness decision and candidate filtering |
-| `agents/research/research_graph.py` | LangGraph graph definition: orchestrator_node, slot_worker_node, batch_complete_node |
+| `agents/research/graph_nodes.py` | LangGraph node functions: orchestrator, slot_worker, batch_complete, verification, writer |
+| `agents/research/graph_utils.py` | Research graph utility helpers: query planning, slot routing, evidence merge |
+| `agents/research/research_graph.py` | Graph routing, error handlers, graph construction, public API |
 | `agents/research/planner.py` | Per-slot query planner (`plan_query_for_slot`) |
 | `agents/research/state.py` | ResearchGraphState with merge reducers; WorkerState |
 | `agents/evaluation_agent.py` | General output and trace evaluation agent |
-| `api/chat.py` | Chat and streaming API |
+| `api/chat.py` | Chat and streaming API; interrupt/resume SSE endpoints |
+| `api/health.py` | GET /health — checks postgres, checkpointer, store, qdrant |
 | `api/summaries.py` | Summary management and extraction endpoints |
 | `api/traces.py` | Local trace monitor API |
+| `services/agent_memory.py` | MemoryPolicy: `build_memory_context`, `record_agent_memory` |
+| `services/memory_service.py` | context_summary, LangGraph Store long-term memory, document research cache |
 | `services/extraction.py` | Summary Page extraction pipeline |
 | `services/extraction_quality.py` | Extraction Step 4 quality scoring |
 | `services/job_service.py` | Background job scheduling |
@@ -332,9 +397,15 @@ research
 
 | Store | Purpose | Default |
 | ----- | ------- | ------- |
-| PostgreSQL | Documents, conversations, messages, traces, jobs | `127.0.0.1:5432/reportdb` (Docker) |
-| Qdrant | Dense + sparse vector search | Cloud (`QDRANT_URL` + `QDRANT_API_KEY`) |
+| PostgreSQL (pgvector) | Documents, conversations, messages, traces, jobs, checkpoints, long-term memory | `127.0.0.1:5432/reportdb` (Docker, `pgvector/pgvector:pg16`) |
+| Qdrant | Dense + sparse vector search for document RAG | Cloud (`QDRANT_URL` + `QDRANT_API_KEY`) |
 | Disk / Azure Blob | Raw PDF files | `backend/uploads/` or configured blob container |
+
+PostgreSQL also hosts:
+
+- `AsyncPostgresSaver` — LangGraph checkpointer for durable tool-agent runs
+- `AsyncPostgresStore` — LangGraph Store for per-user long-term research memory (pgvector semantic search)
+- `document_research_cache` — per-document-set coverage cache (keyed by `document_set_hash + coverage_hash`)
 
 ## Environment
 
@@ -363,7 +434,7 @@ CORS_ORIGINS
 Syntax check:
 
 ```powershell
-python -m py_compile backend\agents\runner.py backend\agents\router_agent.py backend\agents\chat_agent.py backend\agents\research\agent.py backend\agents\research\research_graph.py backend\agents\research\orchestrator.py backend\agents\research\planner.py backend\agents\research\reflector.py backend\agents\research\writer.py backend\agents\research\retriever.py backend\agents\research\state.py backend\agents\research\task_planner.py backend\services\extraction.py
+python -m py_compile backend\agents\runner.py backend\agents\router_agent.py backend\agents\chat_agent.py backend\agents\research\agent.py backend\agents\research\research_graph.py backend\agents\research\graph_nodes.py backend\agents\research\graph_utils.py backend\agents\research\orchestrator.py backend\agents\research\planner.py backend\agents\research\reflector.py backend\agents\research\writer.py backend\agents\research\retriever.py backend\agents\research\state.py backend\agents\research\task_planner.py backend\services\extraction.py backend\services\memory_service.py backend\services\agent_memory.py
 ```
 
 Focused tests:
