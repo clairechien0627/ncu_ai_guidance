@@ -133,7 +133,10 @@ async def _run_single_slot(
         })
     else:
         try:
-            decision = await plan_query_for_slot(llm, rs, slot, hint)
+            decision = await asyncio.wait_for(
+                plan_query_for_slot(llm, rs, slot, hint),
+                timeout=60,
+            )
         except Exception as exc:
             logger.warning("_run_single_slot planner failed for %s: %s", slot, exc)
             decision = build_slot_decision(rs, slot)
@@ -178,7 +181,10 @@ async def _run_single_slot(
     evidence_counts_before = {k: len(v) for k, v in rs.evidence.items()}
     details_counts_before = {k: len(v) for k, v in rs.evidence_details.items()}
     known_before = set(rs.known_keywords)
-    reflection = await reflect_results(llm, state=rs, slot=slot, query=final_query, chunks=chunks)
+    reflection = await asyncio.wait_for(
+        reflect_results(llm, state=rs, slot=slot, query=final_query, chunks=chunks),
+        timeout=60,
+    )
     apply_reflection(rs, reflection)
     evidence_progress = bool(chunks) and (
         rs.slot_status != status_before
@@ -397,9 +403,13 @@ async def slot_executor_node(
             accumulated["slot_status"] = _merge_dict_overwrite(
                 accumulated["slot_status"], result["slot_status"]
             )
-        for list_key in ("used_queries", "steps_json", "chunks_by_query_json", "messages"):
+        for list_key in ("used_queries", "steps_json", "chunks_by_query_json"):
             if list_key in result:
                 accumulated[list_key] = accumulated[list_key] + list(result[list_key] or [])
+        if "messages" in result:
+            # Cap at 60 messages to prevent checkpoint bloat in long multi-slot runs
+            combined = accumulated["messages"] + list(result["messages"] or [])
+            accumulated["messages"] = combined[-60:]
         for unique_key in ("sources", "known_keywords", "used_query_keys", "seen_chunk_keys",
                            "suggested_query_terms", "avoid_query_terms"):
             if unique_key in result:
