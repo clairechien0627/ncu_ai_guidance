@@ -72,6 +72,11 @@ def _coverage_hash(coverage_ids: list[str]) -> str:
     return hashlib.md5("|".join(sorted(coverage_ids)).encode()).hexdigest()
 
 
+def _document_set_hash(document_ids: list[int]) -> str:
+    """MD5 of sorted comma-joined document IDs. Works for any number of documents."""
+    return hashlib.md5(",".join(str(i) for i in sorted(document_ids)).encode()).hexdigest()
+
+
 # ── Short-term: context_summary ───────────────────────────────────────────────
 
 def _load_summary(thread_id: str) -> dict:
@@ -266,18 +271,20 @@ async def search_research_memories(user_id: str, query: str, limit: int = LONG_T
 # ── Document research cache ────────────────────────────────────────────────────
 
 def load_document_research_cache(
-    document_id: int,
+    document_ids: list[int],
     coverage_ids: list[str],
     max_age_days: int = CACHE_MAX_AGE_DAYS,
 ) -> dict | None:
-    """Return cached slot_status, evidence, and keywords for a document, or None.
+    """Return cached slot_status, evidence, and keywords for a document set, or None.
 
+    Works for any number of documents (single or multi).
     Only returns a cache hit if:
-    - The coverage template (coverage_ids) matches exactly.
+    - The document set and coverage template both match exactly.
     - The cache is not older than max_age_days.
     - At least one slot is FILLED or EXHAUSTED (partial runs are not cached).
     """
     from db import db_session, DocumentResearchCache
+    dset_hash = _document_set_hash(document_ids)
     chash = _coverage_hash(coverage_ids)
     cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
     try:
@@ -285,7 +292,7 @@ def load_document_research_cache(
             row = (
                 db.query(DocumentResearchCache)
                 .filter(
-                    DocumentResearchCache.document_id == document_id,
+                    DocumentResearchCache.document_set_hash == dset_hash,
                     DocumentResearchCache.coverage_hash == chash,
                     DocumentResearchCache.updated_at >= cutoff,
                 )
@@ -324,7 +331,7 @@ def load_document_research_cache(
 
 def save_document_research_cache(
     *,
-    document_id: int,
+    document_ids: list[int],
     coverage_ids: list[str],
     slot_status: dict,
     evidence: dict,
@@ -334,8 +341,9 @@ def save_document_research_cache(
     sources: list[str],
     search_count: int,
 ) -> None:
-    """Upsert research results for a document. Fire-and-forget safe."""
+    """Upsert research results for a document set. Fire-and-forget safe."""
     from db import db_session, DocumentResearchCache
+    dset_hash = _document_set_hash(document_ids)
     chash = _coverage_hash(coverage_ids)
     now = datetime.now(timezone.utc)
     try:
@@ -343,7 +351,7 @@ def save_document_research_cache(
             row = (
                 db.query(DocumentResearchCache)
                 .filter(
-                    DocumentResearchCache.document_id == document_id,
+                    DocumentResearchCache.document_set_hash == dset_hash,
                     DocumentResearchCache.coverage_hash == chash,
                 )
                 .first()
@@ -358,9 +366,11 @@ def save_document_research_cache(
                 "search_count": search_count,
                 "updated_at": now,
             }
+            single_doc_id = document_ids[0] if len(document_ids) == 1 else None
             if row is None:
                 db.add(DocumentResearchCache(
-                    document_id=document_id,
+                    document_set_hash=dset_hash,
+                    document_id=single_doc_id,
                     coverage_hash=chash,
                     created_at=now,
                     **payload,

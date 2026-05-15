@@ -23,6 +23,7 @@ from .planner import PlannerDecision, build_slot_decision, plan_query_for_slot, 
 from .reflector import apply_reflection, reflect_results
 from .retriever import retrieve_evidence
 from .state import (
+    DEFAULT_SUMMARY_COVERAGE,
     ResearchGraphState,
     ResearchState,
     SearchStep,
@@ -924,21 +925,60 @@ async def writer_node(state: ResearchGraphState, config: RunnableConfig) -> dict
     }
 
 
+def _required_ids_from_state(state: ResearchGraphState) -> list[str]:
+    """Extract required coverage IDs directly from state without building ResearchState."""
+    items = state.get("coverage_items", [])
+    ids = [str(item.get("id")) for item in items if item.get("required", True) and item.get("id")]
+    if not ids:
+        ids = [str(item.get("id")) for item in items if item.get("id")]
+    return ids or list(t["id"] for t in DEFAULT_SUMMARY_COVERAGE)
+
+
 def should_continue(state: ResearchGraphState) -> Literal["orchestrator", "writer", "verification"]:
+    """Route after each superstep. Reads state directly — no ResearchState construction."""
     if state["search_count"] >= _hard_max_searches(state):
         return "writer"
-    rs = _graph_to_rs(state)
+
+    required = _required_ids_from_state(state)
+    slot_status: dict = state.get("slot_status", {})
+    counts = _slot_search_counts(state)
+    per_slot = _per_slot_cap(state)
     min_ev = state.get("min_evidence_per_slot", 0)
-    if rs.done(min_evidence_per_slot=min_ev):
-        return "writer"
-    if not state["verification_done"] and _ready_for_verification(state, rs):
-        return "verification"
-    max_no_new = state.get("max_consecutive_no_new", 4)
-    if state["consecutive_no_new"] >= max_no_new:
-        if not _required_slots_without_direct_search(state, rs):
+
+    # Done: verification complete + every required slot settled
+    if state["verification_done"]:
+        all_settled = all(slot_status.get(s, "NOT_FILLED") in ("FILLED", "PARTIAL", "EXHAUSTED") for s in required)
+        if all_settled:
+            if min_ev <= 0:
+                return "writer"
+            sufficient = all(
+                slot_status.get(s) == "EXHAUSTED"
+                or len(state.get("evidence", {}).get(s, [])) >= min_ev
+                for s in required
+            )
+            if sufficient:
+                return "writer"
+
+    # Verification: all covered + every slot searched at least once
+    if not state["verification_done"]:
+        all_covered = all(slot_status.get(s) in ("FILLED", "PARTIAL", "EXHAUSTED") for s in required)
+        all_searched = all(counts.get(s, 0) > 0 for s in required)
+        if state["search_count"] >= 2 and all_covered and all_searched:
+            return "verification"
+
+    # Stalled: consecutive-no-new limit hit + all slots searched at least once
+    if state["consecutive_no_new"] >= state.get("max_consecutive_no_new", 4):
+        if all(counts.get(s, 0) > 0 for s in required):
             return "writer"
-    if not get_candidate_slots(state, rs, _slot_search_counts(state), _per_slot_cap(state)):
+
+    # No candidates remain
+    candidates = [
+        s for s in required
+        if slot_status.get(s) not in ("FILLED", "EXHAUSTED") and counts.get(s, 0) < per_slot
+    ]
+    if not candidates:
         return "writer"
+
     return "orchestrator"
 
 

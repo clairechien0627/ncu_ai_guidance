@@ -151,18 +151,22 @@ class JobHistory(Base):
 
 
 class DocumentResearchCache(Base):
-    """Per-document, per-coverage-template research cache.
+    """Per-document-set, per-coverage-template research cache.
 
-    Stores the complete coverage result from a previous research run so subsequent
-    runs on the same document can pre-load evidence and skip already-filled slots.
-    Keyed by (document_id, coverage_hash) where coverage_hash is the MD5 of the
-    sorted coverage_item ids used in that run.
+    Keyed by (document_set_hash, coverage_hash):
+    - document_set_hash: MD5 of sorted comma-joined document IDs — works for any
+      number of documents, including single-doc runs.
+    - coverage_hash: MD5 of sorted coverage_item IDs.
+
+    document_id is kept for single-doc rows only (enables ON DELETE CASCADE);
+    multi-doc rows set document_id=NULL.
     """
     __tablename__ = "document_research_cache"
-    __table_args__ = (UniqueConstraint("document_id", "coverage_hash", name="uq_doc_coverage"),)
+    __table_args__ = (UniqueConstraint("document_set_hash", "coverage_hash", name="uq_docset_coverage"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    document_set_hash = Column(String(32), nullable=False, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=True, index=True)
     coverage_hash = Column(String(32), nullable=False)
     slot_status = Column(JsonColumn, nullable=True)
     evidence = Column(JsonColumn, nullable=True)

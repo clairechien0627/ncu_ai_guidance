@@ -813,10 +813,10 @@ async def run_research_task(
     )
 
     # ── Document research cache: pre-load if available ────────────────────────
-    if len(document_ids) == 1:
+    if document_ids:
         try:
             from services.memory_service import load_document_research_cache
-            cached = load_document_research_cache(document_ids[0], coverage_ids)
+            cached = load_document_research_cache(document_ids, coverage_ids)
             if cached:
                 initial_state["slot_status"].update(cached["slot_status"])
                 for slot, notes in cached["evidence"].items():
@@ -877,7 +877,7 @@ async def run_research_task(
         }
 
         # ── Document research cache: save if coverage is reasonable ───────────
-        if len(document_ids) == 1:
+        if document_ids:
             try:
                 from services.memory_service import save_document_research_cache
                 required = final_state.required_coverage_ids()
@@ -887,7 +887,7 @@ async def run_research_task(
                 )
                 if required and useful >= max(1, len(required) // 2):
                     save_document_research_cache(
-                        document_id=document_ids[0],
+                        document_ids=document_ids,
                         coverage_ids=coverage_ids,
                         slot_status=dict(final_state.slot_status),
                         evidence={s: list(v[:8]) for s, v in final_state.evidence.items()},
