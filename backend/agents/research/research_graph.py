@@ -511,6 +511,12 @@ async def slot_worker_node(state: WorkerState, config: RunnableConfig, runtime: 
         }
     )
 
+    # Drain: skip expensive work and return a no-op result so the superstep
+    # completes cleanly and the checkpoint can be saved before shutdown.
+    if runtime.drain_requested:
+        logger.info("slot_worker skipping slot=%s (drain requested: %s)", slot, runtime.drain_reason)
+        return {"search_count": 0, "_batch_evidence_flags": [False]}
+
     # On retry attempts skip LLM planning to avoid repeating the same failure.
     if is_retry:
         decision = build_slot_decision(rs, slot)

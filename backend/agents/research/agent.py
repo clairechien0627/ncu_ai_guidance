@@ -27,6 +27,19 @@ logger = logging.getLogger(__name__)
 # Background tasks that should be awaited on shutdown.
 _background_tasks: set[asyncio.Task] = set()
 
+# Active RunControl objects for in-flight research graph runs.
+# Populated by _run_graph_streaming; drained by request_all_drain() on shutdown.
+_active_run_controls: set = set()
+
+
+def request_all_drain(reason: str = "shutdown") -> None:
+    """Signal all active research graph runs to stop at the next superstep boundary."""
+    for ctrl in list(_active_run_controls):
+        try:
+            ctrl.request_drain(reason)
+        except Exception:
+            pass
+
 # ── Public constants ─────────────────────────────────────────────────────────
 RESEARCH_AGENT_NAME = "research_agent"
 SUMMARY_AGENT_NAME = "research_agent"
@@ -219,24 +232,36 @@ async def _run_graph_streaming(
     on_token: Callable[[str], None] | None = None,
     graph=None,
 ) -> ResearchGraphState:
+    from langgraph.errors import GraphDrained
+    from langgraph.runtime import RunControl
+
     state: dict = dict(initial_state)
     _graph = graph if graph is not None else research_graph
-    async for chunk in _graph.astream(
-        initial_state,
-        config=graph_config,
-        stream_mode=["updates", "messages"],
-        version="v2",
-    ):
-        if chunk["type"] == "updates":
-            for node_name, patch in chunk["data"].items():
-                if not isinstance(patch, dict):
-                    continue
-                state = _merge_stream_patch(state, patch)
-                _emit_graph_progress(on_stage, node_name, state, patch)
-        elif chunk["type"] == "messages" and on_token:
-            msg, metadata = chunk["data"]
-            if msg.content and metadata.get("langgraph_node") == "writer":
-                on_token(msg.content)
+    control = RunControl()
+    _active_run_controls.add(control)
+    try:
+        async for chunk in _graph.astream(
+            initial_state,
+            config=graph_config,
+            stream_mode=["updates", "messages"],
+            version="v2",
+            durability="async",
+            control=control,
+        ):
+            if chunk["type"] == "updates":
+                for node_name, patch in chunk["data"].items():
+                    if not isinstance(patch, dict):
+                        continue
+                    state = _merge_stream_patch(state, patch)
+                    _emit_graph_progress(on_stage, node_name, state, patch)
+            elif chunk["type"] == "messages" and on_token:
+                msg, metadata = chunk["data"]
+                if msg.content and metadata.get("langgraph_node") == "writer":
+                    on_token(msg.content)
+    except GraphDrained:
+        logger.info("research graph drained at superstep boundary (run_id=%s)", state.get("run_id"))
+    finally:
+        _active_run_controls.discard(control)
     return state
 
 

@@ -60,6 +60,9 @@ async def lifespan(app: FastAPI):
     job_service.restore_jobs_from_db()
     yield
     job_service.mark_all_interrupted()
+    # Signal all active research graph runs to stop at the next superstep boundary.
+    from agents.research.agent import request_all_drain
+    request_all_drain("server_shutdown")
     # Drain any in-flight background tasks (e.g. quality checks) before shutdown.
     from agents.research import _background_tasks
     if _background_tasks:
