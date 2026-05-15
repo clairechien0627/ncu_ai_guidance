@@ -31,6 +31,9 @@ class AgentContext:
     thread_id: str | None = None
     run_id: str | None = None
     tool_sources: list[str] = field(default_factory=list)
+    # Per-request cache for _memory_prompt: built once, reused for every model call
+    # within the same agent run so pgvector/DB are not queried on every model call.
+    _memory_context: dict | None = field(default=None, repr=False)
 
 
 class SearchInput(BaseModel):

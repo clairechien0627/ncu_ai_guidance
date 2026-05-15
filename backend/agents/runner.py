@@ -137,9 +137,9 @@ def _trim_messages(state: dict, runtime) -> dict | None:
 async def _memory_prompt(request: ModelRequest) -> str:
     """Dynamic system prompt: base instructions + memory context per MemoryPolicy.
 
-    Reads context_summary (short-term), long-term store memory, and doc_cache
-    summaries based on the current intent's read policy. Refreshed at each
-    model call within the agent loop so memory stays current.
+    Memory is built once per agent run and cached on AgentContext._memory_context.
+    Subsequent model calls within the same run reuse the cached result, avoiding
+    repeated pgvector queries and DB reads for every model call.
     """
     ctx = request.runtime.context  # AgentContext
     thread_id = getattr(ctx, "thread_id", None) or ""
@@ -147,28 +147,44 @@ async def _memory_prompt(request: ModelRequest) -> str:
     document_ids = getattr(ctx, "document_ids", None)
     user_id = get_user_id()
 
-    # Use the last human message as the semantic search query
-    query = ""
-    for msg in reversed(request.messages or []):
-        content = getattr(msg, "content", "")
-        if isinstance(content, str) and content.strip():
-            query = content[:300]
-            break
+    # Per-request cache: only call build_memory_context once per agent run
+    cached = getattr(ctx, "_memory_context", None)
+    if cached is None:
+        # Use the first human message as the semantic search query
+        query = ""
+        for msg in reversed(request.messages or []):
+            content = getattr(msg, "content", "")
+            if isinstance(content, str) and content.strip():
+                query = content[:300]
+                break
+
+        try:
+            from services.agent_memory import build_memory_context
+            cached = await build_memory_context(
+                intent=route_intent,
+                thread_id=thread_id,
+                user_id=user_id,
+                query=query,
+                document_ids=document_ids,
+            )
+        except Exception as exc:
+            logger.debug("_memory_prompt: build failed: %s", exc)
+            cached = {}
+
+        # Store on context so later model calls in this run skip the build
+        if ctx is not None:
+            try:
+                ctx._memory_context = cached
+            except Exception:
+                pass
 
     try:
-        from services.agent_memory import build_memory_context, format_memory_system_messages
-        memory = await build_memory_context(
-            intent=route_intent,
-            thread_id=thread_id,
-            user_id=user_id,
-            query=query,
-            document_ids=document_ids,
-        )
-        lines = format_memory_system_messages(memory)
+        from services.agent_memory import format_memory_system_messages
+        lines = format_memory_system_messages(cached)
         if lines:
             return SYSTEM_PROMPT + "\n\n" + "\n\n".join(lines)
     except Exception as exc:
-        logger.debug("_memory_prompt: %s", exc)
+        logger.debug("_memory_prompt: format failed: %s", exc)
     return SYSTEM_PROMPT
 
 

@@ -25,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from db import create_tables, SessionLocal
 from agents.runner import setup_checkpointer
 from services import job_service
-from api import documents, summaries, jobs, chat, traces
+from api import documents, summaries, jobs, chat, traces, health
 
 def _init_tracing():
     """Initialize Langfuse observability."""
@@ -89,3 +89,4 @@ app.include_router(summaries.router)
 app.include_router(jobs.router)
 app.include_router(chat.router)
 app.include_router(traces.router)
+app.include_router(health.router)

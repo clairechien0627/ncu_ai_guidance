@@ -76,8 +76,9 @@ async def build_memory_context(
 
     if policy.context_summary:
         try:
+            import asyncio
             from services.memory_service import get_context_summary_text
-            result["context_summary"] = get_context_summary_text(thread_id)
+            result["context_summary"] = await asyncio.to_thread(get_context_summary_text, thread_id)
         except Exception as exc:
             logger.debug("build_memory_context: context_summary failed: %s", exc)
 
