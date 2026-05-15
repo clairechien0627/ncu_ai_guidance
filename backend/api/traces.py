@@ -262,10 +262,9 @@ def _matches_trace_filters(
 
 @router.get("/api/documents/{doc_id}/traces")
 def get_document_traces(doc_id: int, db: Session = Depends(get_db)):
-    # document_ids is stored as text. Cast to jsonb for containment check.
-    from sqlalchemy import func, cast
-    from sqlalchemy.dialects.postgresql import JSONB
-    doc_filter = cast(Trace.document_ids, JSONB).op('@>')(func.jsonb_build_array(doc_id))
+    # document_ids is jsonb (migration 009). Use @> containment with GIN index.
+    from sqlalchemy import func
+    doc_filter = Trace.document_ids.op('@>')(func.jsonb_build_array(doc_id))
     candidates = (
         db.query(Trace)
         .filter(_agent_execution_root(), Trace.document_ids.isnot(None), doc_filter)
