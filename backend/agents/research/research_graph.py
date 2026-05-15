@@ -30,7 +30,7 @@ from .state import (
     _merge_evidence_dict,
     _merge_unique_list,
 )
-from .writer import ResearchWriteup, write_summary
+from .writer import ResearchWriteup, _fallback_writeup, write_summary
 
 logger = logging.getLogger(__name__)
 
@@ -497,7 +497,6 @@ async def slot_worker_node(state: WorkerState, config: RunnableConfig) -> dict:
     slot = state["worker_slot"]
     hint = state.get("worker_hint", "")
     round_index = int(state.get("search_count", 0)) + 1
-    is_verification = _ready_for_verification(state, rs) and slot == rs.weakest_slot()
     _safe_update_current_observation(
         input={
             "round": round_index,
@@ -517,15 +516,6 @@ async def slot_worker_node(state: WorkerState, config: RunnableConfig) -> dict:
     if hint:
         decision = decision.model_copy(update={"keyword_query": _normalize_query(hint)})
     decision = _force_next_angle_if_stalled(decision, state)
-    if is_verification:
-        decision = decision.model_copy(update={
-            "keyword_query": _verification_query(rs, slot) or decision.keyword_query,
-            "display_intent": _verification_display_intent(rs, slot),
-            "section_terms": _verification_section_terms(rs, slot),
-            "thought": f"Verification pass for {rs.coverage_label(slot)}.",
-            "rationale": f"Verify weakest slot {rs.coverage_label(slot)}.",
-            "use_hyde": should_use_hyde(rs, slot, requested=decision.use_hyde),
-        })
     decision = _force_unique_decision(decision, rs)
     used_keys: set[str] = set(state.get("used_query_keys", []))
     final_query = _reserve_query(decision.keyword_query, used_keys, slot, state.get("search_count", 0))
@@ -599,7 +589,7 @@ async def slot_worker_node(state: WorkerState, config: RunnableConfig) -> dict:
         "thought": decision.thought,
         "expected_evidence": decision.expected_evidence,
         "planner_rationale": decision.rationale,
-        "is_verification": is_verification,
+        "is_verification": False,
         "quality": reflection.quality,
         "new_keywords": reflection.new_keywords,
         "note": reflection.rationale,
@@ -693,16 +683,169 @@ async def slot_worker_node(state: WorkerState, config: RunnableConfig) -> dict:
 def batch_complete_node(state: ResearchGraphState) -> dict:
     flags = state.get("_batch_evidence_flags", [])
     found = any(flags)
-    rs = _graph_to_rs(state)
-    verification_done = state["verification_done"] or (
-        not _required_slots_without_direct_search(state, rs)
-        and rs.ready_for_verification()
-    )
     return {
         "consecutive_no_new": 0 if found else state["consecutive_no_new"] + 1,
-        "verification_done": verification_done,
         "batch_plan": [],
         "_batch_evidence_flags": _FLAGS_CLEAR,
+    }
+
+
+@observe(as_type="chain", name="verification", capture_input=False, capture_output=False)
+async def verification_node(state: ResearchGraphState, config: RunnableConfig) -> dict:
+    llm = config["configurable"]["llm"]
+    on_stage = config["configurable"].get("on_stage")
+    rs = _graph_to_rs(state)
+    slot = rs.weakest_slot()
+    round_index = int(state.get("search_count", 0)) + 1
+    _safe_update_current_observation(
+        input={
+            "round": round_index,
+            "slot": slot,
+            "coverage_status": _coverage_status_for_trace(state),
+            "evidence_counts": _evidence_counts(state),
+        }
+    )
+
+    decision = build_slot_decision(rs, slot)
+    decision = decision.model_copy(update={
+        "keyword_query": _verification_query(rs, slot) or decision.keyword_query,
+        "display_intent": _verification_display_intent(rs, slot),
+        "section_terms": _verification_section_terms(rs, slot),
+        "thought": f"Verification pass for {rs.coverage_label(slot)}.",
+        "rationale": f"Verify weakest slot {rs.coverage_label(slot)}.",
+        "use_hyde": should_use_hyde(rs, slot, requested=False),
+    })
+    decision = _force_unique_decision(decision, rs)
+    used_keys: set[str] = set(state.get("used_query_keys", []))
+    final_query = _reserve_query(decision.keyword_query, used_keys, slot, state.get("search_count", 0))
+    decision = decision.model_copy(update={"keyword_query": final_query})
+    tool_call_id = f"research_verify_{slot}_{state.get('search_count', 0) + 1}"
+
+    if on_stage:
+        try:
+            on_stage(f"驗證 {_slot_label(state, slot)}：{decision.display_intent}")
+        except Exception:
+            pass
+
+    seen: set[str] = set(state.get("seen_chunk_keys", []))
+    chunks, sources = await retrieve_evidence(
+        query=final_query,
+        display_intent=decision.display_intent,
+        keyword_query=final_query,
+        semantic_query=decision.semantic_query,
+        section_terms=decision.section_terms,
+        use_hyde=bool(decision.use_hyde),
+        document_ids=state["document_ids"],
+        seen_chunks=seen,
+        on_stage=None,
+        search_count=state.get("search_count", 0),
+        consecutive_empty=state.get("consecutive_no_new", 0),
+        max_searches=_hard_max_searches(state),
+        max_consecutive_empty=state["max_consecutive_no_new"],
+        task_type=str(state.get("metadata", {}).get("task_type") or "research"),
+        route_intent=str(state.get("metadata", {}).get("route_intent") or "research"),
+    )
+    seed_keywords = _seed_keywords("\n".join(str(chunk.get("content", ""))[:1200] for chunk in chunks))
+
+    evidence_counts_before = {k: len(v) for k, v in rs.evidence.items()}
+    details_counts_before = {k: len(v) for k, v in rs.evidence_details.items()}
+    known_before = set(rs.known_keywords)
+    reflection = await reflect_results(llm, state=rs, slot=slot, query=final_query, chunks=chunks)
+    apply_reflection(rs, reflection)
+
+    updated_slots = [update.item_id for update in reflection.updates if update.notes]
+    step_dict = {
+        "slot": slot,
+        "query": final_query,
+        "display_intent": decision.display_intent,
+        "keyword_query": final_query,
+        "semantic_query": decision.semantic_query,
+        "section_terms": decision.section_terms,
+        "use_hyde": bool(decision.use_hyde),
+        "thought": decision.thought,
+        "expected_evidence": decision.expected_evidence,
+        "planner_rationale": decision.rationale,
+        "is_verification": True,
+        "quality": reflection.quality,
+        "new_keywords": reflection.new_keywords,
+        "note": reflection.rationale,
+        "missing_gap": reflection.missing_gap,
+        "next_search_angle": reflection.next_search_angle,
+        "chunk_count": len(chunks),
+        "updated_slots": updated_slots,
+    }
+    cbq_entry = {"step": step_dict, "chunks": _compact_chunks(chunks)}
+    evidence_delta = {
+        item_id: rs.evidence.get(item_id, [])[evidence_counts_before.get(item_id, 0):]
+        for item_id in rs.evidence
+        if len(rs.evidence.get(item_id, [])) > evidence_counts_before.get(item_id, 0)
+    }
+    details_delta = {
+        item_id: rs.evidence_details.get(item_id, [])[details_counts_before.get(item_id, 0):]
+        for item_id in rs.evidence_details
+        if len(rs.evidence_details.get(item_id, [])) > details_counts_before.get(item_id, 0)
+    }
+    slot_status = dict(rs.slot_status)
+    status_delta = {item_id: slot_status.get(item_id, "NOT_FILLED") for item_id in {slot, *updated_slots}}
+    new_keywords = [
+        keyword
+        for keyword in [*seed_keywords, *rs.known_keywords]
+        if keyword and keyword not in known_before
+    ]
+    _safe_update_current_observation(
+        output={
+            "round": round_index,
+            "slot": slot,
+            "query": final_query,
+            "chunk_count": len(chunks),
+            "quality": reflection.quality,
+            "updated_slots": updated_slots,
+        }
+    )
+    return {
+        "slot_status": status_delta,
+        "evidence": _compact_evidence(evidence_delta, limit=12),
+        "evidence_details": _compact_evidence_details(details_delta, limit=12),
+        "sources": sources,
+        "known_keywords": _cap_list(new_keywords, _MAX_STATE_KEYWORDS),
+        "used_queries": [final_query],
+        "used_query_keys": [final_query],
+        "seen_chunk_keys": [_chunk_key(chunk) for chunk in chunks],
+        "last_reflection": reflection.rationale,
+        "next_search_angle": reflection.next_search_angle,
+        "suggested_query_terms": [term.strip() for term in reflection.suggested_query_terms if term.strip()],
+        "avoid_query_terms": [term.strip() for term in reflection.avoid_query_terms if term.strip()],
+        "search_count": 1,
+        "llm_call_count": 1,
+        "steps_json": [step_dict],
+        "chunks_by_query_json": [cbq_entry],
+        "verification_done": True,
+        "messages": [
+            {
+                "type": "ai",
+                "content": decision.thought or decision.rationale,
+                "tool_calls": [{
+                    "name": "search_report",
+                    "id": tool_call_id,
+                    "args": {
+                        "keyword_query": final_query,
+                        "section_terms": decision.section_terms,
+                        "slot": slot,
+                        "display_intent": decision.display_intent,
+                    },
+                }],
+            },
+            {
+                "type": "tool",
+                "name": "search_report",
+                "tool_call_id": tool_call_id,
+                "content": _tool_result_content(chunks),
+            },
+            {
+                "type": "ai",
+                "content": f"verification slot={slot} quality={reflection.quality}; done=True",
+            },
+        ],
     }
 
 
@@ -716,6 +859,7 @@ async def writer_node(state: ResearchGraphState, config: RunnableConfig) -> dict
         except Exception:
             pass
     rs = _graph_to_rs(state)
+    required_labels = {rs.coverage_label(slot) for slot in rs.required_coverage_ids() if rs.coverage_label(slot)}
     _safe_update_current_observation(
         input={
             "coverage_status": _coverage_status_for_trace(state),
@@ -724,18 +868,27 @@ async def writer_node(state: ResearchGraphState, config: RunnableConfig) -> dict
             "search_count": state.get("search_count", 0),
         }
     )
-    writeup: ResearchWriteup = await write_summary(llm, rs)
-    required_labels = {rs.coverage_label(slot) for slot in rs.required_coverage_ids() if rs.coverage_label(slot)}
-    answer_ok = bool(
-        writeup.answer
-        and len(writeup.answer.strip()) >= 150
-        and all(label in writeup.answer for label in required_labels)
-    )
-    if not answer_ok:
-        logger.warning("writer_node: answer failed quality gate (len=%d), using evidence fallback", len(writeup.answer or ""))
-        from .writer import _fallback_writeup
 
-        writeup = _fallback_writeup(rs)
+    def _answer_ok(w: ResearchWriteup) -> bool:
+        return bool(
+            w.answer
+            and len(w.answer.strip()) >= 150
+            and all(label in w.answer for label in required_labels)
+        )
+
+    writeup: ResearchWriteup = await write_summary(llm, rs)
+    llm_calls = 1
+
+    if not _answer_ok(writeup):
+        missing = [label for label in required_labels if label not in (writeup.answer or "")]
+        feedback = f"缺少以下必要段落：{', '.join(missing)}" if missing else "答案長度不足（需至少 150 字）"
+        logger.warning("writer_node: quality gate failed (%d chars), retrying with feedback: %s", len(writeup.answer or ""), feedback)
+        writeup = await write_summary(llm, rs, feedback=feedback)
+        llm_calls = 2
+        if not _answer_ok(writeup):
+            logger.warning("writer_node: retry also failed, using evidence fallback")
+            writeup = _fallback_writeup(rs)
+
     final_sources = writeup.sources if writeup.sources else rs.sources[:5]
     final_state = dict(state)
     final_state.update({"final_answer": writeup.answer, "final_sources": final_sources})
@@ -745,7 +898,7 @@ async def writer_node(state: ResearchGraphState, config: RunnableConfig) -> dict
             "answer_length": len(writeup.answer),
             "sources": final_sources[:8],
             "source_count": len(final_sources),
-            "used_fallback": not answer_ok,
+            "llm_calls": llm_calls,
         }
     )
     return {
@@ -753,11 +906,11 @@ async def writer_node(state: ResearchGraphState, config: RunnableConfig) -> dict
         "final_sources": final_sources,
         "messages": [{"type": "ai", "content": writeup.answer, "sources": final_sources}],
         "trace_summary": _trace_summary(final_state),
-        "llm_call_count": 1,
+        "llm_call_count": llm_calls,
     }
 
 
-def should_continue(state: ResearchGraphState) -> Literal["orchestrator", "writer"]:
+def should_continue(state: ResearchGraphState) -> Literal["orchestrator", "writer", "verification"]:
     if state["search_count"] >= _hard_max_searches(state):
         return "writer"
     rs = _graph_to_rs(state)
@@ -765,7 +918,7 @@ def should_continue(state: ResearchGraphState) -> Literal["orchestrator", "write
     if rs.done(min_evidence_per_slot=min_ev):
         return "writer"
     if not state["verification_done"] and _ready_for_verification(state, rs):
-        return "orchestrator"
+        return "verification"
     max_no_new = state.get("max_consecutive_no_new", 4)
     if state["consecutive_no_new"] >= max_no_new:
         if not _required_slots_without_direct_search(state, rs):
@@ -792,21 +945,35 @@ def assign_workers(state: ResearchGraphState):
     ]
 
 
-def _build() -> object:
+def _build(checkpointer=False) -> object:
     builder = StateGraph(ResearchGraphState)
     builder.add_node("orchestrator", orchestrator_node)
     builder.add_node("slot_worker", slot_worker_node, retry_policy=RetryPolicy(max_attempts=3, initial_interval=1.0))
     builder.add_node("batch_complete", batch_complete_node)
+    builder.add_node("verification", verification_node, retry_policy=RetryPolicy(max_attempts=2, initial_interval=1.0))
     builder.add_node("writer", writer_node, retry_policy=RetryPolicy(max_attempts=2, initial_interval=2.0))
     builder.add_edge(START, "orchestrator")
     builder.add_conditional_edges("orchestrator", assign_workers, ["slot_worker", "writer"])
     builder.add_edge("slot_worker", "batch_complete")
-    builder.add_conditional_edges("batch_complete", should_continue, {"orchestrator": "orchestrator", "writer": "writer"})
+    _continue_map = {"orchestrator": "orchestrator", "writer": "writer", "verification": "verification"}
+    builder.add_conditional_edges("batch_complete", should_continue, _continue_map)
+    builder.add_conditional_edges("verification", should_continue, _continue_map)
     builder.add_edge("writer", END)
-    return builder.compile(checkpointer=False)
+    return builder.compile(checkpointer=checkpointer)
 
 
 research_graph = _build()
+
+_research_graph_checkpointed: object | None = None
+
+
+def get_or_build_research_graph(checkpointer=None) -> object:
+    global _research_graph_checkpointed
+    if checkpointer is None:
+        return research_graph
+    if _research_graph_checkpointed is None:
+        _research_graph_checkpointed = _build(checkpointer=checkpointer)
+    return _research_graph_checkpointed
 
 
 def final_rs_from_result(result: ResearchGraphState) -> ResearchState:

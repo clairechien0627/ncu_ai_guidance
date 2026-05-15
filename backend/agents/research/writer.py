@@ -129,7 +129,7 @@ def _to_writeup(result: ResearchStructuredWriteup, state: ResearchState) -> Rese
     return ResearchWriteup(answer=answer, sources=sources)
 
 
-async def write_summary(llm, state: ResearchState) -> ResearchWriteup:
+async def write_summary(llm, state: ResearchState, feedback: str = "") -> ResearchWriteup:
     writer = llm.with_structured_output(ResearchStructuredWriteup, strict=True)
     structured = {
         "coverage_items": state.coverage_items,
@@ -138,6 +138,9 @@ async def write_summary(llm, state: ResearchState) -> ResearchWriteup:
         "evidence_details": state.evidence_details,
         "sources": state.sources[:8],
     }
+    base_instruction = "優先使用 evidence_details 中的 filename/page/quote/interpretation。若某個必要項目沒有直接證據，請明確說明，不要自行補充。"
+    if feedback:
+        base_instruction += f"\n\n前次輸出不合格，請修正以下問題：{feedback}"
     try:
         messages = [
             *research_node_system_messages("research_writer"),
@@ -148,7 +151,7 @@ async def write_summary(llm, state: ResearchState) -> ResearchWriteup:
                     f"輸出規範：{state.output_contract}",
                     f"文件摘要：\n{state.document_context[:2000]}",
                     f"Coverage 狀態與累積證據：\n{json.dumps(structured, ensure_ascii=False)}",
-                    "優先使用 evidence_details 中的 filename/page/quote/interpretation。若某個必要項目沒有直接證據，請明確說明，不要自行補充。",
+                    base_instruction,
                 ])
             ),
         ]

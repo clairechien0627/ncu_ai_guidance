@@ -90,8 +90,8 @@ async def decide_next_batch(
     if not candidate_slots:
         return OrchestratorDecision(slots=[], rationale="no candidates")
     try:
-        structured = llm.with_structured_output(OrchestratorDecision, strict=True)
-        decision: OrchestratorDecision = await ainvoke_traced_generation(
+        structured = llm.with_structured_output(OrchestratorDecision, strict=True, include_raw=True)
+        raw_result = await ainvoke_traced_generation(
             structured,
             _build_orchestrator_prompt(rs, candidate_slots),
             prompt_name="research_orchestrator",
@@ -102,6 +102,20 @@ async def decide_next_batch(
                 **research_node_stack_metadata("research_orchestrator"),
             },
         )
+        if isinstance(raw_result, dict):
+            parsing_error = raw_result.get("parsing_error")
+            if parsing_error:
+                raw_msg = raw_result.get("raw")
+                raw_content = getattr(raw_msg, "content", "") if raw_msg else ""
+                logger.warning(
+                    "decide_next_batch parse failed: %s | raw=%s",
+                    parsing_error,
+                    str(raw_content)[:500],
+                )
+                return _fallback_decision(candidate_slots)
+            decision: OrchestratorDecision = raw_result["parsed"]
+        else:
+            decision: OrchestratorDecision = raw_result
     except Exception as exc:
         logger.warning("decide_next_batch failed: %s", exc)
         return _fallback_decision(candidate_slots)

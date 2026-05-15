@@ -28,3 +28,7 @@ class AgentResult:
     # retrieval_agent → "research" when comprehensive coverage is needed but retrieval finds nothing
     # question_agent → always None (resolves its own escalation internally)
     next_intent: str | None = None
+    # Structured coverage result from research_agent.
+    # Keys are coverage_item ids; values carry status, label, and top evidence notes.
+    # None for non-research agents.
+    coverage_result: dict | None = None

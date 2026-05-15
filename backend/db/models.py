@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Column, Integer, String, DateTime, Text, Boolean, Float, ForeignKey,
-    TypeDecorator,
+    TypeDecorator, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -148,6 +148,32 @@ class JobHistory(Base):
     started_at = Column(DateTime, nullable=True)
     updated_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class DocumentResearchCache(Base):
+    """Per-document, per-coverage-template research cache.
+
+    Stores the complete coverage result from a previous research run so subsequent
+    runs on the same document can pre-load evidence and skip already-filled slots.
+    Keyed by (document_id, coverage_hash) where coverage_hash is the MD5 of the
+    sorted coverage_item ids used in that run.
+    """
+    __tablename__ = "document_research_cache"
+    __table_args__ = (UniqueConstraint("document_id", "coverage_hash", name="uq_doc_coverage"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    coverage_hash = Column(String(32), nullable=False)
+    slot_status = Column(JsonColumn, nullable=True)
+    evidence = Column(JsonColumn, nullable=True)
+    evidence_details = Column(JsonColumn, nullable=True)
+    known_keywords = Column(JsonColumn, nullable=True)
+    avoid_query_terms = Column(JsonColumn, nullable=True)
+    sources = Column(JsonColumn, nullable=True)
+    search_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
 
 
 class Conversation(Base):

@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from agents.runner import generate_title, get_thread_messages
+from agents.runner import generate_title, get_thread_messages, get_pending_interrupt, resume_from_interrupt
 from agents.router_agent import (
     run_chat_agent,
     run_research_agent,
@@ -416,6 +416,53 @@ def update_conversation_title(conv_id: int, body: dict, db: Session = Depends(ge
     conv.title = title
     db.commit()
     return {"title": conv.title}
+
+
+# ── Human-in-the-loop endpoints (reserved interface) ─────────────────────────
+# Interrupt nodes are not yet wired into the agent graph. These endpoints define
+# the protocol that the frontend should eventually integrate against. Activate by:
+#   1. Adding interrupt() calls inside runner.py agent nodes at decision points
+#   2. Removing the "not yet activated" response below
+
+@router.get("/api/conversations/{conv_id}/interrupt")
+async def get_conversation_interrupt(conv_id: int, db: Session = Depends(get_db)):
+    """Check whether the conversation agent is paused at a human-in-the-loop interrupt.
+
+    Returns:
+        has_interrupt: True if the agent is waiting for user input.
+        interrupt_id: Opaque identifier needed to resume.
+        value: The interrupt payload (e.g. proposed action, question for user).
+    """
+    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    pending = await get_pending_interrupt(str(conv_id))
+    return {
+        "has_interrupt": pending is not None,
+        "interrupt_id": pending["interrupt_id"] if pending else None,
+        "value": pending["value"] if pending else None,
+    }
+
+
+class ResumeRequest(BaseModel):
+    response: str
+    interrupt_id: Optional[str] = None
+
+
+@router.post("/api/conversations/{conv_id}/resume")
+async def resume_conversation(conv_id: int, body: ResumeRequest, db: Session = Depends(get_db)):
+    """Resume an agent that is paused at a human-in-the-loop interrupt.
+
+    The frontend sends the user's decision/feedback as `response`.
+    The agent continues from the interrupt point with that value.
+    """
+    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    ok = await resume_from_interrupt(str(conv_id), body.response)
+    if not ok:
+        raise HTTPException(status_code=409, detail="No pending interrupt for this conversation")
+    return {"resumed": True}
 
 
 @router.delete("/api/conversations/{conv_id}")

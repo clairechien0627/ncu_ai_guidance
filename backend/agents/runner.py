@@ -156,6 +156,68 @@ def _get_tool_agent(mini: bool = False):
     return _tool_agent_mini if mini else _tool_agent
 
 
+def get_checkpointer() -> AsyncPostgresSaver | None:
+    return _checkpointer
+
+
+# ── Human-in-the-loop helpers ─────────────────────────────────────────────────
+# These functions expose interrupt state and resume for the chat agent graph.
+# Interrupt nodes are NOT yet added to the agent graph — these helpers are the
+# reserved interface that will be activated when interrupt() calls are introduced.
+
+async def get_pending_interrupt(thread_id: str) -> dict | None:
+    """Return the interrupt payload if the thread is paused at an interrupt, else None.
+
+    Shape: {"interrupt_id": str, "value": any}
+    """
+    if _checkpointer is None:
+        return None
+    try:
+        config = {"configurable": {"thread_id": thread_id}}
+        checkpoint_tuple = await _checkpointer.aget_tuple(config)
+        if not checkpoint_tuple:
+            return None
+        for task in (checkpoint_tuple.checkpoint.get("pending_sends") or []):
+            pass
+        snapshot_tasks = checkpoint_tuple.checkpoint.get("tasks") or []
+        for task in snapshot_tasks:
+            interrupts = getattr(task, "interrupts", None) or []
+            if interrupts:
+                return {"interrupt_id": str(task.id), "value": interrupts[0].value}
+        # Also check pending_writes for interrupt signals
+        for task_id, channel, value in (checkpoint_tuple.pending_writes or []):
+            if channel == "__interrupt__":
+                return {"interrupt_id": str(task_id), "value": value}
+        return None
+    except Exception as exc:
+        logger.debug("get_pending_interrupt(%s): %s", thread_id, exc)
+        return None
+
+
+async def resume_from_interrupt(thread_id: str, response: str) -> bool:
+    """Resume a paused graph by injecting the user's response and re-invoking.
+
+    Returns True if the graph was successfully resumed, False if no interrupt was pending.
+    This stub invokes the agent with Command(resume=response) once interrupts are wired.
+    """
+    if _checkpointer is None:
+        return False
+    pending = await get_pending_interrupt(thread_id)
+    if not pending:
+        return False
+    try:
+        from langgraph.types import Command
+        agent = _tool_agent
+        if agent is None:
+            return False
+        config = {"configurable": {"thread_id": thread_id}}
+        await agent.ainvoke(Command(resume=response), config)
+        return True
+    except Exception as exc:
+        logger.warning("resume_from_interrupt(%s): %s", thread_id, exc)
+        return False
+
+
 async def generate_title(messages: list[dict]) -> str:
     context = "\n".join(
         f"{m['role']}: {m['content'][:300]}" for m in messages[:4]

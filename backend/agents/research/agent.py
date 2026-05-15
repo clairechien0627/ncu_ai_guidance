@@ -16,7 +16,7 @@ from db import Document, db_session, Trace
 from prompting.registry import resolve
 from tools.rag_tool import set_query_expander_llm
 
-from .research_graph import _hard_max_searches, _merge_stream_patch, _seed_keywords, cbq_from_result, final_rs_from_result, research_graph
+from .research_graph import _hard_max_searches, _merge_stream_patch, _seed_keywords, cbq_from_result, final_rs_from_result, research_graph, get_or_build_research_graph
 from .runtime_prompts import RESEARCH_BASE_STACK, research_base_stack_metadata
 from .state import ResearchGraphState, ResearchState, SearchStep
 from .task_planner import create_research_plan, fallback_research_plan
@@ -217,9 +217,11 @@ async def _run_graph_streaming(
     graph_config: dict,
     on_stage: Callable[[str], None] | None,
     on_token: Callable[[str], None] | None = None,
+    graph=None,
 ) -> ResearchGraphState:
     state: dict = dict(initial_state)
-    async for chunk in research_graph.astream(
+    _graph = graph if graph is not None else research_graph
+    async for chunk in _graph.astream(
         initial_state,
         config=graph_config,
         stream_mode=["updates", "messages"],
@@ -784,15 +786,92 @@ async def run_research_task(
         output_contract=output_contract, coverage_ids=coverage_ids,
         plan_llm_calls=plan_llm_calls, started_at=started_at,
     )
-    graph_config = {"configurable": {"llm": llm, "on_stage": None}}
+
+    # ── Document research cache: pre-load if available ────────────────────────
+    if len(document_ids) == 1:
+        try:
+            from services.memory_service import load_document_research_cache
+            cached = load_document_research_cache(document_ids[0], coverage_ids)
+            if cached:
+                initial_state["slot_status"].update(cached["slot_status"])
+                for slot, notes in cached["evidence"].items():
+                    if notes and slot in initial_state["evidence"]:
+                        initial_state["evidence"][slot] = list(notes)
+                for slot, details in cached["evidence_details"].items():
+                    if details and slot in initial_state["evidence_details"]:
+                        initial_state["evidence_details"][slot] = list(details)
+                initial_state["known_keywords"] = list({
+                    *initial_state["known_keywords"],
+                    *cached["known_keywords"],
+                })[:80]
+                if cached["avoid_query_terms"]:
+                    initial_state["avoid_query_terms"] = list(cached["avoid_query_terms"])[:30]
+                if cached["sources"]:
+                    initial_state["sources"] = list(cached["sources"])[:20]
+                filled = sum(1 for s in cached["slot_status"].values() if s in ("FILLED", "EXHAUSTED"))
+                if filled and on_stage:
+                    try:
+                        on_stage(f"載入研究快取：{filled} 個項目已完成")
+                    except Exception:
+                        pass
+        except Exception as exc:
+            logger.debug("document research cache load failed: %s", exc)
 
     try:
-        result = await _run_graph_streaming(initial_state, graph_config, on_stage, on_token)
+        from agents.runner import get_checkpointer as _get_checkpointer
+        _cp = _get_checkpointer()
+    except Exception:
+        _cp = None
+    _graph = get_or_build_research_graph(checkpointer=_cp)
+    graph_config = {
+        "configurable": {
+            "llm": llm,
+            "on_stage": None,
+            "thread_id": run_id,
+        }
+    }
+
+    try:
+        result = await _run_graph_streaming(initial_state, graph_config, on_stage, on_token, graph=_graph)
         answer = result["final_answer"]
         sources = result["final_sources"]
         final_state = final_rs_from_result(result)
         chunks_by_query = cbq_from_result(result)
         messages = list(result.get("messages", []))
+
+        # ── Build structured coverage_result for downstream memory ────────────
+        coverage_result = {
+            slot: {
+                "status": final_state.slot_status.get(slot, "NOT_FILLED"),
+                "label": final_state.coverage_label(slot),
+                "notes": [n[:150] for n in final_state.evidence.get(slot, [])[:2]],
+            }
+            for slot in final_state.coverage_ids()
+        }
+
+        # ── Document research cache: save if coverage is reasonable ───────────
+        if len(document_ids) == 1:
+            try:
+                from services.memory_service import save_document_research_cache
+                required = final_state.required_coverage_ids()
+                useful = sum(
+                    1 for s in required
+                    if final_state.slot_status.get(s) in ("FILLED", "PARTIAL", "EXHAUSTED")
+                )
+                if required and useful >= max(1, len(required) // 2):
+                    save_document_research_cache(
+                        document_id=document_ids[0],
+                        coverage_ids=coverage_ids,
+                        slot_status=dict(final_state.slot_status),
+                        evidence={s: list(v[:8]) for s, v in final_state.evidence.items()},
+                        evidence_details={s: list(v[:6]) for s, v in final_state.evidence_details.items()},
+                        known_keywords=list(final_state.known_keywords[:60]),
+                        avoid_query_terms=list(final_state.avoid_query_terms[:30]),
+                        sources=list(final_state.sources[:20]),
+                        search_count=final_state.search_count,
+                    )
+            except Exception as exc:
+                logger.debug("document research cache save failed: %s", exc)
 
         _write_trace(
             run_id=run_id, thread_id=thread_id, document_ids=document_ids,
@@ -819,6 +898,7 @@ async def run_research_task(
             prompt_name=str(metadata.get("prompt_name") or "research_writer"),
             prompt_version=str(metadata.get("prompt_version") or "unknown"),
             trace_run_id=run_id,
+            coverage_result=coverage_result,
         )
     except Exception as exc:
         logger.exception("run_research_task failed (run_id=%s)", run_id)
