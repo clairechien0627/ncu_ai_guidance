@@ -8,8 +8,14 @@ from typing import Callable, Any
 from pydantic import BaseModel, Field
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
+    ContextEditingMiddleware,
+    ClearToolUsesEdit,
     HumanInTheLoopMiddleware,
+    ModelCallLimitMiddleware,
+    ModelRetryMiddleware,
     SummarizationMiddleware,
+    ToolCallLimitMiddleware,
+    ToolRetryMiddleware,
     before_model,
     dynamic_prompt,
     ModelRequest,
@@ -207,13 +213,37 @@ async def setup_checkpointer():
             tools=tools,
             # system_prompt is omitted — @dynamic_prompt handles it dynamically
             middleware=[
-                _memory_prompt,                   # dynamic system prompt + memory injection
-                SummarizationMiddleware(           # compress old messages instead of dropping
+                # ── Context engineering ───────────────────────────────────
+                _memory_prompt,                         # dynamic system prompt + memory per policy
+                # ── Context management ───────────────────────────────────
+                SummarizationMiddleware(                # compress old messages instead of dropping
                     model=_mini_llm,
-                    trigger={"tokens": 4000},
-                    keep={"messages": 10},
+                    trigger=("tokens", 4000),
+                    keep=("messages", 10),
                 ),
-                _trim_messages,                   # safety cap as final fallback
+                ContextEditingMiddleware(               # clear stale tool results at token limit
+                    edits=[ClearToolUsesEdit(trigger=60000, keep=3)],
+                ),
+                _trim_messages,                         # safety message-count cap
+                # ── Cost & safety limits ─────────────────────────────────
+                ModelCallLimitMiddleware(               # per-request model call hard cap
+                    run_limit=30,                       # max_searches(10) × ~2 calls/search + overhead
+                    exit_behavior="end",
+                ),
+                # ── Resilience ───────────────────────────────────────────
+                ModelRetryMiddleware(                   # replaces manual StructuredOutputValidationError retry
+                    max_retries=2,
+                    retry_on=lambda e: any(
+                        kw in str(e) for kw in ("StructuredOutputValidationError", "Extra data")
+                    ),
+                    on_failure="continue",
+                ),
+                ToolRetryMiddleware(                    # retry transient tool failures
+                    max_retries=2,
+                    retry_on=(ConnectionError, TimeoutError),
+                    on_failure="return_message",
+                ),
+                # ── HITL ────────────────────────────────────────────────
                 HumanInTheLoopMiddleware(interrupt_on={}),
             ],
             response_format=ProviderStrategy(AgentResponse, strict=True),
@@ -508,7 +538,7 @@ async def run_tool_agent(
     run_id: str | None = None,
     on_stage: Callable[[str], None] | None = None,
     task_prompt: str | list[str] | None = None,
-    recursion_limit: int = 30,
+    recursion_limit: int = 100,
     include_document_abstracts: bool = True,
     include_research_context: bool = True,
     max_searches: int | None = None,
@@ -548,14 +578,7 @@ async def run_tool_agent(
                 ),
             )
 
-    try:
-        result = await _invoke()
-    except Exception as e:
-        if "StructuredOutputValidationError" in str(e) or "Extra data" in str(e):
-            logger.warning("StructuredOutputValidationError on first attempt, retrying: %s", e)
-            result = await _invoke()
-        else:
-            raise
+    result = await _invoke()
 
     structured: AgentResponse | None = result.get("structured_response")
     if structured:
@@ -640,7 +663,7 @@ async def run_tool_agent_stream(
     config = {
         "configurable": {"thread_id": thread_id},
         "callbacks": [tracer, *langfuse_callbacks_from_metadata(metadata)],
-        "recursion_limit": 30,
+        "recursion_limit": 100,
         "metadata": config_metadata,
     }
     if run_id:
@@ -675,29 +698,18 @@ async def run_tool_agent_stream(
         return content
 
     full_content = ""
-    streamed = False
-    try:
-        async for chunk in _stream_chunks():
-            interrupts = _interrupts_from_chunk(chunk)
-            if interrupts:
-                yield interrupts, "interrupt", []
-                return
-            token_text = _stream_token_from_chunk(chunk)
-            if token_text:
-                full_content += token_text
-                streamed = True
-                yield token_text, False, []
-    except Exception as e:
-        if "StructuredOutputValidationError" in str(e) or "Extra data" in str(e):
-            logger.warning("StructuredOutputValidationError in stream, retrying: %s", e)
-            if streamed:
-                raise
-            full_content = await _run_stream_full()
-        else:
-            raise
+    async for chunk in _stream_chunks():
+        interrupts = _interrupts_from_chunk(chunk)
+        if interrupts:
+            yield interrupts, "interrupt", []
+            return
+        token_text = _stream_token_from_chunk(chunk)
+        if token_text:
+            full_content += token_text
+            yield token_text, False, []
 
-    if full_content and not streamed:
-        yield _extract_answer(full_content), False, []
+    if full_content:
+        pass  # tokens already yielded above; sources follow below
 
     # Read sources from checkpoint structured_response
     sources: list[str] = []
