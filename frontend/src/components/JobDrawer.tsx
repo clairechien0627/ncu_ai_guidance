@@ -50,7 +50,13 @@ export function JobDrawer({ open, onClose, onRefreshJobs, onRefreshItems, setPar
     const stageLog = (job.stage_log ?? []).filter(shouldShowStageInLog)
     const compactLog = stageLog.filter((stage, stageIndex) => stageIndex === 0 || stage !== stageLog[stageIndex - 1])
     const isRunning = job.status === 'running'
+    // Running: always auto-expand (no toggle — avoids accidentally pinning log open after completion)
+    // Done/error/cancelled: user-controlled via expandedJobLogs
     const isLogExpanded = isRunning || expandedJobLogs.has(logKey)
+    // While running, show the latest stage as status text
+    const currentStage = isRunning
+      ? shortStage(compactLog.length > 0 ? (compactLog[compactLog.length - 1] ?? job.stage ?? '執行中') : (job.stage ?? '執行中'))
+      : null
     const statusText =
       job.status === 'error' || (job.status === 'done' && job.error)
         ? `失敗${job.completed_at ? ` · ${relativeTime(job.completed_at)}` : ''}`
@@ -59,7 +65,7 @@ export function JobDrawer({ open, onClose, onRefreshJobs, onRefreshItems, setPar
         : job.status === 'cancelled'
         ? `已取消${getJobActionLabel(job.job_type)}`
         : job.status === 'running'
-        ? (compactLog.length > 0 ? '' : shortStage(job.stage ?? '處理中'))
+        ? (currentStage ?? '執行中')
         : `等待${getJobActionLabel(job.job_type)}`
 
     return (
@@ -98,7 +104,7 @@ export function JobDrawer({ open, onClose, onRefreshJobs, onRefreshItems, setPar
             <span style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.45, flex: 1 }}>
               {statusText}
             </span>
-            {compactLog.length > 0 ? (
+            {compactLog.length > 0 && !isRunning ? (
               <button
                 type="button"
                 onClick={() => {

@@ -208,7 +208,7 @@ def jobs_set_stage(doc_id: int, stage: str):
                 stage_log = list(job.get("stage_log") or [])
                 if not stage_log or stage_log[-1] != stage:
                     stage_log.append(stage)
-                job["stage_log"] = stage_log[-30:]
+                job["stage_log"] = stage_log[-100:]
                 job["updated_at"] = _iso()
                 job_snap = dict(job)
                 break
@@ -230,7 +230,7 @@ def jobs_mark_done(doc_id: int, error: str | None = None):
                 stage_log = list(job.get("stage_log") or [])
                 if not stage_log or stage_log[-1] != job["stage"]:
                     stage_log.append(job["stage"])
-                job["stage_log"] = stage_log[-30:]
+                job["stage_log"] = stage_log[-100:]
                 job["completed_at"] = _iso()
                 job["updated_at"] = job["completed_at"]
                 if error:
