@@ -35,7 +35,7 @@ from .graph_utils import (
     _verification_section_terms,
     _verification_query,
 )
-from .orchestrator import decide_slot_ordering, get_candidate_slots
+from .scheduler import decide_slot_ordering, get_candidate_slots
 from .planner import build_slot_decision, plan_query_for_slot
 from .reflector import apply_reflection, reflect_results
 from .retriever import retrieve_evidence

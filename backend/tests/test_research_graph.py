@@ -7,15 +7,13 @@ from dataclasses import dataclass
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-from agents.research.orchestrator import decide_next_batch, get_candidate_slots  # noqa: E402
+from agents.research.scheduler import decide_slot_ordering, get_candidate_slots  # noqa: E402
 from agents.research.planner import PlannerDecision  # noqa: E402
 from agents.research.research_graph import (  # noqa: E402
     _force_next_angle_if_stalled,
     _merge_stream_patch,
     _next_coverage_slot,
-    assign_workers,
     should_continue,
-    slot_worker_node,
 )
 from agents.research.state import (  # noqa: E402
     ResearchGraphState,
