@@ -7,7 +7,13 @@ from collections.abc import AsyncIterator
 from typing import Callable, Any
 from pydantic import BaseModel, Field
 from langchain.agents import create_agent
-from langchain.agents.middleware import HumanInTheLoopMiddleware, before_model
+from langchain.agents.middleware import (
+    HumanInTheLoopMiddleware,
+    SummarizationMiddleware,
+    before_model,
+    dynamic_prompt,
+    ModelRequest,
+)
 from langchain.agents.structured_output import ProviderStrategy
 from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
@@ -106,7 +112,7 @@ except Exception as _llm_init_err:
 
 @before_model
 def _trim_messages(state: dict, runtime) -> dict | None:
-    """Keep last 20 messages, always starting at a HumanMessage."""
+    """Safety trim: keep last 20 messages starting at a HumanMessage."""
     messages = state.get("messages", [])
     if len(messages) <= 20:
         return None
@@ -116,9 +122,47 @@ def _trim_messages(state: dict, runtime) -> dict | None:
             tail = tail[i:]
             break
     else:
-        # No HumanMessage in the tail (e.g. long tool-call chain) — keep last 10
         tail = tail[-10:]
     return {"messages": tail}
+
+
+@dynamic_prompt
+async def _memory_prompt(request: ModelRequest) -> str:
+    """Dynamic system prompt: base instructions + memory context per MemoryPolicy.
+
+    Reads context_summary (short-term), long-term store memory, and doc_cache
+    summaries based on the current intent's read policy. Refreshed at each
+    model call within the agent loop so memory stays current.
+    """
+    ctx = request.runtime.context  # AgentContext
+    thread_id = getattr(ctx, "thread_id", None) or ""
+    route_intent = getattr(ctx, "route_intent", None) or "chat"
+    document_ids = getattr(ctx, "document_ids", None)
+    user_id = get_user_id()
+
+    # Use the last human message as the semantic search query
+    query = ""
+    for msg in reversed(request.messages or []):
+        content = getattr(msg, "content", "")
+        if isinstance(content, str) and content.strip():
+            query = content[:300]
+            break
+
+    try:
+        from services.agent_memory import build_memory_context, format_memory_system_messages
+        memory = await build_memory_context(
+            intent=route_intent,
+            thread_id=thread_id,
+            user_id=user_id,
+            query=query,
+            document_ids=document_ids,
+        )
+        lines = format_memory_system_messages(memory)
+        if lines:
+            return SYSTEM_PROMPT + "\n\n" + "\n\n".join(lines)
+    except Exception as exc:
+        logger.debug("_memory_prompt: %s", exc)
+    return SYSTEM_PROMPT
 
 
 
@@ -161,9 +205,15 @@ async def setup_checkpointer():
         return create_agent(
             llm,
             tools=tools,
-            system_prompt=SYSTEM_PROMPT,
+            # system_prompt is omitted — @dynamic_prompt handles it dynamically
             middleware=[
-                _trim_messages,
+                _memory_prompt,                   # dynamic system prompt + memory injection
+                SummarizationMiddleware(           # compress old messages instead of dropping
+                    model=_mini_llm,
+                    trigger={"tokens": 4000},
+                    keep={"messages": 10},
+                ),
+                _trim_messages,                   # safety cap as final fallback
                 HumanInTheLoopMiddleware(interrupt_on={}),
             ],
             response_format=ProviderStrategy(AgentResponse, strict=True),
@@ -383,16 +433,16 @@ def _build_messages(
     document_ids: list[int] | None,
     task_prompt: str | list[str] | None = None,
     include_document_abstracts: bool = True,
-    thread_id: str | None = None,
-    include_research_context: bool = True,
-    long_term_memories: list[str] | None = None,
 ) -> list:
-    """Build the message list for one agent turn.
+    """Build the initial message list for one agent turn.
 
-    Injection order (all SystemMessages before the HumanMessage):
-      1. task_prompt  ??per-request instructions (e.g. extraction rules)
-      2. document abstracts ??background context for the referenced docs
-      3. HumanMessage ??the actual user question / trigger
+    Memory context (context_summary, long-term store, doc_cache) is now injected
+    dynamically by the @dynamic_prompt middleware at each model call — not here.
+
+    Injection order:
+      1. task_prompt — per-request instructions (e.g. extraction rules)
+      2. document abstracts — background context for referenced docs
+      3. HumanMessage — the actual user question
     """
     messages = []
     if task_prompt:
@@ -410,20 +460,6 @@ def _build_messages(
                 "以下是本次對話引用的文件摘要，請以此作為背景資訊回答問題：\n\n"
                 f"{block}"
             )))
-    if include_research_context and thread_id:
-        research_ctx = _get_conversation_context(thread_id)
-        if research_ctx:
-            messages.append(SystemMessage(content=(
-                "【對話記憶】以下是這段對話的研究摘要，可作為追問的參考背景，"
-                "但仍以文件原文為準：\n"
-                f"{research_ctx}"
-            )))
-    if long_term_memories:
-        memory_block = "\n".join(long_term_memories)
-        messages.append(SystemMessage(content=(
-            "【歷史研究記憶】以下是你過去研究過的相關主題摘要，供參考：\n"
-            f"{memory_block}"
-        )))
     messages.append(HumanMessage(content=user_message))
     return messages
 
@@ -495,22 +531,10 @@ async def run_tool_agent(
     if run_id:
         config["run_id"] = _uuid.UUID(run_id)
 
-    # Fetch long-term memories for chat/research when user is identified
-    _long_term: list[str] = []
-    if include_research_context and get_user_id():
-        _intent = metadata.get("route_intent", "")
-        try:
-            from services.memory_service import search_long_term_memory
-            from services.agent_memory import MEMORY_READ_POLICY
-            if MEMORY_READ_POLICY.get(_intent, None) and MEMORY_READ_POLICY[_intent].long_term:
-                _long_term = await search_long_term_memory(get_user_id(), user_message)
-        except Exception as _mem_exc:
-            logger.debug("Long-term memory search failed: %s", _mem_exc)
-
     async def _invoke():
         with propagate_attributes(session_id=thread_id, user_id=get_user_id()):
             return await agent.ainvoke(
-                {"messages": _build_messages(user_message, document_ids, task_prompt, include_document_abstracts, thread_id=thread_id, include_research_context=include_research_context, long_term_memories=_long_term or None)},
+                {"messages": _build_messages(user_message, document_ids, task_prompt, include_document_abstracts)},
                 config,
                 context=AgentContext(
                     document_ids=document_ids,
@@ -625,7 +649,7 @@ async def run_tool_agent_stream(
     async def _stream_chunks() -> AsyncIterator[dict]:
         with propagate_attributes(session_id=thread_id, user_id=get_user_id()):
             async for chunk in agent.astream(
-                {"messages": _build_messages(user_message, document_ids, task_prompt, include_document_abstracts, thread_id=thread_id, include_research_context=include_research_context)},
+                {"messages": _build_messages(user_message, document_ids, task_prompt, include_document_abstracts)},
                 config,
                 context=AgentContext(
                     document_ids=document_ids,

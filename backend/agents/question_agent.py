@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from langfuse import observe
 from prompting.loader import load_stack
 
-from .no_tool_runner import run_no_tool_agent
+from .no_tool_runner import run_no_tool_agent, stream_no_tool_agent
 from observability import update_current_observation_io
 from .types import AgentResult
 
@@ -154,17 +154,33 @@ async def stream(
     evidence_context: str | None = None,
     evidence_sources: list[str] | None = None,
 ) -> AsyncIterator[tuple[str, bool, list[str]]]:
-    result = await answer(
-        user_message,
-        thread_id,
-        document_ids,
+    extra_system_messages = [
+        "You do not have retrieval tools in this step. Generate tutoring or "
+        "student-facing questions only from the user request and any evidence "
+        "context supplied by the router. Do not claim that you searched the "
+        "documents yourself.",
+    ]
+    payload = {}
+    if evidence_context:
+        payload["evidence_context"] = evidence_context
+
+    async for token in stream_no_tool_agent(
+        user_message=user_message,
+        thread_id=thread_id,
+        document_ids=document_ids,
+        stack_name=STACK_NAME,
+        prompt_name=PROMPT_NAME,
+        agent_name=AGENT_NAME,
+        task_type="question_generation",
+        route_intent="question",
         run_id=run_id,
         parent_run_id=parent_run_id,
         use_mini=use_mini,
+        extra_system_messages=extra_system_messages,
+        payload=payload,
+        sources=evidence_sources or [],
         original_intent=original_intent,
         resolved_intent=resolved_intent,
-        evidence_context=evidence_context,
-        evidence_sources=evidence_sources,
-    )
-    yield result.response, False, []
-    yield "", True, result.sources
+    ):
+        yield token, False, []
+    yield "", True, evidence_sources or []
