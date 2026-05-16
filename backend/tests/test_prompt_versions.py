@@ -3,9 +3,6 @@ import asyncio
 from agents.router_agent import classify_intent
 from agents.research.research_graph import (
     _hard_max_searches,
-    _next_coverage_slot,
-    _ready_for_verification,
-    _verification_display_intent,
 )
 from agents.research.state import ResearchState
 from agents.research import trace_metadata as summary_trace_metadata
@@ -167,108 +164,6 @@ def _coverage_items():
         {"id": "research_limitations", "label": "研究限制", "required": True, "search_hints": ["限制"]},
     ]
 
-
-def test_research_scheduler_keeps_coverage_order_until_slot_cap():
-    coverage = _coverage_items()
-    rs = ResearchState(
-        question="q",
-        document_ids=[1],
-        coverage_items=coverage,
-        slot_status={
-            "research_motivation": "FILLED",
-            "research_methods": "PARTIAL",
-            "research_findings": "NOT_FILLED",
-            "research_limitations": "NOT_FILLED",
-        },
-    )
-    graph_state_before_cap = {
-        "coverage_items": coverage,
-        "steps_json": [{"slot": "research_methods"} for _ in range(6)],
-        "max_searches": 10,
-        "max_searches_per_slot": 7,
-    }
-    graph_state_at_cap = {
-        **graph_state_before_cap,
-        "steps_json": [{"slot": "research_methods"} for _ in range(7)],
-    }
-
-    assert _next_coverage_slot(graph_state_before_cap, rs) == "research_findings"
-    assert _next_coverage_slot(graph_state_at_cap, rs) == "research_findings"
-
-
-def test_research_scheduler_temporarily_skips_stalled_slot():
-    coverage = _coverage_items()
-    rs = ResearchState(
-        question="q",
-        document_ids=[1],
-        coverage_items=coverage,
-        slot_status={
-            "research_motivation": "PARTIAL",
-            "research_methods": "PARTIAL",
-            "research_findings": "PARTIAL",
-            "research_limitations": "NOT_FILLED",
-        },
-    )
-    graph_state = {
-        "coverage_items": coverage,
-        "steps_json": [
-            {"slot": "research_findings", "quality": "NO_RESULTS"},
-            {"slot": "research_findings", "quality": "NOT_USEFUL"},
-        ],
-        "max_searches": 10,
-        "max_searches_per_slot": 7,
-    }
-
-    assert _next_coverage_slot(graph_state, rs) == "research_limitations"
-
-
-def test_research_verification_waits_for_direct_required_slot_attempts():
-    coverage = _coverage_items()
-    rs = ResearchState(
-        question="q",
-        document_ids=[1],
-        coverage_items=coverage,
-        search_count=2,
-        slot_status={
-            "research_motivation": "PARTIAL",
-            "research_methods": "PARTIAL",
-            "research_findings": "PARTIAL",
-            "research_limitations": "PARTIAL",
-        },
-        verification_done=False,
-    )
-    graph_state = {
-        "coverage_items": coverage,
-        "steps_json": [
-            {"slot": "research_motivation", "quality": "USEFUL"},
-            {"slot": "research_methods", "quality": "USEFUL"},
-        ],
-        "max_searches": 10,
-        "max_searches_per_slot": 7,
-    }
-
-    assert rs.ready_for_verification() is True
-    assert _ready_for_verification(graph_state, rs) is False
-    assert _next_coverage_slot(graph_state, rs) == "research_findings"
-
-    graph_state["steps_json"].extend([
-        {"slot": "research_findings", "quality": "USEFUL"},
-        {"slot": "research_limitations", "quality": "NO_RESULTS"},
-    ])
-
-    assert _ready_for_verification(graph_state, rs) is True
-
-
-def test_research_verification_display_intent_names_target_slot():
-    rs = ResearchState(
-        question="q",
-        document_ids=[1],
-        coverage_items=[
-            {"id": "research_findings", "label": "研究成果", "required": True, "search_hints": ["成果"]},
-        ],
-    )
-
-    assert _verification_display_intent(rs, "research_findings") == "補強研究成果證據"
 
 
 def test_research_hard_cap_scales_by_coverage_count_and_per_slot_budget():

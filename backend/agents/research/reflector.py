@@ -27,7 +27,6 @@ class EvidenceItem(BaseModel):
     chunk_id: str = Field(default="")
     quote: str = Field(default="")
     interpretation: str = Field(default="")
-    source_type: str = Field(default="retrieved_chunk")
 
 
 class CoverageUpdate(BaseModel):
@@ -88,7 +87,6 @@ def _chunk_evidence(
     slot_id: str,
     slot_label: str,
     interpretation: str = "",
-    source_type: str = "retrieved_chunk",
     limit: int = 260,
 ) -> dict:
     text = str(chunk.get("content", "")).strip().replace("\n", " ")
@@ -101,7 +99,6 @@ def _chunk_evidence(
         "chunk_id": chunk.get("id") or chunk.get("chunk_id") or "",
         "quote": text[:limit],
         "interpretation": interpretation or text[:limit],
-        "source_type": source_type,
     }
 
 
@@ -126,7 +123,6 @@ def _detail_from_note(note: str, *, slot_id: str, slot_label: str) -> dict:
         "chunk_id": "",
         "quote": quote[:260],
         "interpretation": quote[:260],
-        "source_type": "reflector_note",
     }
 
 
@@ -227,7 +223,7 @@ def _cross_slot_updates(
         return existing_updates
 
     by_slot = {update.item_id: update for update in existing_updates}
-    combined_text = "\n".join(str(chunk.get("content", "")) for chunk in chunks[:4])
+    combined_text = "\n".join(str(chunk.get("content", "")) for chunk in chunks[:6])
     for item in state.coverage_items:
         slot = str(item.get("id") or "")
         if not slot or slot in by_slot:
@@ -237,7 +233,7 @@ def _cross_slot_updates(
             continue
         notes: list[str] = []
         evidence: list[EvidenceItem] = []
-        for chunk in chunks[:4]:
+        for chunk in chunks[:6]:
             text = str(chunk.get("content", ""))
             if _slot_match_score(item, slot, text) >= 2:
                 note = _chunk_note(chunk)
@@ -277,7 +273,7 @@ async def reflect_results(
             "page_end": chunk.get("page_end"),
             "chunk_id": chunk.get("id") or chunk.get("chunk_id") or "",
         }
-        for chunk in chunks[:4]
+        for chunk in chunks[:6]
     ]
     try:
         reflector = llm.with_structured_output(Reflection, strict=True)
@@ -288,7 +284,7 @@ async def reflect_results(
                     f"本輪 query：{query}",
                     f"目標 coverage item：{slot}",
                     f"目前研究狀態：\n{json.dumps(state.as_prompt_dict(), ensure_ascii=False)}",
-                    f"搜尋片段（最多 4 筆）：\n{json.dumps(compact_chunks, ensure_ascii=False)}",
+                    f"搜尋片段（最多 6 筆）：\n{json.dumps(compact_chunks, ensure_ascii=False)}",
                     "請列出所有被片段直接支撐的 coverage item 更新。",
                 ])
             ),

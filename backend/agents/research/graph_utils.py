@@ -84,7 +84,7 @@ def _compact_chunks(chunks: list[dict]) -> list[dict]:
     return [_compact_chunk(chunk) for chunk in chunks[:_TRACE_CHUNKS_PER_QUERY]]
 
 
-def _compact_evidence(evidence: dict[str, list[str]], limit: int = 8) -> dict[str, list[str]]:
+def _compact_evidence(evidence: dict[str, list[str]], limit: int = 12) -> dict[str, list[str]]:
     return {slot: notes[:limit] for slot, notes in evidence.items()}
 
 
@@ -216,62 +216,6 @@ def _slot_uses_hyde(rs: ResearchState, slot: str) -> bool:
     return bool(rs.coverage_item(slot).get("use_hyde", False))
 
 
-def _next_coverage_slot(state: ResearchGraphState, rs: ResearchState) -> str | None:
-    counts = _slot_search_counts(state)
-    cap = _per_slot_cap(state)
-    required_order = rs.required_coverage_ids()
-    required = [
-        slot
-        for slot in required_order
-        if rs.slot_status.get(slot, "NOT_FILLED") not in ("FILLED", "EXHAUSTED")
-        and counts.get(slot, 0) < cap
-    ]
-    if not required:
-        return None
-    untried = [slot for slot in required if counts.get(slot, 0) == 0]
-    if untried:
-        candidates = [
-            slot
-            for slot in untried
-            if rs.slot_status.get(slot, "NOT_FILLED") == "NOT_FILLED" and not _slot_uses_hyde(rs, slot)
-        ]
-        if candidates:
-            return candidates[0]
-        candidates = [slot for slot in untried if not _slot_uses_hyde(rs, slot)]
-        if candidates:
-            return candidates[0]
-        return untried[0]
-    recent = list(state.get("steps_json", []))[-2:]
-    stalled_slot = ""
-    if len(recent) == 2 and recent[0].get("slot") == recent[1].get("slot"):
-        if all(step.get("quality") in ("NO_RESULTS", "NOT_USEFUL") for step in recent):
-            stalled_slot = str(recent[-1].get("slot") or "")
-    status_rank = {"NOT_FILLED": 0, "PARTIAL": 1, "EXHAUSTED": 2, "FILLED": 3}
-    ranked = sorted(
-        required,
-        key=lambda slot: (
-            slot == stalled_slot,
-            _slot_uses_hyde(rs, slot),
-            status_rank.get(rs.slot_status.get(slot, "NOT_FILLED"), 0),
-            counts.get(slot, 0),
-            required_order.index(slot),
-        ),
-    )
-    return ranked[0] if ranked else None
-
-
-def _required_slots_without_direct_search(state: ResearchGraphState, rs: ResearchState) -> list[str]:
-    counts = _slot_search_counts(state)
-    return [slot for slot in rs.required_coverage_ids() if counts.get(slot, 0) == 0]
-
-
-def _ready_for_verification(state: ResearchGraphState, rs: ResearchState) -> bool:
-    return rs.ready_for_verification() and not _required_slots_without_direct_search(state, rs)
-
-
-def _verification_display_intent(rs: ResearchState, slot: str) -> str:
-    return f"補強{rs.coverage_label(slot)}證據"
-
 
 def _verification_section_terms(rs: ResearchState, slot: str) -> list[str]:
     item = rs.coverage_item(slot)
@@ -390,6 +334,8 @@ def _merge_stream_patch(state: dict, patch: dict) -> dict:
             merged[key] = list(merged.get(key, [])) + list(value or [])
         elif key in {"search_count", "llm_call_count"}:
             merged[key] = int(merged.get(key, 0) or 0) + int(value or 0)
+        elif key == "void_slot_attempts":
+            merged[key] = _merge_dict_overwrite(merged.get(key, {}), value)
         else:
             merged[key] = value
     return merged
@@ -405,7 +351,6 @@ def _graph_to_rs(state: ResearchGraphState) -> ResearchState:
         output_contract=state.get("output_contract", ""),
         search_count=state["search_count"],
         consecutive_no_new=state["consecutive_no_new"],
-        verification_done=False,  # removed from graph state
         known_keywords=list(state["known_keywords"]),
         used_queries=list(state["used_queries"]),
         slot_status=dict(state["slot_status"]),

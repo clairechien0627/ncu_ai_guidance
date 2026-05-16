@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 
+from langfuse import observe
 from tools.rag_tool import AgentContext, run_search_report
 
 
@@ -13,6 +14,7 @@ def _source_for_chunk(chunk: dict) -> str:
     return f"{filename} p.{page}-{page_end}" if page_end != page else f"{filename} p.{page}"
 
 
+@observe(as_type="span", name="retrieve_evidence", capture_input=False, capture_output=False)
 async def retrieve_evidence(
     *,
     query: str,

@@ -19,13 +19,10 @@ from .graph_utils import (
     _graph_to_rs,
     _hard_max_searches,
     _merge_stream_patch,
-    _next_coverage_slot,
     _per_slot_cap,
-    _ready_for_verification,
     _seed_keywords,
     _slot_search_counts,
     _trace_summary,
-    _verification_display_intent,
 )
 from .state import DEFAULT_SUMMARY_COVERAGE, ResearchGraphState, ResearchState, SearchStep
 from .writer import _fallback_writeup
@@ -34,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 # Re-export for agent.py imports
 __all__ = [
+    "_force_next_angle_if_stalled",
     "_hard_max_searches",
     "_merge_stream_patch",
     "_seed_keywords",
@@ -41,6 +39,7 @@ __all__ = [
     "final_rs_from_result",
     "get_or_build_research_graph",
     "research_graph",
+    "should_continue",
 ]
 
 
@@ -101,14 +100,14 @@ def should_continue(state: ResearchGraphState) -> Literal["scheduler", "writer"]
 # ── Fault-tolerance error handlers ───────────────────────────────────────────
 
 def _scheduler_error_handler(state: ResearchGraphState, error: NodeError) -> dict:
-    logger.warning("scheduler exhausted retries (%s); clearing pending_slots", error.error)
-    return {"pending_slots": []}
+    logger.warning("scheduler exhausted retries (%s); clearing scheduled_slot", error.error)
+    return {"scheduled_slot": None}
 
 
 def _slot_executor_error_handler(state: ResearchGraphState, error: NodeError) -> dict:
     logger.warning("slot_executor exhausted retries (%s); using fallback state", error.error)
     return {
-        "pending_slots": [],
+        "scheduled_slot": None,
         "search_count": 1,
         "consecutive_no_new": state.get("consecutive_no_new", 0) + 1,
     }
@@ -184,7 +183,6 @@ def final_rs_from_result(result: ResearchGraphState) -> ResearchState:
         output_contract=result.get("output_contract", ""),
         search_count=result["search_count"],
         consecutive_no_new=result["consecutive_no_new"],
-        verification_done=False,
         known_keywords=result["known_keywords"],
         used_queries=result["used_queries"],
         slot_status=result["slot_status"],

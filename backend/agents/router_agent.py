@@ -517,6 +517,7 @@ async def run_research_agent(
     on_token=None,
     original_intent: str | None = None,
     resolved_intent: str | None = None,
+    bypass_cache: bool = False,
 ) -> AgentResult:
     with propagate_attributes(session_id=thread_id, user_id=get_user_id()) if thread_id else contextlib.nullcontext():
         from .research import run_research_task
@@ -542,6 +543,7 @@ async def run_research_agent(
             max_searches=10,
             max_consecutive_no_new=2,
             parent_run_id=parent_run_id,
+            bypass_cache=bypass_cache,
         )
 
 

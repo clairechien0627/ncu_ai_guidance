@@ -10,7 +10,10 @@ from dotenv import load_dotenv
 # 1. 載入環境變數
 load_dotenv()
 
-# 2. 日誌設定（Windows event loop policy 由 run_dev_server.py 處理）
+# 2. Windows：psycopg3 與 ProactorEventLoop 不相容，強制使用 SelectorEventLoop
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 logger = logging.getLogger(__name__)
 
 # 4. 延遲匯入以確保環境變數生效

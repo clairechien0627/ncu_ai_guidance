@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from collections.abc import Callable
 from datetime import datetime, timezone
 
@@ -196,14 +197,9 @@ def _emit_graph_progress(
         return
     try:
         if node_name == "scheduler":
-            pending = patch.get("pending_slots") or []
-            if pending:
-                labels = ", ".join(
-                    _slot_label(state, str(item.get("slot") or ""))
-                    for item in pending
-                    if isinstance(item, dict)
-                )
-                on_stage(f"排程搜尋：{labels}")
+            scheduled = patch.get("scheduled_slot")
+            if scheduled and isinstance(scheduled, dict):
+                on_stage(f"排程搜尋：{_slot_label(state, str(scheduled.get('slot') or ''))}")
         elif node_name == "slot_executor":
             # Per-slot progress is emitted via on_stage inside _run_single_slot;
             # here we only emit a summary when the executor wave finishes.
@@ -585,7 +581,7 @@ def _write_trace(
                     "task_goal": state.task_goal,
                     "output_contract": state.output_contract,
                     "coverage_items": state.coverage_items,
-                    "initial_context": state.document_context[:2000],
+                    "initial_context": state.document_context,
                 },
                 ensure_ascii=False,
             )
@@ -735,7 +731,7 @@ def _build_initial_graph_state(
         "avoid_query_terms": [],
         "seen_chunk_keys": [],
         "used_query_keys": [],
-        "pending_slots": [],
+        "scheduled_slot": None,
         "void_slot_attempts": {},
         "steps_json": [],
         "chunks_by_query_json": [],
@@ -767,6 +763,7 @@ async def run_research_task(
     max_consecutive_no_new: int = 4,
     min_evidence_per_slot: int | None = None,
     parent_run_id: str | None = None,
+    bypass_cache: bool = False,
 ) -> AgentResult:
     # Document extraction requires at least 1 evidence note per slot before the
     # writer fires; ad-hoc research has no such constraint.
@@ -805,7 +802,8 @@ async def run_research_task(
     )
 
     # ── Document research cache: pre-load if available ────────────────────────
-    if document_ids:
+    _env_bypass = os.environ.get("BYPASS_RESEARCH_CACHE", "").lower() in ("1", "true", "yes")
+    if document_ids and not bypass_cache and not _env_bypass:
         try:
             from services.memory_service import load_document_research_cache
             cached = load_document_research_cache(document_ids, coverage_ids)

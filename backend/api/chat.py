@@ -51,6 +51,7 @@ class ChatRequest(BaseModel):
     model: str = "gemini"
     document_ids: Optional[list[int]] = None
     user_id: Optional[str] = None
+    bypass_cache: bool = False
 
 
 def _should_use_mini(model: str, intent: str, document_ids: list[int] | None) -> bool:
@@ -281,6 +282,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                         on_token=_push_token,
                         original_intent=route.original_intent,
                         resolved_intent=route.resolved_intent,
+                        bypass_cache=req.bypass_cache,
                     )
                 )
                 streamed_tokens = False

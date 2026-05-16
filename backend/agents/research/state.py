@@ -33,14 +33,6 @@ def _merge_evidence_dict(a: dict | None, b: dict | None) -> dict:
     return result
 
 
-_FLAGS_CLEAR: list = ["__clear__"]
-
-
-def _batch_flags_reducer(a: list | None, b: list | None) -> list:
-    if b is _FLAGS_CLEAR:
-        return []
-    return list(a or []) + list(b or [])
-
 
 def _keep_last(a, b):
     """Last-write-wins: used for string fields written by parallel slot_workers."""
@@ -97,7 +89,6 @@ class ResearchState:
     output_contract: str = ""
     search_count: int = 0
     consecutive_no_new: int = 0
-    verification_done: bool = False
     known_keywords: list[str] = field(default_factory=list)
     used_queries: list[str] = field(default_factory=list)
     slot_status: dict[str, SlotStatus] = field(default_factory=dict)
@@ -190,24 +181,14 @@ class ResearchState:
         ids = self.required_coverage_ids()
         return min(ids, key=lambda slot: rank.get(self.slot_status.get(slot, "NOT_FILLED"), 0))
 
-    def ready_for_verification(self) -> bool:
-        required = self.required_coverage_ids()
-        return (
-            self.search_count >= 2
-            and all(self.slot_status.get(slot) in ("FILLED", "PARTIAL", "EXHAUSTED") for slot in required)
-            and not self.verification_done
-        )
-
     def done(self, min_evidence_per_slot: int = 0) -> bool:
         required = self.required_coverage_ids()
-        if not self.verification_done:
-            return False
+        terminal = {"FILLED", "PARTIAL", "EXHAUSTED", "NOT_FOUND", "OMITTED"}
         for slot in required:
             status = self.slot_status.get(slot, "NOT_FILLED")
-            if status not in ("FILLED", "PARTIAL", "EXHAUSTED"):
+            if status not in terminal:
                 return False
-            # Document extraction can require evidence notes unless a slot is truly EXHAUSTED.
-            if min_evidence_per_slot > 0 and status != "EXHAUSTED":
+            if min_evidence_per_slot > 0 and status not in {"EXHAUSTED", "NOT_FOUND", "OMITTED"}:
                 if len(self.evidence.get(slot, [])) < min_evidence_per_slot:
                     return False
         return True
@@ -229,21 +210,17 @@ class ResearchState:
             "output_contract": self.output_contract,
             "coverage_items": self.coverage_items,
             "search_count": self.search_count,
-            "known_keywords": self.known_keywords[:30],
+            "known_keywords": self.known_keywords,
             "coverage_status": self.slot_status,
             "slot_status": self.slot_status,
-            "used_queries": self.used_queries[-10:],
+            "used_queries": self.used_queries,
             "evidence_brief": {
-                item_id: notes[-3:] for item_id, notes in self.evidence.items()
+                item_id: list(notes) for item_id, notes in self.evidence.items()
             },
-            "evidence_details_brief": {
-                item_id: notes[-3:] for item_id, notes in self.evidence_details.items()
-            },
-            "verification_done": self.verification_done,
             "last_reflection": self.last_reflection,
             "next_search_angle": self.next_search_angle,
-            "suggested_query_terms": self.suggested_query_terms[-12:],
-            "avoid_query_terms": self.avoid_query_terms[-12:],
+            "suggested_query_terms": self.suggested_query_terms,
+            "avoid_query_terms": self.avoid_query_terms,
         }
 
 
@@ -325,9 +302,9 @@ class ResearchGraphState(TypedDict):
     min_evidence_per_slot: int
 
     # ── scheduler ↔ executor contract ────────────────────────────────────────
-    # pending_slots: scheduler writes (ordered list of slots to run)
+    # scheduled_slot: scheduler writes the single next slot to run
     # void_slot_attempts: executor writes (how many times each slot returned void)
-    pending_slots: list[dict]                                    # [{slot, hint}]
+    scheduled_slot: dict | None                                  # {slot, hint} | None
     void_slot_attempts: Annotated[dict, _merge_dict_overwrite]  # {slot_id: int}
 
     # ── trace & output ────────────────────────────────────────────────────────
@@ -339,4 +316,3 @@ class ResearchGraphState(TypedDict):
     started_at: str
     final_answer: str
     final_sources: list[str]
-    worker_hint: str

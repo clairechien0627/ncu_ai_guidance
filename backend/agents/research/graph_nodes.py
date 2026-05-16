@@ -52,7 +52,7 @@ MAX_VOID_TOTAL = 4
 
 @observe(as_type="chain", name="scheduler", capture_input=False, capture_output=False)
 async def scheduler_node(state: ResearchGraphState, config: RunnableConfig) -> dict:
-    """Decide which slots to run and in what order; emit pending_slots for executor."""
+    """Rank all candidate slots and emit the top one as scheduled_slot for executor."""
     llm = config["configurable"]["llm"]
     on_stage = config["configurable"].get("on_stage")
     rs = _graph_to_rs(state)
@@ -70,31 +70,29 @@ async def scheduler_node(state: ResearchGraphState, config: RunnableConfig) -> d
     )
 
     if not candidates:
-        _safe_update_current_observation(output={"pending_slots": [], "rationale": "no candidates"})
-        return {"pending_slots": []}
+        _safe_update_current_observation(output={"scheduled_slot": None, "rationale": "no candidates"})
+        return {"scheduled_slot": None}
 
     decision = await decide_slot_ordering(llm, rs, candidates, void_slot_attempts)
-    pending_slots = [
+    ranked = [
         {"slot": item.slot_id, "hint": item.hint}
         for item in decision.slots
         if item.slot_id in set(candidates)
     ]
+    scheduled_slot = ranked[0] if ranked else None
 
-    if on_stage and pending_slots:
+    if on_stage and scheduled_slot:
         try:
-            labels = ", ".join(
-                _slot_label(state, item["slot"]) for item in pending_slots
-            )
-            on_stage(f"排程搜尋：{labels}")
+            on_stage(f"排程搜尋：{_slot_label(state, scheduled_slot['slot'])}")
         except Exception:
             pass
 
     _safe_update_current_observation(
-        output={"pending_slots": pending_slots, "rationale": decision.rationale}
+        output={"scheduled_slot": scheduled_slot, "rationale": decision.rationale}
     )
     return {
-        "pending_slots": pending_slots,
-        "void_slot_attempts": {},  # clear — executor will update
+        "scheduled_slot": scheduled_slot,
+        "void_slot_attempts": {},
         "llm_call_count": 1,
     }
 
@@ -349,164 +347,82 @@ async def slot_executor_node(
     runtime: Runtime,
 ) -> dict:
     """
-    Reactive executor: runs pending_slots with asyncio.Semaphore(3).
-    Each slot reads the latest accumulated state (reactive context).
-    Void slots: up to MAX_VOID_TOTAL times before NOT_FOUND/OMITTED.
+    Sequential executor: runs the single scheduled_slot from scheduler.
+    After each slot completes, control returns to scheduler for re-ranking with
+    fully updated state — each slot sees all previous slots' evidence.
+    Void slots: tracked up to MAX_VOID_TOTAL times before NOT_FOUND/OMITTED.
     """
-    pending = list(state.get("pending_slots") or [])
-    if not pending:
-        return {"pending_slots": []}
+    item = state.get("scheduled_slot")
+    if not item:
+        return {"scheduled_slot": None}
 
     if runtime.drain_requested:
         logger.info("slot_executor skipping (drain requested: %s)", runtime.drain_reason)
-        return {"pending_slots": [], "search_count": 0}
+        return {"scheduled_slot": None, "search_count": 0}
 
     on_stage = config["configurable"].get("on_stage")
-
-    semaphore = asyncio.Semaphore(3)
-    lock = asyncio.Lock()
-
-    # Shared accumulated state — starts from current, updated as slots complete
-    accumulated: dict = {
-        "slot_status": dict(state.get("slot_status") or {}),
-        "evidence": {k: list(v) for k, v in (state.get("evidence") or {}).items()},
-        "evidence_details": {k: list(v) for k, v in (state.get("evidence_details") or {}).items()},
-        "sources": list(state.get("sources") or []),
-        "known_keywords": list(state.get("known_keywords") or []),
-        "used_queries": list(state.get("used_queries") or []),
-        "used_query_keys": list(state.get("used_query_keys") or []),
-        "seen_chunk_keys": list(state.get("seen_chunk_keys") or []),
-        "last_reflection": state.get("last_reflection", ""),
-        "next_search_angle": state.get("next_search_angle", ""),
-        "suggested_query_terms": list(state.get("suggested_query_terms") or []),
-        "avoid_query_terms": list(state.get("avoid_query_terms") or []),
-        "steps_json": list(state.get("steps_json") or []),
-        "chunks_by_query_json": list(state.get("chunks_by_query_json") or []),
-        "messages": list(state.get("messages") or []),
-    }
-    search_count_delta = 0
-    llm_call_delta = 0
-    evidence_flags: list[bool] = []
-
-    # void_slot_attempts persisted across rounds in state
+    slot = item["slot"]
+    use_verification = item.get("use_verification_query", False)
     void_slot_attempts: dict[str, int] = dict(state.get("void_slot_attempts") or {})
 
-    def _merge_result(result: dict) -> None:
-        """Merge a slot result into accumulated (called under lock)."""
-        from .graph_utils import (
-            _merge_evidence_dict, _merge_unique_list, _merge_dict_overwrite,
-        )
-        nonlocal search_count_delta, llm_call_delta
-        result.pop("_last_quality", None)
-
-        if "slot_status" in result:
-            accumulated["slot_status"] = _merge_dict_overwrite(
-                accumulated["slot_status"], result["slot_status"]
-            )
-        for list_key in ("used_queries", "steps_json", "chunks_by_query_json"):
-            if list_key in result:
-                accumulated[list_key] = accumulated[list_key] + list(result[list_key] or [])
-        if "messages" in result:
-            # Cap at 60 messages to prevent checkpoint bloat in long multi-slot runs
-            combined = accumulated["messages"] + list(result["messages"] or [])
-            accumulated["messages"] = combined[-60:]
-        for unique_key in ("sources", "known_keywords", "used_query_keys", "seen_chunk_keys",
-                           "suggested_query_terms", "avoid_query_terms"):
-            if unique_key in result:
-                accumulated[unique_key] = _merge_unique_list(
-                    accumulated[unique_key], result[unique_key]
-                )
-        for ev_key in ("evidence", "evidence_details"):
-            if ev_key in result:
-                accumulated[ev_key] = _merge_evidence_dict(accumulated[ev_key], result[ev_key])
-        for str_key in ("last_reflection", "next_search_angle"):
-            if result.get(str_key):
-                accumulated[str_key] = result[str_key]
-        search_count_delta += int(result.get("search_count", 0))
-        llm_call_delta += int(result.get("llm_call_count", 0))
-
-    async def run_one(item: dict) -> None:
-        slot = item["slot"]
-        use_verification = item.get("use_verification_query", False)
-
-        async with semaphore:
-            async with lock:
-                current_state = {**state, **accumulated}
-
-            result = await _run_single_slot_with_retry(
-                slot=slot,
-                hint=item.get("hint", ""),
-                state=current_state,
-                config=config,
-                use_verification_query=use_verification,
-            )
-
-            quality = result.get("_last_quality", "UNKNOWN")
-            has_evidence = bool(
-                result.get("evidence", {}).get(slot) or
-                any(v for v in (result.get("evidence") or {}).values())
-            )
-
-            async with lock:
-                if quality in ("NO_RESULTS", "NOT_USEFUL") and not has_evidence:
-                    void_slot_attempts[slot] = void_slot_attempts.get(slot, 0) + 1
-                    count = void_slot_attempts[slot]
-
-                    if count >= MAX_VOID_TOTAL:
-                        # Decide final status based on required flag
-                        coverage_item = next(
-                            (c for c in (state.get("coverage_items") or []) if c.get("id") == slot),
-                            {"required": True},
-                        )
-                        new_status = "NOT_FOUND" if coverage_item.get("required", True) else "OMITTED"
-                        accumulated["slot_status"][slot] = new_status
-                        evidence_flags.append(False)
-                        if on_stage:
-                            try:
-                                on_stage(f"找不到資料：{_slot_label(current_state, slot)} → {new_status}")
-                            except Exception:
-                                pass
-                    else:
-                        # Void but not final — will be retried next scheduler round
-                        evidence_flags.append(False)
-                else:
-                    # Valid result
-                    evidence_flags.append(bool(has_evidence or quality not in ("NO_RESULTS", "NOT_USEFUL")))
-                    _merge_result(result)
-
-                    if on_stage:
-                        try:
-                            status = accumulated["slot_status"].get(slot, "")
-                            on_stage(f"完成搜尋「{_slot_label(current_state, slot)}」：{quality} / {status}")
-                        except Exception:
-                            pass
-
     _safe_update_current_observation(
-        input={
-            "pending_slots": [item["slot"] for item in pending],
-            "search_count": state.get("search_count", 0),
-        }
+        input={"slot": slot, "search_count": state.get("search_count", 0)}
     )
 
-    async with asyncio.TaskGroup() as tg:
-        for item in pending:
-            tg.create_task(run_one(item))
+    result = await _run_single_slot_with_retry(
+        slot=slot,
+        hint=item.get("hint", ""),
+        state=state,
+        config=config,
+        use_verification_query=use_verification,
+    )
 
-    found = any(evidence_flags)
+    quality = result.get("_last_quality", "UNKNOWN")
+    has_evidence = bool(
+        result.get("evidence", {}).get(slot) or
+        any(v for v in (result.get("evidence") or {}).values())
+    )
+    found = False
+
+    if quality in ("NO_RESULTS", "NOT_USEFUL") and not has_evidence:
+        void_slot_attempts[slot] = void_slot_attempts.get(slot, 0) + 1
+        count = void_slot_attempts[slot]
+        if count >= MAX_VOID_TOTAL:
+            coverage_item = next(
+                (c for c in (state.get("coverage_items") or []) if c.get("id") == slot),
+                {"required": True},
+            )
+            new_status = "NOT_FOUND" if coverage_item.get("required", True) else "OMITTED"
+            result["slot_status"] = {**result.get("slot_status", {}), slot: new_status}
+            if on_stage:
+                try:
+                    on_stage(f"找不到資料：{_slot_label(state, slot)} → {new_status}")
+                except Exception:
+                    pass
+    else:
+        found = bool(has_evidence or quality not in ("NO_RESULTS", "NOT_USEFUL"))
+        if on_stage:
+            try:
+                status = (result.get("slot_status") or {}).get(slot, "")
+                on_stage(f"完成搜尋「{_slot_label(state, slot)}」：{quality} / {status}")
+            except Exception:
+                pass
+
+    result.pop("_last_quality", None)
+
     _safe_update_current_observation(
         output={
-            "coverage_status": accumulated["slot_status"],
-            "search_count_delta": search_count_delta,
+            "slot": slot,
+            "quality": quality,
+            "slot_status": result.get("slot_status", {}),
             "void_slot_attempts": void_slot_attempts,
         }
     )
 
     return {
-        **accumulated,
-        "search_count": search_count_delta,
-        "llm_call_count": llm_call_delta,
+        **result,
         "consecutive_no_new": 0 if found else state.get("consecutive_no_new", 0) + 1,
-        "pending_slots": [],
+        "scheduled_slot": None,
         "void_slot_attempts": void_slot_attempts,
     }
 

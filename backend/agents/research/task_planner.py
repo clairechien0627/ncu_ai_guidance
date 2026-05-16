@@ -282,7 +282,7 @@ async def create_research_plan(
                 content="\n\n".join([
                     f"問題：{question}",
                     f"任務脈絡：{task_context}",
-                    f"文件摘要：\n{document_context[:1800]}" + multi_doc_hint,
+                    f"文件摘要：\n{document_context}" + multi_doc_hint,
                     "請規劃 coverage items，每個 item 描述一個證據需求，使用繁體中文 label。",
                 ])
             ),

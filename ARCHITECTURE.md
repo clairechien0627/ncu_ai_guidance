@@ -17,11 +17,11 @@ Report Agent 是一套 RAG-first 多代理人學術研究助理，核心設計�
 ```mermaid
 flowchart TD
     U["使用者訊息"] --> API["api/chat.py"]
-    API --> Router["router_agent\n意圖分類 + ExecutionPlan\n唯一的協調中心"]
+    API --> Router["router_agent<br>意圖分類 + ExecutionPlan<br>唯一的協調中心"]
 
     Router -->|chat| Chat["chat_agent"]
-    Router -->|retrieval| Ret["retrieval_agent\n文件 Q&A"]
-    Router -->|"question＋文件\nStep 1"| Ret
+    Router -->|retrieval| Ret["retrieval_agent<br>文件 Q&A"]
+    Router -->|"question＋文件<br>Step 1"| Ret
     Router -->|"question（無文件）"| QA["question_agent"]
     Router -->|research| Res["research_agent"]
     Router -->|evaluation| Eval["evaluation_agent"]
@@ -35,7 +35,7 @@ flowchart TD
 
     Router -->|"Step 2（含 evidence）"| QA
     Router --> OUT["回應使用者"]
-    Res --> RG["research_graph\n排程 → 執行 → 撰寫"]
+    Res --> RG["research_graph<br>排程 → 執行 → 撰寫"]
     Router -.->|"背景"| Eval
 
     style Router fill:#e8f4f8,stroke:#2196F3
