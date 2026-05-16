@@ -396,7 +396,10 @@ async def slot_executor_node(
             result["slot_status"] = {**result.get("slot_status", {}), slot: new_status}
             await _emit_stage(on_stage, f"找不到資料：{_slot_label(state, slot)} → {new_status}")
     else:
-        found = bool(has_evidence or quality not in ("NO_RESULTS", "NOT_USEFUL"))
+        # Progress = new evidence actually entered the state (delta non-empty).
+        # quality=USEFUL with an empty delta still counts as no progress so that
+        # consecutive_no_new can accumulate and trigger the stall condition.
+        found = bool(has_evidence)
         status = (result.get("slot_status") or {}).get(slot, "")
         await _emit_stage(on_stage, f"完成搜尋「{_slot_label(state, slot)}」：{quality} / {status}")
 
