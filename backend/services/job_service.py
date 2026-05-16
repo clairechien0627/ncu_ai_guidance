@@ -44,6 +44,7 @@ _jobs_lock = threading.Lock()
 _active_jobs: list[dict] = []
 _job_subscribers: list[asyncio.Queue] = []
 _reindex_tasks: dict[int, asyncio.Task] = {}
+_extract_tasks: dict[int, asyncio.Task] = {}
 
 _reindex_work_queue: list[dict] = []
 _extract_work_queue: list[dict] = []
@@ -412,15 +413,21 @@ async def jobs_cancel_queued(doc_id: int) -> str:
     """Returns 'running', 'queued', or 'not_found'."""
     if not jobs_has_active(doc_id):
         return "not_found"
-    task = _reindex_tasks.get(doc_id)
-    if task and not task.done():
-        task.cancel()
+    running_task = next(
+        (t for t in (_reindex_tasks.get(doc_id), _extract_tasks.get(doc_id))
+         if t and not t.done()),
+        None,
+    )
+    if running_task:
+        running_task.cancel()
         for job in _active_jobs:
             if job.get("doc_id") == doc_id:
                 job["stage"] = "取消中"
                 job["updated_at"] = _iso()
                 _persist_job(job)
                 break
+        if redis_enabled():
+            await redis_publish(EVENTS_CHANNEL, json.dumps({"type": "cancel", "doc_id": doc_id}))
         return "running"
     _reindex_work_queue[:] = [x for x in _reindex_work_queue if x["doc_id"] != doc_id]
     if _extract_condition is not None:
@@ -657,6 +664,9 @@ async def run_one_extraction(doc_id: int, on_failure: str):
         summary, run_id, answer, sources = await extract_document_summary_with_raw(doc_id, on_stage=_stage_cb)
         await asyncio.to_thread(db_set_research_step1, doc_id, answer, sources, run_id)
         await asyncio.to_thread(db_set_summarized, doc_id, summary, run_id)
+    except asyncio.CancelledError:
+        job_error = "已取消"
+        await asyncio.to_thread(db_set_error, doc_id, job_error)
     except Exception as e:
         job_error = str(e)
         if on_failure == "restore_summarized":
@@ -698,6 +708,9 @@ async def run_one_extraction_step(doc_id: int, step: str, on_failure: str):
             await asyncio.to_thread(db_set_summary_patch, doc_id, patch)
         else:
             raise ValueError(f"Unknown extraction step: {step}")
+    except asyncio.CancelledError:
+        job_error = "已取消"
+        await asyncio.to_thread(db_set_error, doc_id, job_error)
     except Exception as e:
         job_error = str(e)
         if on_failure == "restore_summarized":
@@ -880,11 +893,18 @@ async def _extract_worker():
                 while not _extract_work_queue:
                     await _extract_condition.wait()
                 item = _extract_work_queue.pop(0)
+        doc_id = item["doc_id"]
         step = item.get("step", "full")
-        if step == "full":
-            await run_one_extraction(item["doc_id"], item["on_failure"])
-        else:
-            await run_one_extraction_step(item["doc_id"], step, item["on_failure"])
+        coro = run_one_extraction(doc_id, item["on_failure"]) if step == "full" \
+            else run_one_extraction_step(doc_id, step, item["on_failure"])
+        task = asyncio.create_task(coro)
+        _extract_tasks[doc_id] = task
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
+        finally:
+            _extract_tasks.pop(doc_id, None)
 
 
 async def _parse_worker():
@@ -923,10 +943,11 @@ async def _redis_cancel_listener() -> None:
                     event = json.loads(msg["data"])
                     if event.get("type") == "cancel":
                         doc_id = int(event.get("doc_id", 0))
-                        task = _reindex_tasks.get(doc_id)
-                        if task and not task.done():
-                            task.cancel()
-                            logger.info("redis_cancel_listener: cancelled local task for doc_id=%d", doc_id)
+                        for tasks_dict in (_reindex_tasks, _extract_tasks):
+                            task = tasks_dict.get(doc_id)
+                            if task and not task.done():
+                                task.cancel()
+                                logger.info("redis_cancel_listener: cancelled local task for doc_id=%d", doc_id)
                 except Exception as exc:
                     logger.debug("redis_cancel_listener parse error: %s", exc)
     except Exception as exc:
