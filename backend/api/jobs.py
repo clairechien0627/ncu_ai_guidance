@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from services import job_service
+from services.redis_service import get_redis, BROADCAST_CHANNEL
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -18,21 +19,48 @@ def get_active_jobs():
 
 @router.get("/api/jobs/stream")
 async def stream_jobs():
-    queue: asyncio.Queue = asyncio.Queue(maxsize=20)
-    job_service._job_subscribers.append(queue)
+    r = get_redis()
 
-    async def generator():
-        try:
+    if r:
+        # Multi-instance mode: subscribe to Redis Pub/Sub channel.
+        # All instances broadcast to this channel so any connected client
+        # receives updates regardless of which instance handled the mutation.
+        async def generator():
             yield f"data: {json.dumps(job_service.get_jobs())}\n\n"
-            while True:
-                try:
-                    data = await asyncio.wait_for(queue.get(), timeout=25)
-                    yield f"data: {data}\n\n"
-                except asyncio.TimeoutError:
-                    yield ": heartbeat\n\n"
-        finally:
-            if queue in job_service._job_subscribers:
-                job_service._job_subscribers.remove(queue)
+            try:
+                async with r.pubsub() as pubsub:
+                    await pubsub.subscribe(BROADCAST_CHANNEL)
+                    while True:
+                        try:
+                            msg = await asyncio.wait_for(
+                                pubsub.get_message(ignore_subscribe_messages=True, timeout=None),
+                                timeout=25,
+                            )
+                            if msg and msg["type"] == "message":
+                                yield f"data: {msg['data']}\n\n"
+                            else:
+                                yield ": heartbeat\n\n"
+                        except asyncio.TimeoutError:
+                            yield ": heartbeat\n\n"
+            except Exception:
+                pass
+    else:
+        # Single-instance mode: local asyncio.Queue per connection (original behaviour).
+        queue: asyncio.Queue = asyncio.Queue(maxsize=20)
+        job_service._job_subscribers.append(queue)
+
+        async def generator():
+            try:
+                yield f"data: {json.dumps(job_service.get_jobs())}\n\n"
+                while True:
+                    try:
+                        data = await asyncio.wait_for(queue.get(), timeout=25)
+                        yield f"data: {data}\n\n"
+                    except asyncio.TimeoutError:
+                        yield ": heartbeat\n\n"
+            finally:
+                if queue in job_service._job_subscribers:
+                    job_service._job_subscribers.remove(queue)
 
     return StreamingResponse(
         generator(),

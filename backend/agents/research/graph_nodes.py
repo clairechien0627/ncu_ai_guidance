@@ -101,7 +101,6 @@ async def scheduler_node(state: ResearchGraphState, config: RunnableConfig) -> d
     )
     return {
         "scheduled_slot": scheduled_slot,
-        "void_slot_attempts": {},
         "llm_call_count": 1,
     }
 

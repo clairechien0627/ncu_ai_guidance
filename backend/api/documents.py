@@ -114,13 +114,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
     db.refresh(doc)
 
     job_service.jobs_enqueue([(doc.id, doc.filename)], job_type="reindex")
-    job_service._reindex_work_queue.append({
-        "doc_id": doc.id,
-        "file_path": file_path,
-        "tmp_path": None,
-        "parser": None,
-    })
-    job_service._reindex_event.set()
+    await job_service.enqueue_reindex_job({"doc_id": doc.id, "file_path": file_path, "tmp_path": None, "parser": None})
     await job_service.push_jobs()
 
     return {"id": doc.id, "filename": doc.filename, "status": "processing", "queued": True, "duplicate": False}
@@ -283,8 +277,7 @@ async def reindex_document(doc_id: int, req: ReindexRequest = ReindexRequest(), 
     db.commit()
 
     job_service.jobs_enqueue([(doc_id, doc.filename)], job_type="reindex")
-    job_service._reindex_work_queue.append({"doc_id": doc_id, "file_path": file_path, "tmp_path": tmp_path, "parser": req.parser})
-    job_service._reindex_event.set()
+    await job_service.enqueue_reindex_job({"doc_id": doc_id, "file_path": file_path, "tmp_path": tmp_path, "parser": req.parser})
     await job_service.push_jobs()
 
     return {"id": doc_id, "filename": doc.filename, "queued": True}

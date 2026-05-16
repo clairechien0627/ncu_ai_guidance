@@ -35,7 +35,7 @@ def _merge_evidence_dict(a: dict | None, b: dict | None) -> dict:
 
 
 def _keep_last(a, b):
-    """Last-write-wins: used for string fields written by parallel slot_workers."""
+    """Last-write-wins for string fields (last node write takes precedence)."""
     return b if b is not None else a
 
 

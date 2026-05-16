@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     azure_document_intelligence_key: SecretStr = SecretStr("")
     batch_folder: str = ""  # Absolute path to batch import folder; defaults to ../各系大專生計畫(104-114)
 
+    # Logging
+    log_level: str = "INFO"      # DEBUG | INFO | WARNING | ERROR
+    log_format: str = "json"     # json | text
+
     # Langfuse
     langfuse_enabled: bool = True
     langfuse_public_key: SecretStr = SecretStr("")

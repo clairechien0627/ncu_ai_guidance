@@ -334,6 +334,8 @@ def _merge_stream_patch(state: dict, patch: dict) -> dict:
             merged[key] = list(merged.get(key, [])) + list(value or [])
         elif key in {"search_count", "llm_call_count"}:
             merged[key] = int(merged.get(key, 0) or 0) + int(value or 0)
+        elif key in {"suggested_query_terms", "avoid_query_terms"}:
+            merged[key] = _merge_unique_list(merged.get(key, []), value)
         elif key == "void_slot_attempts":
             merged[key] = _merge_dict_overwrite(merged.get(key, {}), value)
         else:

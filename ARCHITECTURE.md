@@ -208,7 +208,7 @@ flowchart TD
 | **slot_executor_node** | async | — | 執行 scheduled_slot，void 計數，結果寫回 state |
 | **_run_single_slot** | async fn | `research_planner` + `research_reflector` | plan query → RAG 搜尋 → 反思更新 evidence（含跨 slot 填充） |
 | **writer_node** | LLM | `research_writer` | 依 evidence 和 output contract 產生最終報告，品質門檻重試 |
-| **should_continue** | deterministic | — | 路由：scheduler / writer |
+| **should_continue** | deterministic + `@observe` | — | 路由 scheduler / writer；依序檢查：全域預算、所有 required slots terminal、連續空白 stall、無剩餘候選 |
 
 ### SlotStatus 語意
 
@@ -321,7 +321,7 @@ core.txt                    ← 所有 stack 的共用基底
 | Prompt | 決策類型 | 呼叫頻率 |
 | ------ | ------- | ------- |
 | `task_planner` | 建立研究維度（coverage items） | 每次任務 1 次 |
-| `research_scheduler` | 排序全部 candidate slots | 每輪 1 次 |
+| `research_scheduler` | 排序全部 candidate slots，選出下一個執行 | 每個 slot 執行前 1 次（5 slots ≈ 5 次） |
 | `research_planner` | 規劃單一 slot 的搜尋查詢 | 每個 slot 1 次 |
 | `research_reflector` | 評估 chunk 品質、更新 evidence | 每個 slot 1 次 |
 | `research_writer` | 根據 evidence 撰寫最終報告 | 每次任務 1-2 次 |
@@ -346,3 +346,39 @@ traces
 ```
 
 Router 寫 root trace，其他 agent trace 以 router 的 `run_id` 為 `parent_run_id`，形成完整的請求追蹤樹。
+
+---
+
+## 非同步 I/O 設計
+
+系統全面採用 async/await，避免阻塞 FastAPI event loop：
+
+| 層次 | 實作方式 |
+| ---- | ------- |
+| **Qdrant 向量搜尋** | `AsyncQdrantClient` + `vectorstore.asimilarity_search()` |
+| **Flashrank reranker**（CPU-bound） | `asyncio.to_thread(reranker.compress_documents, ...)` |
+| **資料庫讀寫**（SQLAlchemy sync） | `asyncio.to_thread(db_func, ...)` |
+| **on_stage 回呼** | `_emit_stage()` 支援 sync / async 兩種 callback |
+| **chat 串流** | event queue + sentinel 模式（token / stage 合併佇列） |
+
+### 串流架構（研究任務）
+
+```text
+event_queue = asyncio.Queue()
+task = asyncio.create_task(run_research_agent(..., on_stage=_push_stage, on_token=_push_token))
+task.add_done_callback(lambda _: event_queue.put_nowait(None))  # sentinel
+
+while True:
+    event = await event_queue.get()
+    if event is None: drain remaining → break
+    yield SSE event
+```
+
+---
+
+## 環境變數
+
+| 變數 | 預設 | 說明 |
+| ---- | ---- | --- |
+| `BYPASS_RESEARCH_CACHE` | `false` | 設為 `true` / `1` 時跳過 document research cache，強制重新搜尋所有 slots（用於測試） |
+| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:3000` | 允許的前端來源；部署時改為正式網域 |

@@ -152,7 +152,7 @@ def _build(checkpointer=False, store=None) -> object:
     builder.add_node(
         "slot_executor", slot_executor_node,
         retry_policy=RetryPolicy(max_attempts=2, initial_interval=2.0),
-        timeout=TimeoutPolicy(run_timeout=600),  # executor runs multiple slots
+        timeout=TimeoutPolicy(run_timeout=600),
         error_handler=_slot_executor_error_handler,
     )
     builder.add_node(

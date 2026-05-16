@@ -222,8 +222,7 @@ async def batch_import(db: Session = Depends(get_db)):
     names = [fname for _, fname, _ in to_queue]
     job_service.jobs_enqueue(list(zip([did for did, _ in doc_records], names)), job_type="reindex")
     for doc_id, file_path in doc_records:
-        job_service._reindex_work_queue.append({"doc_id": doc_id, "file_path": file_path, "tmp_path": None, "parser": "auto"})
-    job_service._reindex_event.set()
+        await job_service.enqueue_reindex_job({"doc_id": doc_id, "file_path": file_path, "tmp_path": None, "parser": "auto"})
     await job_service.push_jobs()
     return {"queued": len(new_pdfs), "retried": len(error_pdfs), "already_imported": len(all_pdfs) - len(to_queue), "dept_updated": updated}
 

@@ -14,6 +14,10 @@ load_dotenv()
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+# 3. 集中式 logging 設定（JSON 或純文字，由 LOG_FORMAT 環境變數控制）
+from logging_config import configure_logging
+configure_logging()
+
 logger = logging.getLogger(__name__)
 
 # 4. 延遲匯入以確保環境變數生效
@@ -57,12 +61,15 @@ async def lifespan(app: FastAPI):
     _run_migrations()
     await setup_checkpointer()
     from services.memory_service import ensure_memory_collection
+    from services.redis_service import init_redis, close_redis
     ensure_memory_collection()
+    await init_redis()
     job_service.reset_stuck_processing()
     job_service.init_workers()
     job_service.restore_jobs_from_db()
     yield
     job_service.mark_all_interrupted()
+    await close_redis()
     # Signal all active research graph runs to stop at the next superstep boundary.
     from agents.research.agent import request_all_drain
     request_all_drain("server_shutdown")

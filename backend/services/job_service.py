@@ -7,7 +7,34 @@ import threading
 import time
 from uuid import uuid4
 
+from services.redis_service import (
+    BROADCAST_CHANNEL, EVENTS_CHANNEL,
+    QUEUE_REINDEX, QUEUE_EXTRACT, QUEUE_PARSE,
+    get_redis, redis_enabled, redis_publish, redis_rpush, redis_blpop,
+    redis_remove_from_queue, redis_reorder_queue,
+)
+
 logger = logging.getLogger(__name__)
+
+# ── 架構說明：單機設計（Single-Instance Only）────────────────────────────────────
+# 此模組使用 in-memory state 作為執行期 source of truth：
+#   _active_jobs        — 所有 job 的即時狀態，供 SSE 廣播用
+#   _reindex_tasks      — doc_id → asyncio.Task，供取消操作用（無法序列化）
+#   _*_work_queue       — 各類型待執行的工作項目
+#   _reindex_event      — asyncio.Event，通知 reindex worker 醒來
+#   _extract_condition  — asyncio.Condition，通知 extract worker 醒來
+#   _parse_condition    — asyncio.Condition，通知 parse worker 醒來
+#
+# JobHistory（DB）只用於啟動後恢復（restore_jobs_from_db），不是執行期 source of truth。
+# _persist_job() 做 best-effort 非同步寫入，DB 掉了 job 仍能繼續執行。
+#
+# ✅ Redis 支援（選用，需設定 REDIS_URL）：
+#   - _push_jobs_payload() 同時 PUBLISH 到 Redis channel（SSE 跨 instance 廣播）
+#   - 工作佇列改用 Redis LIST（RPUSH 入隊 / BLPOP 出隊），支援跨 instance 任務分配
+#   - 取消信號透過 Redis Pub/Sub 廣播到所有 instance
+#   - _reindex_tasks 仍為 in-memory（asyncio.Task 無法序列化）
+#   - REDIS_URL 未設定時行為與原本完全相同（in-memory fallback）
+# ─────────────────────────────────────────────────────────────────────────────
 
 # ── In-memory job registry ──────────────────────────────────────────────────────
 # _jobs_lock guards ALL mutations of _active_jobs.
@@ -140,10 +167,22 @@ async def _push_jobs_payload(data: str):
             q.put_nowait(data)
         except asyncio.QueueFull:
             pass
+    # Broadcast to all instances via Redis Pub/Sub (no-op when Redis not configured)
+    await redis_publish(BROADCAST_CHANNEL, data)
 
 
 def _jobs_payload() -> str:
     return json.dumps(_active_jobs)
+
+
+async def enqueue_reindex_job(item: dict) -> None:
+    """Add a reindex job to the work queue (local + Redis when available)."""
+    if redis_enabled():
+        await redis_rpush(QUEUE_REINDEX, item)
+    else:
+        _reindex_work_queue.append(item)
+        if _reindex_event is not None:
+            _reindex_event.set()
 
 
 # ── Job state mutations ──────────────────────────────────────────────────────────
@@ -362,6 +401,10 @@ async def jobs_reorder_and_sync(doc_id: int, new_index: int) -> bool:
         async with _parse_condition:
             _parse_work_queue.sort(key=lambda x: queued_parse_ids.index(x["job_id"]) if x["job_id"] in queued_parse_ids else 999)
 
+    # Reorder Redis work queues to match
+    if redis_enabled():
+        await redis_reorder_queue(QUEUE_REINDEX, doc_id, new_index)
+
     return True
 
 
@@ -380,10 +423,17 @@ async def jobs_cancel_queued(doc_id: int) -> str:
                 break
         return "running"
     _reindex_work_queue[:] = [x for x in _reindex_work_queue if x["doc_id"] != doc_id]
-    async with _extract_condition:
-        _extract_work_queue[:] = [x for x in _extract_work_queue if x["doc_id"] != doc_id]
-    async with _parse_condition:
-        _parse_work_queue[:] = [x for x in _parse_work_queue if x["doc_id"] != doc_id]
+    if _extract_condition is not None:
+        async with _extract_condition:
+            _extract_work_queue[:] = [x for x in _extract_work_queue if x["doc_id"] != doc_id]
+    if _parse_condition is not None:
+        async with _parse_condition:
+            _parse_work_queue[:] = [x for x in _parse_work_queue if x["doc_id"] != doc_id]
+    # Remove from Redis queues + signal other instances to cancel
+    if redis_enabled():
+        for key in (QUEUE_REINDEX, QUEUE_EXTRACT, QUEUE_PARSE):
+            await redis_remove_from_queue(key, doc_id)
+        await redis_publish(EVENTS_CHANNEL, json.dumps({"type": "cancel", "doc_id": doc_id}))
     jobs_remove(doc_id)
     await push_jobs()
     return "queued"
@@ -661,10 +711,14 @@ async def run_one_extraction_step(doc_id: int, step: str, on_failure: str):
 
 
 async def run_extraction_batch(pairs: list[tuple[int, str]], on_failure: str = "error"):
-    async with _extract_condition:
+    if redis_enabled():
         for doc_id, _ in pairs:
-            _extract_work_queue.append({"doc_id": doc_id, "on_failure": on_failure, "step": "full"})
-        _extract_condition.notify_all()
+            await redis_rpush(QUEUE_EXTRACT, {"doc_id": doc_id, "on_failure": on_failure, "step": "full"})
+    else:
+        async with _extract_condition:
+            for doc_id, _ in pairs:
+                _extract_work_queue.append({"doc_id": doc_id, "on_failure": on_failure, "step": "full"})
+            _extract_condition.notify_all()
 
 
 async def run_extraction_step_batch(
@@ -672,20 +726,28 @@ async def run_extraction_step_batch(
     step: str,
     on_failure: str = "error",
 ):
-    async with _extract_condition:
+    if redis_enabled():
         for doc_id, _ in pairs:
-            _extract_work_queue.append({"doc_id": doc_id, "on_failure": on_failure, "step": step})
-        _extract_condition.notify_all()
+            await redis_rpush(QUEUE_EXTRACT, {"doc_id": doc_id, "on_failure": on_failure, "step": step})
+    else:
+        async with _extract_condition:
+            for doc_id, _ in pairs:
+                _extract_work_queue.append({"doc_id": doc_id, "on_failure": on_failure, "step": step})
+            _extract_condition.notify_all()
 
 
 async def enqueue_parse_jobs(items: list[dict]) -> int:
     """Queue parser-cache jobs. Each item needs doc_id, filename, file_path, parser, job_id."""
     if not items:
         return 0
-    async with _parse_condition:
+    if redis_enabled():
         for item in items:
-            _parse_work_queue.append(item)
-        _parse_condition.notify_all()
+            await redis_rpush(QUEUE_PARSE, item)
+    else:
+        async with _parse_condition:
+            for item in items:
+                _parse_work_queue.append(item)
+            _parse_condition.notify_all()
     await push_jobs()
     return len(items)
 
@@ -784,11 +846,17 @@ async def run_reindex_job(doc_id: int, file_path: str, tmp_path: str | None, par
 
 async def _reindex_worker():
     while True:
-        if not _reindex_work_queue:
-            _reindex_event.clear()
-            await _reindex_event.wait()
-            continue
-        item = _reindex_work_queue.pop(0)
+        if redis_enabled():
+            # Blocking pop from Redis — works across all instances
+            item = await redis_blpop(QUEUE_REINDEX, timeout=5)
+            if item is None:
+                continue
+        else:
+            if not _reindex_work_queue:
+                _reindex_event.clear()
+                await _reindex_event.wait()
+                continue
+            item = _reindex_work_queue.pop(0)
         task = asyncio.create_task(
             run_reindex_job(item["doc_id"], item["file_path"], item["tmp_path"], item.get("parser", "auto"))
         )
@@ -803,10 +871,15 @@ async def _reindex_worker():
 
 async def _extract_worker():
     while True:
-        async with _extract_condition:
-            while not _extract_work_queue:
-                await _extract_condition.wait()
-            item = _extract_work_queue.pop(0)
+        if redis_enabled():
+            item = await redis_blpop(QUEUE_EXTRACT, timeout=5)
+            if item is None:
+                continue
+        else:
+            async with _extract_condition:
+                while not _extract_work_queue:
+                    await _extract_condition.wait()
+                item = _extract_work_queue.pop(0)
         step = item.get("step", "full")
         if step == "full":
             await run_one_extraction(item["doc_id"], item["on_failure"])
@@ -816,10 +889,15 @@ async def _extract_worker():
 
 async def _parse_worker():
     while True:
-        async with _parse_condition:
-            while not _parse_work_queue:
-                await _parse_condition.wait()
-            item = _parse_work_queue.pop(0)
+        if redis_enabled():
+            item = await redis_blpop(QUEUE_PARSE, timeout=5)
+            if item is None:
+                continue
+        else:
+            async with _parse_condition:
+                while not _parse_work_queue:
+                    await _parse_condition.wait()
+                item = _parse_work_queue.pop(0)
         await run_parse_job(
             item["doc_id"],
             item["filename"],
@@ -827,6 +905,32 @@ async def _parse_worker():
             item["parser"],
             item["job_id"],
         )
+
+
+async def _redis_cancel_listener() -> None:
+    """Listen for cancel events published by other instances and cancel local tasks."""
+    import redis.asyncio as aioredis
+    r = get_redis()
+    if not r:
+        return
+    try:
+        async with r.pubsub() as pubsub:
+            await pubsub.subscribe(EVENTS_CHANNEL)
+            async for msg in pubsub.listen():
+                if msg["type"] != "message":
+                    continue
+                try:
+                    event = json.loads(msg["data"])
+                    if event.get("type") == "cancel":
+                        doc_id = int(event.get("doc_id", 0))
+                        task = _reindex_tasks.get(doc_id)
+                        if task and not task.done():
+                            task.cancel()
+                            logger.info("redis_cancel_listener: cancelled local task for doc_id=%d", doc_id)
+                except Exception as exc:
+                    logger.debug("redis_cancel_listener parse error: %s", exc)
+    except Exception as exc:
+        logger.warning("redis_cancel_listener exited: %s", exc)
 
 
 def init_workers():
@@ -838,3 +942,5 @@ def init_workers():
     asyncio.create_task(_parse_worker())
     asyncio.create_task(_extract_worker())
     asyncio.create_task(_extract_worker())
+    if redis_enabled():
+        asyncio.create_task(_redis_cancel_listener())
