@@ -136,7 +136,12 @@ def expand_queries(
     section_terms: list[str] | None = None,
     use_hyde: bool = False,
 ) -> list[str]:
-    """Expand retrieval query with role-specific query forms and optional HyDE."""
+    """Expand retrieval query with role-specific query forms.
+
+    HyDE expansion is NOT performed here — call _hyde_expand() separately from
+    async context to avoid blocking the event loop with a sync LLM call.
+    The use_hyde parameter is accepted but ignored (kept for API compatibility).
+    """
     raw_queries = [
         keyword_query,
         semantic_query,
@@ -149,15 +154,25 @@ def expand_queries(
         cleaned = " ".join(str(raw or "").split())
         if cleaned and cleaned not in queries:
             queries.append(cleaned)
+    return queries
 
+
+async def _hyde_expand(
+    queries: list[str],
+    *,
+    query: str = "",
+    keyword_query: str = "",
+    semantic_query: str = "",
+    section_terms: list[str] | None = None,
+) -> list[str]:
+    """Append a HyDE passage to queries using async LLM call.
+
+    Returns the original list unchanged on failure.
+    """
     if not queries:
-        return []
-
-    if not use_hyde:
         return queries
-
     try:
-        hyde = _get_query_expander_llm().invoke(
+        hyde = await _get_query_expander_llm().ainvoke(
             [
                 SystemMessage(content=_HYDE_PROMPT),
                 HumanMessage(
@@ -171,10 +186,9 @@ def expand_queries(
         )
         passage = hyde.content.strip()
         if passage and passage not in queries:
-            queries.append(passage)
+            return [*queries, passage]
     except Exception:
         pass
-
     return queries
 
 
@@ -245,8 +259,12 @@ async def run_search_report(
         keyword_query=keyword_query,
         semantic_query=semantic_query,
         section_terms=section_terms,
-        use_hyde=use_hyde,
     )
+    if use_hyde:
+        queries = await _hyde_expand(
+            queries, query=query, keyword_query=keyword_query,
+            semantic_query=semantic_query, section_terms=section_terms,
+        )
     if not queries:
         ctx.consecutive_empty += 1
         return json.dumps(
@@ -271,13 +289,9 @@ async def run_search_report(
     # retry once with a hypothetical document. This reduces false negatives caused
     # by vocabulary mismatch without burning an extra search_count slot.
     if not chunks and not use_hyde:
-        hyde_queries = expand_queries(
-            query, sub_queries,
-            target_lang=lang,
-            keyword_query=keyword_query,
-            semantic_query=semantic_query,
-            section_terms=section_terms,
-            use_hyde=True,
+        hyde_queries = await _hyde_expand(
+            queries, query=query, keyword_query=keyword_query,
+            semantic_query=semantic_query, section_terms=section_terms,
         )
         if len(hyde_queries) > len(queries):  # HyDE actually added something new
             chunks, _ = await _search_documents(
@@ -458,7 +472,7 @@ async def verify_claim(claim: str, runtime: ToolRuntime[AgentContext]) -> str:
         for c in chunks[:4]
     ]
     try:
-        resp = _get_query_expander_llm().invoke([
+        resp = await _get_query_expander_llm().ainvoke([
             SystemMessage(content=_VERIFY_CLAIM_SYSTEM),
             HumanMessage(content=json.dumps(
                 {"claim": claim, "passages": passages},
