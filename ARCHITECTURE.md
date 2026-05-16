@@ -159,8 +159,8 @@ flowchart TD
     TP --> SCH
 
     subgraph GRAPH["research_graph（LangGraph）"]
-        SCH["scheduler_node<br>（LLM）<br>對所有 candidate slots 排序<br>輸出 pending_slots"]
-        EX["slot_executor_node<br>（asyncio.Semaphore 3）<br>依序執行 pending_slots<br>void 搜尋不計數"]
+        SCH["scheduler_node<br>（LLM）<br>對所有 candidate slots 排序<br>輸出 scheduled_slot（最優先 1 個）"]
+        EX["slot_executor_node<br>（sequential）<br>執行 scheduled_slot 1 個<br>每個 slot 看到前序所有 evidence"]
         SC{should_continue}
         WRI["writer_node<br>（LLM）<br>依 evidence + contract 產生報告"]
     end
@@ -177,40 +177,38 @@ flowchart TD
     style WRI fill:#e8f4f8,stroke:#2196F3
 ```
 
-### slot_executor 內部（asyncio reactive 排程）
+### slot_executor 內部（序列執行）
 
 ```mermaid
 flowchart TD
-    PS["pending_slots<br>（已按優先序排列）"] --> INIT["初始啟動<br>min(3, n) 個 slots"]
+    SS["scheduled_slot<br>（scheduler 選出最優先的 1 個）"] --> RS
 
-    subgraph WORKER["每個 asyncio Task（最多 3 個同時）"]
-        SEM["acquire Semaphore(3)"]
-        SEM --> RS["_run_single_slot<br>plan → retrieve → reflect"]
-        RS --> Q{搜尋品質}
-        Q -->|"USEFUL / PARTIAL<br>有 evidence"| OK["merge 到 accumulated<br>search_count += 1<br>release semaphore"]
-        Q -->|"NO_RESULTS / NOT_USEFUL<br>且 evidence = 0"| VOID{void_attempts?}
-        VOID -->|"< 4 次"| BACK["放回 void 通知<br>scheduler 下輪重排<br>release semaphore"]
-        VOID -->|"≥ 4 次"| DEAD["標記 NOT_FOUND / OMITTED<br>永久結束此 slot<br>release semaphore"]
-    end
+    RS["_run_single_slot<br>plan → retrieve → reflect<br>（可跨 slot 填充 evidence）"]
+    RS --> Q{搜尋品質}
 
-    INIT --> WORKER
-    OK --> NEXT["semaphore 空 → 啟動下一個 pending slot"]
-    NEXT --> WORKER
-    WORKER --> DONE{"所有 task 完成？"}
-    DONE -->|"否"| WORKER
-    DONE -->|"是"| RET["回傳 merged state + void_slot_attempts"]
+    Q -->|"USEFUL / PARTIAL<br>有 evidence"| OK["寫回 state<br>search_count += 1"]
+    Q -->|"NO_RESULTS / NOT_USEFUL<br>且 evidence = 0"| VOID{void_attempts?}
+
+    VOID -->|"< 4 次"| BACK["void_attempts[slot] += 1<br>下輪 scheduler 排到後面"]
+    VOID -->|"≥ 4 次"| DEAD["標記 NOT_FOUND / OMITTED<br>永久結束此 slot"]
+
+    OK --> RET["scheduled_slot: None<br>回到 should_continue"]
+    BACK --> RET
+    DEAD --> RET
 ```
+
+**序列執行的優勢**：每個 slot 開始前能看到所有前序 slot 的完整 evidence，reflector 的跨 slot 填充效益最大化，避免重複搜尋相同內容。
 
 ### 各節點職責與 Prompt
 
 | 節點 | 類型 | Prompt | 核心職責 |
 | ---- | ---- | ------ | ------- |
 | **task_planner** | LLM | `task_planner` | 分析問題，建立 coverage items（研究維度）和 output contract |
-| **scheduler_node** | LLM | `research_scheduler` | 對所有 candidate slots 按搜尋方向明確度排序，輸出完整 pending_slots |
-| **slot_executor_node** | asyncio | — | 管理 Semaphore(3)，reactive 執行，void 計數，結果合併 |
-| **_run_single_slot** | async fn | `research_planner` + `research_reflector` | plan query → RAG 搜尋 → 反思更新 evidence |
+| **scheduler_node** | LLM | `research_scheduler` | 對所有 candidate slots 排序，選出最優先的 1 個輸出為 scheduled_slot |
+| **slot_executor_node** | async | — | 執行 scheduled_slot，void 計數，結果寫回 state |
+| **_run_single_slot** | async fn | `research_planner` + `research_reflector` | plan query → RAG 搜尋 → 反思更新 evidence（含跨 slot 填充） |
 | **writer_node** | LLM | `research_writer` | 依 evidence 和 output contract 產生最終報告，品質門檻重試 |
-| **should_continue** | deterministic | — | 路由：scheduler / writer（無 verification 節點） |
+| **should_continue** | deterministic | — | 路由：scheduler / writer |
 
 ### SlotStatus 語意
 
