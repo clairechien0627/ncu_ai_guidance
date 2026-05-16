@@ -260,6 +260,7 @@ async def _run_single_slot(
         "avoid_query_terms": [term.strip() for term in reflection.avoid_query_terms if term.strip()],
         "search_count": 1,
         "llm_call_count": 2,
+        "_evidence_progress": evidence_progress,
         "steps_json": [step_dict],
         "chunks_by_query_json": [cbq_entry],
         "messages": [
@@ -396,14 +397,15 @@ async def slot_executor_node(
             result["slot_status"] = {**result.get("slot_status", {}), slot: new_status}
             await _emit_stage(on_stage, f"找不到資料：{_slot_label(state, slot)} → {new_status}")
     else:
-        # Progress = new evidence actually entered the state (delta non-empty).
-        # quality=USEFUL with an empty delta still counts as no progress so that
-        # consecutive_no_new can accumulate and trigger the stall condition.
-        found = bool(has_evidence)
+        # Progress = new evidence added OR slot status advanced.
+        # quality=USEFUL with empty delta and no status change still counts as
+        # no progress so that consecutive_no_new can accumulate for stall detection.
+        found = bool(has_evidence or result.get("_evidence_progress"))
         status = (result.get("slot_status") or {}).get(slot, "")
         await _emit_stage(on_stage, f"完成搜尋「{_slot_label(state, slot)}」：{quality} / {status}")
 
     result.pop("_last_quality", None)
+    result.pop("_evidence_progress", None)
 
     _safe_update_current_observation(
         output={
