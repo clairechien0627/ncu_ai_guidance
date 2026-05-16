@@ -20,4 +20,6 @@
 - coverage_items：3 到 6 個檢索項目，包含 use_hyde 欄位。
 - output_contract：最終答案格式與約束。
 
+11. 若 document_context 主要為英文，search_hints 必須全部使用英文術語（專有名詞、方法名稱、縮寫等），不可翻譯成中文。label 仍使用繁體中文。
+
 不要直接回答問題，只做檢索規劃。

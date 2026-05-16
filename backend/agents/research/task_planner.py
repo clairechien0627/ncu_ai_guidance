@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from observability import ainvoke_traced_generation
 from .runtime_prompts import research_node_system_messages
 from .state import default_summary_coverage
+from rag.store import _lang_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -275,6 +276,11 @@ async def create_research_plan(
         f"\n\n注意：本次有 {doc_count} 份文件，請考慮生成比較型 coverage items（比較範圍、比較面向、主要差異）。"
         if doc_count > 1 else ""
     )
+    doc_language = _lang_from_text(document_context)
+    lang_hint = (
+        "\n\n【語言】此文件為英文，每個 item 的 search_hints 必須全部使用英文術語，不可翻譯成中文。label 仍使用繁體中文。"
+        if doc_language == "en" else ""
+    )
     planner = llm.with_structured_output(ResearchPlan, strict=True)
     try:
         messages = [
@@ -284,7 +290,7 @@ async def create_research_plan(
                     {
                         "question": question,
                         "task_context": task_context,
-                        "document_context": document_context + multi_doc_hint,
+                        "document_context": document_context + multi_doc_hint + lang_hint,
                         "instruction": "請規劃 coverage items，每個 item 描述一個證據需求，使用繁體中文 label。",
                     },
                     ensure_ascii=False,
