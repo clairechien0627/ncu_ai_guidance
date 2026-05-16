@@ -128,7 +128,6 @@ def _init_vectorstore() -> QdrantVectorStore:
 
     return QdrantVectorStore(
         client=client,
-        aclient=get_async_qdrant_client(),
         collection_name=COLLECTION_NAME,
         embedding=dense_embeddings,
         sparse_embedding=sparse_embeddings,
@@ -165,7 +164,6 @@ def get_dense_vectorstore() -> QdrantVectorStore:
         _ensure_collection(client)
         _dense_vectorstore = QdrantVectorStore(
             client=client,
-            aclient=get_async_qdrant_client(),
             collection_name=COLLECTION_NAME,
             embedding=get_dense_embeddings(),
             vector_name=DENSE_NAME,
