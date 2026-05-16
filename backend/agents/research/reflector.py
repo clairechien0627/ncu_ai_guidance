@@ -280,13 +280,16 @@ async def reflect_results(
         messages = [
             *research_node_system_messages("research_reflector"),
             HumanMessage(
-                content="\n\n".join([
-                    f"本輪 query：{query}",
-                    f"目標 coverage item：{slot}",
-                    f"目前研究狀態：\n{json.dumps(state.as_prompt_dict(), ensure_ascii=False)}",
-                    f"搜尋片段（最多 6 筆）：\n{json.dumps(compact_chunks, ensure_ascii=False)}",
-                    "請列出所有被片段直接支撐的 coverage item 更新。",
-                ])
+                content=json.dumps(
+                    {
+                        "query": query,
+                        "target_slot": slot,
+                        "chunks": compact_chunks,
+                        "state": state.reflector_prompt_dict(),
+                        "instruction": "列出所有被 chunks 直接支撐的 coverage item 更新。",
+                    },
+                    ensure_ascii=False,
+                )
             ),
         ]
         reflection: Reflection = await ainvoke_traced_generation(

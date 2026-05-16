@@ -64,7 +64,7 @@ def _build_scheduler_prompt(
         "task_goal": rs.task_goal,
         "output_contract": rs.output_contract,
         "candidate_slots": candidate_payload,
-        "state": rs.as_prompt_dict(),
+        "state": rs.planner_prompt_dict(),
         "response_contract": {
             "slots": (
                 "ALL candidate slots ordered by search direction clarity. "

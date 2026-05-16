@@ -204,7 +204,19 @@ class ResearchState:
             if cleaned and cleaned not in self.known_keywords:
                 self.known_keywords.append(cleaned)
 
-    def as_prompt_dict(self) -> dict:
+    def reflector_prompt_dict(self) -> dict:
+        """Focused prompt context for the reflector — only what's needed to evaluate new chunks."""
+        return {
+            "coverage_items": self.coverage_items,
+            "slot_status": self.slot_status,
+            "evidence_brief": {
+                item_id: list(notes) for item_id, notes in self.evidence.items()
+            },
+            "last_reflection": self.last_reflection,
+            "next_search_angle": self.next_search_angle,
+        }
+
+    def planner_prompt_dict(self) -> dict:
         return {
             "task_goal": self.task_goal,
             "output_contract": self.output_contract,

@@ -285,14 +285,14 @@ async def plan_query_for_slot(
                 content=json.dumps(
                     {
                         "question": state.question,
-                        "document_context": state.document_context[:1600],
+                        "document_context": state.document_context,
                         "assigned_slot": assigned_slot,
                         "hint": hint,
                         "instruction": (
                             "assigned_slot was selected by the scheduler; "
                             "next_slot must exactly equal assigned_slot."
                         ),
-                        "state": state.as_prompt_dict(),
+                        "state": state.planner_prompt_dict(),
                     },
                     ensure_ascii=False,
                 )
@@ -331,8 +331,8 @@ async def plan_next_query(llm, state: ResearchState) -> PlannerDecision:
                 content=json.dumps(
                     {
                         "question": state.question,
-                        "document_context": state.document_context[:1600],
-                        "state": state.as_prompt_dict(),
+                        "document_context": state.document_context,
+                        "state": state.planner_prompt_dict(),
                     },
                     ensure_ascii=False,
                 )

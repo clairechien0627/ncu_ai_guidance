@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 
@@ -279,12 +280,15 @@ async def create_research_plan(
         messages = [
             *research_node_system_messages("task_planner"),
             HumanMessage(
-                content="\n\n".join([
-                    f"問題：{question}",
-                    f"任務脈絡：{task_context}",
-                    f"文件摘要：\n{document_context}" + multi_doc_hint,
-                    "請規劃 coverage items，每個 item 描述一個證據需求，使用繁體中文 label。",
-                ])
+                content=json.dumps(
+                    {
+                        "question": question,
+                        "task_context": task_context,
+                        "document_context": document_context + multi_doc_hint,
+                        "instruction": "請規劃 coverage items，每個 item 描述一個證據需求，使用繁體中文 label。",
+                    },
+                    ensure_ascii=False,
+                )
             ),
         ]
         from .runtime_prompts import research_node_stack_metadata

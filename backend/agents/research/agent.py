@@ -530,7 +530,7 @@ def _trace_display(
         "events": _build_trace_events(trace_messages, steps_for_events, question=state.question, answer=answer),
         "answer": answer,
         "sources": sources,
-        "research_state": state.as_prompt_dict(),
+        "research_state": state.planner_prompt_dict(),
     }
     if trace_summary:
         display["trace_summary"] = trace_summary

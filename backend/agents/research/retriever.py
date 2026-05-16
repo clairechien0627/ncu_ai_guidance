@@ -4,6 +4,7 @@ import json
 from collections.abc import Callable
 
 from langfuse import observe
+from observability import update_current_observation_io
 from tools.rag_tool import AgentContext, run_search_report
 
 
@@ -14,7 +15,7 @@ def _source_for_chunk(chunk: dict) -> str:
     return f"{filename} p.{page}-{page_end}" if page_end != page else f"{filename} p.{page}"
 
 
-@observe(as_type="span", name="retrieve_evidence", capture_input=False, capture_output=False)
+@observe(as_type="span", name="retriever", capture_input=False, capture_output=False)
 async def retrieve_evidence(
     *,
     query: str,
@@ -34,6 +35,15 @@ async def retrieve_evidence(
     task_type: str | None = None,
     route_intent: str | None = None,
 ) -> tuple[list[dict], list[str]]:
+    update_current_observation_io(input={
+        "query": query,
+        "keyword_query": keyword_query or query,
+        "semantic_query": semantic_query,
+        "section_terms": section_terms or [],
+        "use_hyde": use_hyde,
+        "document_ids": document_ids,
+        "seen_chunks_count": len(seen_chunks),
+    })
     ctx = AgentContext(
         document_ids=document_ids,
         seen_chunks=seen_chunks,
@@ -62,6 +72,10 @@ async def retrieve_evidence(
         source = _source_for_chunk(chunk)
         if source not in sources:
             sources.append(source)
+    update_current_observation_io(output={
+        "chunk_count": len(chunks),
+        "sources": sources,
+    })
     return chunks, sources
 
 

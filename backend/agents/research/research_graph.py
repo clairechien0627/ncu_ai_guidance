@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
+from langfuse import observe
 from langgraph.errors import NodeError
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy, TimeoutPolicy
@@ -24,6 +25,7 @@ from .graph_utils import (
     _slot_search_counts,
     _trace_summary,
 )
+from observability import update_current_observation_io
 from .state import DEFAULT_SUMMARY_COVERAGE, ResearchGraphState, ResearchState, SearchStep
 from .writer import _fallback_writeup
 
@@ -54,47 +56,56 @@ def _required_ids_from_state(state: ResearchGraphState) -> list[str]:
     return ids or list(t["id"] for t in DEFAULT_SUMMARY_COVERAGE)
 
 
+@observe(as_type="span", name="should_continue", capture_input=False, capture_output=False)
 def should_continue(state: ResearchGraphState) -> Literal["scheduler", "writer"]:
     """Route after each executor round. Reads state directly."""
-    if state["search_count"] >= _hard_max_searches(state):
-        return "writer"
-
     required = _required_ids_from_state(state)
     slot_status: dict = state.get("slot_status", {})
     counts = _slot_search_counts(state)
     per_slot = _per_slot_cap(state)
     min_ev = state.get("min_evidence_per_slot", 0)
-
-    # Terminal statuses that mean "done searching this slot"
     terminal = {"FILLED", "EXHAUSTED", "NOT_FOUND", "OMITTED"}
 
-    # All required slots settled
+    update_current_observation_io(input={
+        "search_count": state["search_count"],
+        "hard_max": _hard_max_searches(state),
+        "consecutive_no_new": state["consecutive_no_new"],
+        "slot_status": {s: slot_status.get(s, "NOT_FILLED") for s in required},
+        "search_counts": {s: counts.get(s, 0) for s in required},
+    })
+
+    def _route(reason: str) -> Literal["scheduler", "writer"]:
+        decision = "writer" if reason != "continue" else "scheduler"
+        update_current_observation_io(output={"decision": decision, "reason": reason})
+        return decision
+
+    if state["search_count"] >= _hard_max_searches(state):
+        return _route("budget_exhausted")
+
     all_settled = all(slot_status.get(s, "NOT_FILLED") in terminal for s in required)
     if all_settled:
         if min_ev <= 0:
-            return "writer"
+            return _route("all_slots_terminal")
         sufficient = all(
             slot_status.get(s) in {"EXHAUSTED", "NOT_FOUND", "OMITTED"}
             or len(state.get("evidence", {}).get(s, [])) >= min_ev
             for s in required
         )
         if sufficient:
-            return "writer"
+            return _route("all_slots_terminal_with_evidence")
 
-    # Stalled: consecutive-no-new limit hit + all required slots searched at least once
     if state["consecutive_no_new"] >= state.get("max_consecutive_no_new", 4):
         if all(counts.get(s, 0) > 0 for s in required):
-            return "writer"
+            return _route("stalled")
 
-    # No more searchable candidates
     candidates = [
         s for s in required
         if slot_status.get(s) not in terminal and counts.get(s, 0) < per_slot
     ]
     if not candidates:
-        return "writer"
+        return _route("no_candidates")
 
-    return "scheduler"
+    return _route("continue")
 
 
 # ── Fault-tolerance error handlers ───────────────────────────────────────────
