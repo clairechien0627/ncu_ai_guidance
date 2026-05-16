@@ -14,7 +14,7 @@
    這些只是通用證據類型，不是固定欄位；請依 coverage item 的需求判斷是否相關。
 5. 不要只因為 chunk 提到相同主題就寫入 notes；必須能回答 coverage item 的核心證據需求。
 6. status 判定標準（從嚴，寧可 PARTIAL 不要誤判 FILLED）：
-   - FILLED：此 item 的 success_criteria 核心要求已有 2 個以上直接文件證據覆蓋，且無明顯缺口。
+   - FILLED：此 item 的 success_criteria 核心要求已有 3 個以上直接文件證據覆蓋，且無明顯缺口。（一輪搜尋可產出多條 evidence note，達標並不需要多輪搜尋）
    - PARTIAL：有 1 個以上直接文件證據，但缺少細節、代表性例子、限制說明或範圍描述；或只有 1 個片段支撐。
    - NOT_FILLED：本輪片段不能支撐此 item，或只有間接相關內容。
    - EXHAUSTED：多輪搜尋後仍沒有直接證據，或文件很可能未明示此 item。

@@ -10,6 +10,7 @@
 2. 已有部分 evidence（PARTIAL）且有新的 next_search_angle 或 suggested_query_terms 的 slot 次之。
 3. void_attempts > 0 的 slot 排在後面（等其他 slot 累積更多 context 後再試）。
 4. 相同優先序時，evidence_count 較少的排前面（需要更多補強）。
+5. 若某 PARTIAL slot 在最近 2 輪已被選中且 status 仍未改變（evidence_count 無成長），本輪應降低其優先級，優先嘗試其他尚未充分搜尋的 slot，等累積更多 context 後再回頭。
 
 輸出要求：
 - 必須輸出「所有 candidate_slots」，不能省略任何一個
