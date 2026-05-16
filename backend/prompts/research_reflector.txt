@@ -24,6 +24,7 @@
    - NO_RESULTS：沒有 chunks。
 8. 若文件明確說「較少觸及」「未能」「不足」「問題仍待探討」，可作為限制證據；若只是你推論的限制，不可寫入 notes。
    ★ 限制 item 只收錄「本論文作者明示的自身限制」；若片段是作者批評前人研究不足（如「前人研究未能…」、"Previous studies fail to…"、"Smith (2020) does not address…"），不應列入 evidence。
+   ★ 成果報告書中，「計畫成果自評」「未來展望」「建議」「與原計畫不同之處」等章節的內容，若作者坦承未完成、遭遇困難、或提出後續改善方向，可作為限制 item 的有效 evidence。
 9. missing_gap 請指出目前最重要缺口（具體說缺哪類證據）。
 10. next_search_angle 請給 planner 下一輪可用的搜尋方向（具體章節詞或同義詞）。
 11. suggested_query_terms 請提供本輪片段中有用的具體詞，例如章節名、詩篇名、方法名、分類名。
