@@ -641,26 +641,40 @@ async def batch_score_traces(
         from db import db_session
         for run_id, task_type, route_intent in items:
             try:
-                with db_session() as session:
-                    t = session.query(Trace).filter(Trace.run_id == run_id).first()
-                    if not t:
-                        continue
-                    display_data: dict = {}
-                    if t.display:
-                        try:
-                            display_data = json.loads(t.display)
-                        except Exception:
-                            pass
-                    score, explanation, detail = await score_trace(
-                        display_data,
-                        task_type=task_type or "unknown",
-                        route_intent=route_intent or None,
-                    )
-                    t.quality_detail = json.dumps(detail, ensure_ascii=False) if detail else None
-                    t.quality_score = score
-                    if not t.user_feedback:
-                        t.user_feedback = explanation[:500]
-                    session.commit()
+                def _read(_run_id=run_id):
+                    with db_session() as session:
+                        t = session.query(Trace).filter(Trace.run_id == _run_id).first()
+                        if not t:
+                            return None
+                        display_data: dict = {}
+                        if t.display:
+                            try:
+                                display_data = json.loads(t.display)
+                            except Exception:
+                                pass
+                        return display_data
+
+                display_data = await asyncio.to_thread(_read)
+                if display_data is None:
+                    continue
+
+                score, explanation, detail = await score_trace(
+                    display_data,
+                    task_type=task_type or "unknown",
+                    route_intent=route_intent or None,
+                )
+
+                def _write(_run_id=run_id, _score=score, _explanation=explanation, _detail=detail):
+                    with db_session() as session:
+                        t = session.query(Trace).filter(Trace.run_id == _run_id).first()
+                        if t:
+                            t.quality_detail = json.dumps(_detail, ensure_ascii=False) if _detail else None
+                            t.quality_score = _score
+                            if not t.user_feedback:
+                                t.user_feedback = _explanation[:500]
+                            session.commit()
+
+                await asyncio.to_thread(_write)
             except Exception as exc:
                 logger.warning("batch_score failed for %s: %s", run_id, exc)
 

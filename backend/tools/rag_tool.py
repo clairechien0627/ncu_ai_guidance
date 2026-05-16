@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import logging
@@ -6,14 +7,29 @@ from typing import Callable
 
 logger = logging.getLogger(__name__)
 
+
+def _emit_stage_sync(on_stage, msg: str) -> None:
+    """Call on_stage from sync context. If it returns a coroutine, schedule it on the running loop."""
+    if not on_stage:
+        return
+    try:
+        result = on_stage(msg)
+        if asyncio.iscoroutine(result):
+            try:
+                asyncio.get_running_loop().create_task(result)
+            except RuntimeError:
+                result.close()  # no loop running, discard the coroutine cleanly
+    except Exception:
+        pass
+
 from langchain.tools import ToolRuntime
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
 from rag import (
-    count_document_chunks as _count_document_chunks,
-    get_document_language as _get_document_language,
+    acount_document_chunks as _acount_document_chunks,
+    aget_document_language as _aget_document_language,
     search_documents as _search_documents,
 )
 
@@ -164,7 +180,7 @@ def expand_queries(
 
 from langfuse import observe
 
-def run_search_report(
+async def run_search_report(
     query: str,
     ctx: AgentContext,
     sub_queries: list[str] | None = None,
@@ -204,15 +220,11 @@ def run_search_report(
 
     ctx.search_count += 1
 
-    if ctx.on_stage:
-        try:
-            label = display_intent or keyword_query or query
-            short_q = label[:30] + ("..." if len(label) > 30 else "")
-            ctx.on_stage(f"搜尋文件：{short_q}")
-        except Exception:
-            pass
+    label = display_intent or keyword_query or query
+    short_q = label[:30] + ("..." if len(label) > 30 else "")
+    _emit_stage_sync(ctx.on_stage, f"搜尋文件：{short_q}")
 
-    total_chunks = _count_document_chunks(ctx.document_ids or None)
+    total_chunks = await _acount_document_chunks(ctx.document_ids or None)
     if total_chunks > 0 and len(ctx.seen_chunks) >= total_chunks:
         return json.dumps(
             {
@@ -225,7 +237,7 @@ def run_search_report(
             ensure_ascii=False,
         )
 
-    lang = _get_document_language(ctx.document_ids or None)
+    lang = await _aget_document_language(ctx.document_ids or None)
     queries = expand_queries(
         query,
         sub_queries,
@@ -247,7 +259,7 @@ def run_search_report(
     num_docs = len(ctx.document_ids) if ctx.document_ids else 1
     top_n = min(num_docs * 3, 12) if num_docs > 1 else 4
 
-    chunks, _ = _search_documents(
+    chunks, _ = await _search_documents(
         queries,
         document_ids=ctx.document_ids or None,
         top_n=top_n,
@@ -268,7 +280,7 @@ def run_search_report(
             use_hyde=True,
         )
         if len(hyde_queries) > len(queries):  # HyDE actually added something new
-            chunks, _ = _search_documents(
+            chunks, _ = await _search_documents(
                 hyde_queries,
                 document_ids=ctx.document_ids or None,
                 top_n=top_n,
@@ -303,7 +315,7 @@ def run_search_report(
 
 @tool(args_schema=SearchInput)
 @observe(as_type="tool")
-def search_report(
+async def search_report(
     query: str,
     runtime: ToolRuntime[AgentContext],
     sub_queries: list[str] | None = None,
@@ -319,7 +331,7 @@ def search_report(
     Use for document-specific questions about motivation, methods, experiments,
     results, limitations, definitions, sections, architectures, and frameworks.
     """
-    return run_search_report(
+    return await run_search_report(
         query=query,
         ctx=runtime.context,
         sub_queries=sub_queries,
@@ -333,15 +345,11 @@ def search_report(
 
 @tool
 @observe(as_type="tool")
-def detect_document_language(runtime: ToolRuntime[AgentContext]) -> str:
+async def detect_document_language(runtime: ToolRuntime[AgentContext]) -> str:
     """Detect primary language of uploaded documents."""
     ctx = runtime.context
-    if ctx.on_stage:
-        try:
-            ctx.on_stage("偵測文件語言")
-        except Exception:
-            pass
-    lang = _get_document_language(ctx.document_ids or None)
+    _emit_stage_sync(ctx.on_stage, "偵測文件語言")
+    lang = await _aget_document_language(ctx.document_ids or None)
     return json.dumps({"language": lang}, ensure_ascii=False)
 
 
@@ -413,7 +421,7 @@ _VERIFY_CLAIM_SYSTEM = (
 
 @tool
 @observe(as_type="tool")
-def verify_claim(claim: str, runtime: ToolRuntime[AgentContext]) -> str:
+async def verify_claim(claim: str, runtime: ToolRuntime[AgentContext]) -> str:
     """
     Verify whether a specific factual claim is supported by the selected documents.
     Returns SUPPORTED, PARTIAL, or UNSUPPORTED with supporting evidence passages.
@@ -428,7 +436,7 @@ def verify_claim(claim: str, runtime: ToolRuntime[AgentContext]) -> str:
     import re as _re
 
     # Step 1: retrieve relevant passages via normal RAG search
-    raw = run_search_report(
+    raw = await run_search_report(
         query=claim,
         ctx=runtime.context,
         keyword_query=claim,
@@ -492,7 +500,7 @@ def _resolve_section(raw: str) -> str:
 
 @tool
 @observe(as_type="tool")
-def search_by_section(section: str, runtime: ToolRuntime[AgentContext]) -> str:
+async def search_by_section(section: str, runtime: ToolRuntime[AgentContext]) -> str:
     """
     Retrieve chunks from a specific document section by name.
 
@@ -507,7 +515,7 @@ def search_by_section(section: str, runtime: ToolRuntime[AgentContext]) -> str:
     from rag import (
         get_vectorstore,
         get_dense_vectorstore,
-        get_document_language,
+        aget_document_language,
         RETRIEVAL_K,
         search_documents,
     )
@@ -524,15 +532,15 @@ def search_by_section(section: str, runtime: ToolRuntime[AgentContext]) -> str:
     must.append(FieldCondition(key="metadata.section", match=MatchValue(value=canonical)))
     qdrant_filter = Filter(must=must)
 
-    lang = get_document_language(ctx.document_ids)
+    lang = await aget_document_language(ctx.document_ids)
     vs = get_dense_vectorstore() if lang == "en" else get_vectorstore()
-    hits = vs.similarity_search(section, k=RETRIEVAL_K, filter=qdrant_filter)
+    hits = await vs.asimilarity_search(section, k=RETRIEVAL_K, filter=qdrant_filter)
 
     fallback_used = False
     if not hits:
         aliases = _SECTION_ALIASES.get(canonical, [section])
         fallback_queries = [section, canonical, " ".join(aliases)]
-        chunks, _sources = search_documents(
+        chunks, _sources = await search_documents(
             queries=fallback_queries,
             document_ids=ctx.document_ids,
             top_n=6,
@@ -560,7 +568,7 @@ def search_by_section(section: str, runtime: ToolRuntime[AgentContext]) -> str:
 
 @tool
 @observe(as_type="tool")
-def compare_documents(query: str, runtime: ToolRuntime[AgentContext]) -> str:
+async def compare_documents(query: str, runtime: ToolRuntime[AgentContext]) -> str:
     """
     Search each selected document separately for the same query and return results
     grouped by document, so you can compare what different documents say about a topic.
@@ -572,7 +580,7 @@ def compare_documents(query: str, runtime: ToolRuntime[AgentContext]) -> str:
     query: what to look for in each document
     """
     from qdrant_client.models import Filter, FieldCondition, MatchAny
-    from rag import get_vectorstore, get_dense_vectorstore, get_document_language
+    from rag import get_vectorstore, get_dense_vectorstore, aget_document_language
     from db import Document as DocModel, db_session
 
     ctx = runtime.context
@@ -586,7 +594,7 @@ def compare_documents(query: str, runtime: ToolRuntime[AgentContext]) -> str:
         rows = db.query(DocModel.id, DocModel.filename).filter(DocModel.id.in_(ctx.document_ids)).all()
         id_to_name = {row.id: row.filename for row in rows}
 
-    lang = get_document_language(ctx.document_ids)
+    lang = await aget_document_language(ctx.document_ids)
     vs = get_dense_vectorstore() if lang == "en" else get_vectorstore()
 
     comparison: dict[str, list[dict]] = {}
@@ -595,7 +603,7 @@ def compare_documents(query: str, runtime: ToolRuntime[AgentContext]) -> str:
             key="metadata.document_id",
             match=MatchAny(any=[str(doc_id)]),
         )])
-        hits = vs.similarity_search(query, k=3, filter=doc_filter)
+        hits = await vs.asimilarity_search(query, k=3, filter=doc_filter)
         comparison[id_to_name.get(doc_id, str(doc_id))] = [
             {
                 "page": doc.metadata.get("page"),

@@ -600,11 +600,9 @@ async def run_one_extraction(doc_id: int, on_failure: str):
     await push_jobs()
     job_error: str | None = None
     try:
-        loop = asyncio.get_running_loop()
-
-        def _stage_cb(label: str, _doc_id: int = doc_id):
+        async def _stage_cb(label: str, _doc_id: int = doc_id):
             jobs_set_stage(_doc_id, label)
-            asyncio.run_coroutine_threadsafe(_push_jobs_payload(_jobs_payload()), loop)
+            await _push_jobs_payload(_jobs_payload())
 
         summary, run_id, answer, sources = await extract_document_summary_with_raw(doc_id, on_stage=_stage_cb)
         await asyncio.to_thread(db_set_research_step1, doc_id, answer, sources, run_id)
@@ -627,11 +625,9 @@ async def run_one_extraction_step(doc_id: int, step: str, on_failure: str):
     await push_jobs()
     job_error: str | None = None
     try:
-        loop = asyncio.get_running_loop()
-
-        def _stage_cb(label: str, _doc_id: int = doc_id):
+        async def _stage_cb(label: str, _doc_id: int = doc_id):
             jobs_set_stage(_doc_id, label)
-            asyncio.run_coroutine_threadsafe(_push_jobs_payload(_jobs_payload()), loop)
+            await _push_jobs_payload(_jobs_payload())
 
         if step == "step1":
             answer, sources, run_id = await run_document_research_step1(doc_id, on_stage=_stage_cb)

@@ -149,28 +149,35 @@ def _hydrate_assistant_meta(conv_id: int, messages: list[dict], db: Session) -> 
 
 @router.post("/api/chat")
 async def chat(req: ChatRequest, db: Session = Depends(get_db)):
-    if req.conversation_id:
-        conv = db.query(Conversation).filter(Conversation.id == req.conversation_id).first()
-        if not conv:
-            raise HTTPException(status_code=404, detail="Conversation not found")
-        conv.model = req.model
-    else:
-        conv = Conversation(model=req.model)
-        db.add(conv)
+    def _setup_conv():
+        if req.conversation_id:
+            c = db.query(Conversation).filter(Conversation.id == req.conversation_id).first()
+            if not c:
+                raise HTTPException(status_code=404, detail="Conversation not found")
+            c.model = req.model
+            return c
+        c = Conversation(model=req.model)
+        db.add(c)
         db.commit()
-        db.refresh(conv)
+        db.refresh(c)
+        return c
+
+    conv = await asyncio.to_thread(_setup_conv)
 
     set_user_id(req.user_id)
     try:
-        prev_intent_sync: str | None = None
-        if req.conversation_id:
+        def _get_prev_intent():
+            if not req.conversation_id:
+                return None
             last = (
                 db.query(Trace.route_intent)
                 .filter(Trace.agent_name == "router_agent", Trace.thread_id == str(conv.id))
                 .order_by(Trace.start_time.desc())
                 .first()
             )
-            prev_intent_sync = last[0] if last else None
+            return last[0] if last else None
+
+        prev_intent_sync = await asyncio.to_thread(_get_prev_intent)
         route = await classify_intent(req.message, req.document_ids, str(conv.id), previous_intent=prev_intent_sync)
         router_run_id = str(uuid.uuid4())
         use_mini = _should_use_mini(req.model, route.intent, req.document_ids)
@@ -188,8 +195,7 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
         logger.error("Agent error in chat endpoint", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal agent error")
 
-    conv.message_count = (conv.message_count or 0) + 2
-    db.commit()
+    await asyncio.to_thread(lambda: (setattr(conv, "message_count", (conv.message_count or 0) + 2), db.commit()))
     return {
         "conversation_id": conv.id,
         "response": response,
@@ -208,31 +214,36 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
 
 @router.post("/api/chat/stream")
 async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
-    if req.conversation_id:
-        conv = db.query(Conversation).filter(Conversation.id == req.conversation_id).first()
-        if not conv:
-            raise HTTPException(status_code=404, detail="Conversation not found")
-        conv.model = req.model
-    else:
-        conv = Conversation(model=req.model)
-        db.add(conv)
+    def _setup_conv():
+        if req.conversation_id:
+            c = db.query(Conversation).filter(Conversation.id == req.conversation_id).first()
+            if not c:
+                raise HTTPException(status_code=404, detail="Conversation not found")
+            c.model = req.model
+            return c
+        c = Conversation(model=req.model)
+        db.add(c)
         db.commit()
-        db.refresh(conv)
+        db.refresh(c)
+        return c
 
+    conv = await asyncio.to_thread(_setup_conv)
     conv_id = conv.id
-    is_new = req.conversation_id is None  # title only generated for brand-new conversations
+    is_new = req.conversation_id is None
 
     set_user_id(req.user_id)
-    # Carry the last turn's intent so follow-up questions stay in the same route.
-    prev_intent: str | None = None
-    if req.conversation_id:
+    def _get_prev_intent():
+        if not req.conversation_id:
+            return None
         last_trace = (
             db.query(Trace.route_intent)
             .filter(Trace.agent_name == "router_agent", Trace.thread_id == str(conv_id))
             .order_by(Trace.start_time.desc())
             .first()
         )
-        prev_intent = last_trace[0] if last_trace else None
+        return last_trace[0] if last_trace else None
+
+    prev_intent = await asyncio.to_thread(_get_prev_intent)
 
     route = await classify_intent(req.message, req.document_ids, str(conv_id), previous_intent=prev_intent)
     router_run_id = str(uuid.uuid4())
@@ -256,22 +267,14 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
         task_run_id = str(uuid.uuid4())
         try:
             if route.intent == "research":
-                # Research streams writer tokens in real time via on_token;
-                # stage progress events continue to flow via on_stage.
-                stage_queue: asyncio.Queue[str] = asyncio.Queue()
-                token_queue: asyncio.Queue[str] = asyncio.Queue()
+                # Merged event queue: ("token", t) | ("stage", msg) | None (sentinel on done)
+                event_queue: asyncio.Queue = asyncio.Queue()
 
                 def _push_stage(msg: str) -> None:
-                    try:
-                        stage_queue.put_nowait(msg)
-                    except Exception:
-                        pass
+                    event_queue.put_nowait(("stage", msg))
 
                 def _push_token(t: str) -> None:
-                    try:
-                        token_queue.put_nowait(t)
-                    except Exception:
-                        pass
+                    event_queue.put_nowait(("token", t))
 
                 task = asyncio.create_task(
                     run_research_agent(
@@ -285,21 +288,30 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                         bypass_cache=req.bypass_cache,
                     )
                 )
-                streamed_tokens = False
-                while not task.done():
-                    await asyncio.sleep(0.05)
-                    while not token_queue.empty():
-                        yield f"data: {_json_dumps({'token': token_queue.get_nowait()})}\n\n"
-                        streamed_tokens = True
-                    while not stage_queue.empty():
-                        yield f"data: {_json_dumps({'stage': stage_queue.get_nowait()})}\n\n"
+                task.add_done_callback(lambda _: event_queue.put_nowait(None))
 
-                # Drain any remaining events
-                while not token_queue.empty():
-                    yield f"data: {_json_dumps({'token': token_queue.get_nowait()})}\n\n"
-                    streamed_tokens = True
-                while not stage_queue.empty():
-                    yield f"data: {_json_dumps({'stage': stage_queue.get_nowait()})}\n\n"
+                streamed_tokens = False
+                while True:
+                    event = await event_queue.get()
+                    if event is None:
+                        # sentinel: drain any events that arrived simultaneously
+                        while not event_queue.empty():
+                            remaining = event_queue.get_nowait()
+                            if remaining is None:
+                                continue
+                            etype, val = remaining
+                            if etype == "token":
+                                yield f"data: {_json_dumps({'token': val})}\n\n"
+                                streamed_tokens = True
+                            else:
+                                yield f"data: {_json_dumps({'stage': val})}\n\n"
+                        break
+                    etype, val = event
+                    if etype == "token":
+                        yield f"data: {_json_dumps({'token': val})}\n\n"
+                        streamed_tokens = True
+                    else:
+                        yield f"data: {_json_dumps({'stage': val})}\n\n"
 
                 if task.exception():
                     raise task.exception()
@@ -337,7 +349,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
             # Commit to persist any conversation state changes (e.g. model field)
             # even when the agent call itself fails.
             try:
-                db.commit()
+                await asyncio.to_thread(db.commit)
             except Exception:
                 pass
             return
@@ -356,7 +368,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
             except Exception:
                 pass
 
-        db.commit()
+        await asyncio.to_thread(db.commit)
         yield f"data: {_json_dumps({'done': True, 'sources': sources, 'title': title, **route_payload})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

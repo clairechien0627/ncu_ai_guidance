@@ -48,6 +48,18 @@ logger = logging.getLogger(__name__)
 MAX_VOID_TOTAL = 4
 
 
+async def _emit_stage(on_stage, msg: str) -> None:
+    """Call on_stage, awaiting it if it returns a coroutine (supports both sync and async callbacks)."""
+    if not on_stage:
+        return
+    try:
+        result = on_stage(msg)
+        if asyncio.iscoroutine(result):
+            await result
+    except Exception:
+        pass
+
+
 # ── scheduler_node ────────────────────────────────────────────────────────────
 
 @observe(as_type="chain", name="scheduler", capture_input=False, capture_output=False)
@@ -81,11 +93,8 @@ async def scheduler_node(state: ResearchGraphState, config: RunnableConfig) -> d
     ]
     scheduled_slot = ranked[0] if ranked else None
 
-    if on_stage and scheduled_slot:
-        try:
-            on_stage(f"排程搜尋：{_slot_label(state, scheduled_slot['slot'])}")
-        except Exception:
-            pass
+    if scheduled_slot:
+        await _emit_stage(on_stage, f"排程搜尋：{_slot_label(state, scheduled_slot['slot'])}")
 
     _safe_update_current_observation(
         output={"scheduled_slot": scheduled_slot, "rationale": decision.rationale}
@@ -116,11 +125,7 @@ async def _run_single_slot(
     rs = _graph_to_rs(state)
     round_index = int(state.get("search_count", 0)) + 1
 
-    if on_stage:
-        try:
-            on_stage(f"規劃查詢策略：{_slot_label(state, slot)}")
-        except Exception:
-            pass
+    await _emit_stage(on_stage, f"規劃查詢策略：{_slot_label(state, slot)}")
 
     if use_verification_query:
         decision = build_slot_decision(rs, slot)
@@ -149,11 +154,7 @@ async def _run_single_slot(
     decision = decision.model_copy(update={"keyword_query": final_query})
     tool_call_id = f"research_search_{slot}_{round_index}"
 
-    if on_stage:
-        try:
-            on_stage(f"搜尋 {_slot_label(state, slot)}：{decision.display_intent}")
-        except Exception:
-            pass
+    await _emit_stage(on_stage, f"搜尋 {_slot_label(state, slot)}：{decision.display_intent}")
 
     seen: set[str] = set(state.get("seen_chunk_keys", []))
     chunks, sources = await retrieve_evidence(
@@ -394,19 +395,11 @@ async def slot_executor_node(
             )
             new_status = "NOT_FOUND" if coverage_item.get("required", True) else "OMITTED"
             result["slot_status"] = {**result.get("slot_status", {}), slot: new_status}
-            if on_stage:
-                try:
-                    on_stage(f"找不到資料：{_slot_label(state, slot)} → {new_status}")
-                except Exception:
-                    pass
+            await _emit_stage(on_stage, f"找不到資料：{_slot_label(state, slot)} → {new_status}")
     else:
         found = bool(has_evidence or quality not in ("NO_RESULTS", "NOT_USEFUL"))
-        if on_stage:
-            try:
-                status = (result.get("slot_status") or {}).get(slot, "")
-                on_stage(f"完成搜尋「{_slot_label(state, slot)}」：{quality} / {status}")
-            except Exception:
-                pass
+        status = (result.get("slot_status") or {}).get(slot, "")
+        await _emit_stage(on_stage, f"完成搜尋「{_slot_label(state, slot)}」：{quality} / {status}")
 
     result.pop("_last_quality", None)
 
@@ -433,11 +426,7 @@ async def slot_executor_node(
 async def writer_node(state: ResearchGraphState, config: RunnableConfig) -> dict:
     llm = config["configurable"]["llm"]
     on_stage = config["configurable"].get("on_stage")
-    if on_stage:
-        try:
-            on_stage("產生研究整理")
-        except Exception:
-            pass
+    await _emit_stage(on_stage, "產生研究整理")
     rs = _graph_to_rs(state)
     required_labels = {rs.coverage_label(slot) for slot in rs.required_coverage_ids() if rs.coverage_label(slot)}
     _safe_update_current_observation(

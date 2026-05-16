@@ -610,7 +610,7 @@ async def route_agent_message(
         )
         step = plan.target_step
         route_intent = _normalise_intent(route.intent)
-        _write_router_trace(router_run_id, thread_id, document_ids, route)
+        await asyncio.to_thread(_write_router_trace, router_run_id, thread_id, document_ids, route)
 
         try:
             if route_intent == "evaluation":
@@ -683,8 +683,8 @@ async def route_agent_message(
                     resolved_intent=route.resolved_intent,
                 )
         except Exception as exc:
-            _write_router_trace(
-                router_run_id, thread_id, document_ids, route,
+            await asyncio.to_thread(
+                _write_router_trace, router_run_id, thread_id, document_ids, route,
                 end_time=datetime.now(timezone.utc), error=str(exc),
             )
             raise
@@ -701,8 +701,8 @@ async def route_agent_message(
                 use_mini=use_mini,
             )
 
-        _write_router_trace(
-            router_run_id, thread_id, document_ids, route,
+        await asyncio.to_thread(
+            _write_router_trace, router_run_id, thread_id, document_ids, route,
             end_time=datetime.now(timezone.utc),
         )
 
@@ -772,7 +772,7 @@ async def route_agent_stream(
         )
         step = plan.target_step
         route_intent = _normalise_intent(route.intent)
-        _write_router_trace(router_run_id, thread_id, document_ids, route)
+        await asyncio.to_thread(_write_router_trace, router_run_id, thread_id, document_ids, route)
 
         if route_intent == "evaluation":
             result = await _run_evaluation_agent(
@@ -780,8 +780,8 @@ async def route_agent_stream(
                 run_id=step.run_id,
                 parent_run_id=step.parent_run_id,
             )
-            _write_router_trace(router_run_id, thread_id, document_ids, route,
-                                end_time=datetime.now(timezone.utc))
+            await asyncio.to_thread(_write_router_trace, router_run_id, thread_id, document_ids, route,
+                                    end_time=datetime.now(timezone.utc))
             yield result.response, False, []
             yield "", True, []
             return
@@ -877,8 +877,8 @@ async def route_agent_stream(
                 else:
                     yield item
 
-        _write_router_trace(router_run_id, thread_id, document_ids, route,
-                            end_time=datetime.now(timezone.utc))
+        await asyncio.to_thread(_write_router_trace, router_run_id, thread_id, document_ids, route,
+                                end_time=datetime.now(timezone.utc))
 
         if plan.evaluate_after:
             _fire_and_forget(_run_evaluation_agent(

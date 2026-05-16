@@ -1,4 +1,5 @@
 """Search and reranking logic for the RAG pipeline."""
+import asyncio
 import hashlib
 import logging
 import re
@@ -9,7 +10,7 @@ from qdrant_client.models import Filter, FieldCondition, MatchAny, RrfQuery, Rrf
 from rag.store import (
     RETRIEVAL_K, RERANK_TOP_N, RERANK_MAX,
     get_vectorstore, get_dense_vectorstore, get_reranker,
-    get_document_language,
+    aget_document_language,
 )
 from rag.cleaning import (
     _is_cover_page,
@@ -39,7 +40,7 @@ class RetrievedChunk(TypedDict):
 _WEIGHTED_RRF = RrfQuery(rrf=Rrf(weights=[2.0, 1.0]))
 
 
-def search_documents(
+async def search_documents(
     queries: list[str],
     document_ids: list[int] | None = None,
     top_n: int | None = None,
@@ -58,7 +59,7 @@ def search_documents(
 
     Returns (chunks, sources_list).
     """
-    effective_lang = lang or get_document_language(document_ids)
+    effective_lang = lang or await aget_document_language(document_ids)
     vectorstore = get_dense_vectorstore() if effective_lang == "en" else get_vectorstore()
     fusion = _WEIGHTED_RRF if (weighted_rrf and effective_lang != "en") else None
     logger.debug("search_documents: lang=%s mode=%s weighted_rrf=%s", effective_lang, "dense" if effective_lang == "en" else "hybrid", weighted_rrf)
@@ -75,7 +76,7 @@ def search_documents(
     seen_content: set[str] = set()
     all_results = []
     for q in queries:
-        hits = vectorstore.similarity_search(q, k=RETRIEVAL_K, filter=qdrant_filter, hybrid_fusion=fusion)
+        hits = await vectorstore.asimilarity_search(q, k=RETRIEVAL_K, filter=qdrant_filter, hybrid_fusion=fusion)
         for doc in hits:
             _sec = doc.metadata.get("section", "")
             if _sec in ("references", "參考文獻"):
@@ -101,7 +102,7 @@ def search_documents(
     # is small but the cost grows linearly (each query scores all candidates).
     rerank_queries = queries[:3]
     for q in rerank_queries:
-        for doc in reranker.compress_documents(all_results, q):
+        for doc in await asyncio.to_thread(reranker.compress_documents, all_results, q):
             key = _chunk_key(doc.page_content)
             score = doc.metadata.get("relevance_score", 0.0)
             if score > best_score.get(key, -1):

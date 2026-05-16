@@ -55,7 +55,7 @@ async def retrieve_evidence(
         max_searches=max_searches,
         max_consecutive_empty=max_consecutive_empty,
     )
-    raw = run_search_report(
+    raw = await run_search_report(
         query=query,
         ctx=ctx,
         sub_queries=sub_queries,

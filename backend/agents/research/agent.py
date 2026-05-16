@@ -187,31 +187,6 @@ def _slot_label(state: dict, slot: str) -> str:
     return labels.get(slot, slot.replace("_", " ") if slot else "檢索項目")
 
 
-def _emit_graph_progress(
-    on_stage: Callable[[str], None] | None,
-    node_name: str,
-    state: dict,
-    patch: dict,
-) -> None:
-    if not on_stage:
-        return
-    try:
-        if node_name == "scheduler":
-            scheduled = patch.get("scheduled_slot")
-            if scheduled and isinstance(scheduled, dict):
-                on_stage(f"排程搜尋：{_slot_label(state, str(scheduled.get('slot') or ''))}")
-        elif node_name == "slot_executor":
-            # Per-slot progress is emitted via on_stage inside _run_single_slot;
-            # here we only emit a summary when the executor wave finishes.
-            slot_status = patch.get("slot_status") or {}
-            not_found = [s for s, v in slot_status.items() if v in ("NOT_FOUND", "OMITTED")]
-            if not_found:
-                labels = "、".join(_slot_label(state, s) for s in not_found)
-                on_stage(f"無資料：{labels}")
-        elif node_name == "writer":
-            on_stage("產生研究整理")
-    except Exception:
-        logger.debug("failed to emit graph progress for node %s", node_name, exc_info=True)
 
 
 async def _run_graph_streaming(
@@ -242,7 +217,6 @@ async def _run_graph_streaming(
                     if not isinstance(patch, dict):
                         continue
                     state = _merge_stream_patch(state, patch)
-                    _emit_graph_progress(on_stage, node_name, state, patch)
             elif chunk["type"] == "messages" and on_token:
                 msg, metadata = chunk["data"]
                 if msg.content and metadata.get("langgraph_node") == "writer":
@@ -645,6 +619,18 @@ async def _async_quality_check(*, run_id: str, answer: str, document_ids: list[i
         logger.debug("_async_quality_check failed for run_id=%s: %s", run_id, exc)
 
 
+async def _emit_stage(on_stage, msg: str) -> None:
+    """Call on_stage, awaiting it if async."""
+    if not on_stage:
+        return
+    try:
+        result = on_stage(msg)
+        if asyncio.iscoroutine(result):
+            await result
+    except Exception:
+        pass
+
+
 async def _plan_research(
     llm,
     question: str,
@@ -657,8 +643,7 @@ async def _plan_research(
 
     Returns (task_goal, coverage_items, output_contract, coverage_ids, llm_call_count).
     """
-    if on_stage:
-        on_stage("分析任務：建立檢索項目")
+    await _emit_stage(on_stage, "分析任務：建立檢索項目")
     try:
         plan = await create_research_plan(
             llm,
@@ -668,15 +653,13 @@ async def _plan_research(
         )
         plan_llm_calls = 1
     except Exception:
-        if on_stage:
-            on_stage("任務規劃失敗：使用預設檢索項目")
+        await _emit_stage(on_stage, "任務規劃失敗：使用預設檢索項目")
         plan = fallback_research_plan(route_intent or task_type, question)
         plan_llm_calls = 0
 
     task_goal, coverage_items, output_contract = plan.as_state_parts()
     coverage_ids = [item["id"] for item in coverage_items]
-    if on_stage:
-        on_stage(f"任務規劃完成：{len(coverage_ids)} 個檢索項目")
+    await _emit_stage(on_stage, f"任務規劃完成：{len(coverage_ids)} 個檢索項目")
     return task_goal, coverage_items, output_contract, coverage_ids, plan_llm_calls
 
 
@@ -824,11 +807,8 @@ async def run_research_task(
                 if cached["sources"]:
                     initial_state["sources"] = list(cached["sources"])[:20]
                 filled = sum(1 for s in cached["slot_status"].values() if s in ("FILLED", "EXHAUSTED"))
-                if filled and on_stage:
-                    try:
-                        on_stage(f"載入研究快取：{filled} 個項目已完成")
-                    except Exception:
-                        pass
+                if filled:
+                    await _emit_stage(on_stage, f"載入研究快取：{filled} 個項目已完成")
         except Exception as exc:
             logger.debug("document research cache load failed: %s", exc)
 
@@ -843,7 +823,7 @@ async def run_research_task(
     graph_config = {
         "configurable": {
             "llm": llm,
-            "on_stage": None,
+            "on_stage": on_stage,
             "thread_id": run_id,
         }
     }

@@ -5,7 +5,7 @@ from collections import defaultdict
 from langchain_qdrant import QdrantVectorStore, FastEmbedSparse, RetrievalMode
 from langchain_openai import AzureOpenAIEmbeddings
 from langchain_community.document_compressors.flashrank_rerank import FlashrankRerank
-from qdrant_client import QdrantClient
+from qdrant_client import AsyncQdrantClient, QdrantClient
 from qdrant_client.models import (
     Distance, VectorParams, SparseVectorParams, Modifier,
     Filter, FieldCondition, MatchValue, MatchAny,
@@ -30,6 +30,7 @@ _vectorstore: QdrantVectorStore | None = None
 _dense_vectorstore: QdrantVectorStore | None = None
 _reranker: FlashrankRerank | None = None
 _qdrant_client: QdrantClient | None = None
+_async_qdrant_client: AsyncQdrantClient | None = None
 
 
 def _build_client() -> QdrantClient:
@@ -37,6 +38,20 @@ def _build_client() -> QdrantClient:
     if settings.qdrant_api_key.get_secret_value():
         kwargs["api_key"] = settings.qdrant_api_key.get_secret_value()
     return QdrantClient(**kwargs)
+
+
+def _build_async_client() -> AsyncQdrantClient:
+    kwargs: dict = {"url": settings.qdrant_url, "timeout": 15}
+    if settings.qdrant_api_key.get_secret_value():
+        kwargs["api_key"] = settings.qdrant_api_key.get_secret_value()
+    return AsyncQdrantClient(**kwargs)
+
+
+def get_async_qdrant_client() -> AsyncQdrantClient:
+    global _async_qdrant_client
+    if _async_qdrant_client is None:
+        _async_qdrant_client = _build_async_client()
+    return _async_qdrant_client
 
 
 def _ensure_collection(client: QdrantClient) -> None:
@@ -113,6 +128,7 @@ def _init_vectorstore() -> QdrantVectorStore:
 
     return QdrantVectorStore(
         client=client,
+        aclient=get_async_qdrant_client(),
         collection_name=COLLECTION_NAME,
         embedding=dense_embeddings,
         sparse_embedding=sparse_embeddings,
@@ -149,6 +165,7 @@ def get_dense_vectorstore() -> QdrantVectorStore:
         _ensure_collection(client)
         _dense_vectorstore = QdrantVectorStore(
             client=client,
+            aclient=get_async_qdrant_client(),
             collection_name=COLLECTION_NAME,
             embedding=get_dense_embeddings(),
             vector_name=DENSE_NAME,
@@ -242,6 +259,42 @@ def get_document_language(document_ids: list[int] | None = None) -> str:
     return "mixed"
 
 
+async def aget_document_language(document_ids: list[int] | None = None) -> str:
+    """Async version of get_document_language using AsyncQdrantClient."""
+    client = get_async_qdrant_client()
+    scroll_filter = None
+    if document_ids:
+        scroll_filter = Filter(
+            must=[FieldCondition(
+                key="metadata.document_id",
+                match=MatchAny(any=[str(did) for did in document_ids]),
+            )]
+        )
+    results, _ = await client.scroll(
+        collection_name=COLLECTION_NAME,
+        scroll_filter=scroll_filter,
+        limit=50,
+        with_payload=True,
+        with_vectors=False,
+    )
+    if not results:
+        return "unknown"
+    if not document_ids or len(document_ids) <= 1:
+        sample = " ".join(r.payload.get("page_content", "") for r in results if r.payload)
+        return _lang_from_text(sample)
+    doc_texts: dict[str, list[str]] = defaultdict(list)
+    for r in results:
+        if not r.payload:
+            continue
+        doc_id = r.payload.get("metadata", {}).get("document_id", "?")
+        doc_texts[doc_id].append(r.payload.get("page_content", ""))
+    langs = {doc_id: _lang_from_text(" ".join(texts)) for doc_id, texts in doc_texts.items()}
+    unique = set(langs.values())
+    if len(unique) == 1:
+        return unique.pop()
+    return "mixed"
+
+
 # ── Vector CRUD ───────────────────────────────────────────────────────────────
 
 def count_document_chunks(document_ids: list[int] | None) -> int:
@@ -256,6 +309,25 @@ def count_document_chunks(document_ids: list[int] | None) -> int:
             )]
         )
     result = client.count(
+        collection_name=COLLECTION_NAME,
+        count_filter=qdrant_filter,
+        exact=True,
+    )
+    return result.count
+
+
+async def acount_document_chunks(document_ids: list[int] | None) -> int:
+    """Async version of count_document_chunks using AsyncQdrantClient."""
+    client = get_async_qdrant_client()
+    qdrant_filter = None
+    if document_ids:
+        qdrant_filter = Filter(
+            must=[FieldCondition(
+                key="metadata.document_id",
+                match=MatchAny(any=[str(did) for did in document_ids]),
+            )]
+        )
+    result = await client.count(
         collection_name=COLLECTION_NAME,
         count_filter=qdrant_filter,
         exact=True,

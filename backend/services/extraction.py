@@ -18,6 +18,17 @@ from langfuse import propagate_attributes
 logger = logging.getLogger(__name__)
 
 
+async def _emit_stage(on_stage, msg: str) -> None:
+    if not on_stage:
+        return
+    try:
+        result = on_stage(msg)
+        if asyncio.iscoroutine(result):
+            await result
+    except Exception:
+        pass
+
+
 def _extraction_session_id(document_id: int) -> str:
     return f"document-extraction:{document_id}"
 
@@ -155,8 +166,7 @@ async def run_document_research_step1(
     run_id = str(uuid.uuid4())
     thread_id = _extraction_session_id(document_id)
     logger.info("Step 1: agent RAG for document %d (run_id=%s)", document_id, run_id)
-    if on_stage:
-        on_stage("Step 1 研究檢索中")
+    await _emit_stage(on_stage, "Step 1 研究檢索中")
     trace_meta = summary_trace_metadata(thread_id, [document_id], stack_name="research_runtime")
     trace_meta.update({
         "document_id": str(document_id),
@@ -185,8 +195,7 @@ async def structure_research_step2(
     on_stage: Callable[[str], None] | None = None,
 ) -> dict:
     """Structure Step 1 raw research into motivation/method/results/tags."""
-    if on_stage:
-        on_stage("整理結構中")
+    await _emit_stage(on_stage, "整理結構中")
     structure_messages = _stack_system_messages("extract_step2")
     messages = [
         *structure_messages,
@@ -207,8 +216,7 @@ async def generate_interest_step3(
     on_stage: Callable[[str], None] | None = None,
 ) -> dict:
     """Generate student intro and interest questions from Step 1 raw research."""
-    if on_stage:
-        on_stage("生成導讀與問題")
+    await _emit_stage(on_stage, "生成導讀與問題")
     question_messages = _stack_system_messages("extract_step3")
     messages = [
         *question_messages,
@@ -251,14 +259,12 @@ async def extract_document_summary_with_raw(
             structure_research_step2(answer),
             generate_interest_step3(answer),
         )
-        if on_stage:
-            on_stage("結構化與導讀題目生成完成")
+        await _emit_stage(on_stage, "結構化與導讀題目生成完成")
         result = {**core_result, **question_result}
 
         if os.getenv("ENABLE_QUALITY_CHECK", "false").lower() == "true":
             logger.info("Step 4: quality check for document %d", document_id)
-            if on_stage:
-                on_stage("品質檢查")
+            await _emit_stage(on_stage, "品質檢查")
             from services.extraction_quality import score_extraction
             from tools.trace_tool import update_trace_quality
 
@@ -271,8 +277,7 @@ async def extract_document_summary_with_raw(
                     "Quality score %.1f below threshold for document %d; retrying step 1",
                     score, document_id,
                 )
-                if on_stage:
-                    on_stage("品質未達標，重新搜尋")
+                await _emit_stage(on_stage, "品質未達標，重新搜尋")
                 answer2, _sources2, run_id2 = await run_document_research_step1(document_id, on_stage=on_stage)
                 if answer2 and answer2.strip() != "Unable to generate a response.":
                     core2, question2 = await asyncio.gather(

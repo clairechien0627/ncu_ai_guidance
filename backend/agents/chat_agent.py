@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
+import asyncio
 import contextlib
 import json
 import logging
@@ -24,6 +25,17 @@ AGENT_NAME = "chat_agent"
 COMPOSITION_TASK_TYPE = "response_composition"
 
 logger = logging.getLogger(__name__)
+
+
+async def _emit_stage(on_stage, msg: str) -> None:
+    if not on_stage:
+        return
+    try:
+        result = on_stage(msg)
+        if asyncio.iscoroutine(result):
+            await result
+    except Exception:
+        pass
 
 
 def trace_metadata() -> dict[str, str | int]:
@@ -143,12 +155,8 @@ async def compose_final_response(
         "task_answer": task_result.response,
         "sources": task_result.sources,
     }
-    _write_composition_trace(
-        run_id,
-        thread_id,
-        document_ids,
-        metadata,
-        inputs,
+    await asyncio.to_thread(
+        _write_composition_trace, run_id, thread_id, document_ids, metadata, inputs,
         parent_run_id=parent_run_id,
     )
     system_messages = [SystemMessage(content=content) for content in stack.contents]
@@ -185,14 +193,9 @@ async def compose_final_response(
             )
         content = str(getattr(response, "content", response)).strip()
         output = {"answer": content, "sources": task_result.sources}
-        _write_composition_trace(
-            run_id,
-            thread_id,
-            document_ids,
-            metadata,
-            inputs,
-            parent_run_id=parent_run_id,
-            output=output,
+        await asyncio.to_thread(
+            _write_composition_trace, run_id, thread_id, document_ids, metadata, inputs,
+            parent_run_id=parent_run_id, output=output,
         )
         return AgentResult(
             response=content,
@@ -242,8 +245,7 @@ async def answer(
         meta["original_intent"] = original_intent
     if resolved_intent:
         meta["resolved_intent"] = resolved_intent
-    if on_stage:
-        on_stage("chat_agent: composing")
+    await _emit_stage(on_stage, "chat_agent: composing")
     response, sources, meta, actual_run_id = await run_no_tool_agent(
         user_message=user_message,
         thread_id=thread_id,
@@ -305,8 +307,7 @@ async def stream(
     original_intent: str | None = None,
     resolved_intent: str | None = None,
 ) -> AsyncIterator[tuple[str, bool, list[str]]]:
-    if on_stage:
-        on_stage("chat_agent: composing")
+    await _emit_stage(on_stage, "chat_agent: composing")
     async for token in stream_no_tool_agent(
         user_message=user_message,
         thread_id=thread_id,
