@@ -13,7 +13,7 @@ from langfuse import observe
 from pydantic import BaseModel, Field
 
 from config import settings
-from observability import ainvoke_traced_generation
+from observability import ainvoke_traced_generation, update_current_observation_io
 from prompting.loader import load_stack
 
 logger = logging.getLogger(__name__)
@@ -81,6 +81,14 @@ async def score_extraction(
             "無法驗證的聲明請列入 issues。"
         ),
     }
+    update_current_observation_io(
+        input={
+            "motivation_len": len(summary_dict.get("motivation", "")),
+            "method_len": len(summary_dict.get("method", "")),
+            "results_len": len(summary_dict.get("results", "")),
+            "has_abstract": bool(abstract_text),
+        },
+    )
     try:
         scorer = _llm().with_structured_output(QualityScoreDetail)
         result: QualityScoreDetail = await ainvoke_traced_generation(
@@ -104,6 +112,16 @@ async def score_extraction(
             f"方法 {result.method_specificity:.1f} / "
             f"成果 {result.results_concreteness:.1f} / "
             f"限制 {result.limitations_honesty:.1f} | {issues_text}"
+        )
+        update_current_observation_io(
+            output={
+                "overall": overall,
+                "motivation_clarity": result.motivation_clarity,
+                "method_specificity": result.method_specificity,
+                "results_concreteness": result.results_concreteness,
+                "limitations_honesty": result.limitations_honesty,
+                "issues": result.issues,
+            },
         )
         return overall, explanation
     except Exception as exc:

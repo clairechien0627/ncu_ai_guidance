@@ -7,13 +7,12 @@ from typing import Annotated, Callable
 from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import AzureChatOpenAI
-from langfuse import observe
 
 from config import settings
 from agents.research import run_research_summary, trace_metadata as summary_trace_metadata
-from observability import ainvoke_traced_generation
+from observability import ainvoke_traced_generation, update_current_observation_io
 from prompting.loader import load_stack
-from langfuse import propagate_attributes
+from langfuse import observe, propagate_attributes
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +144,17 @@ def _get_document_abstract(document_id: int) -> str | None:
         return row[0] if row and row[0] else None
 
 
+def _save_quality_score(run_id: str, score: float, note: str) -> None:
+    from db import db_session, Trace
+
+    with db_session() as db:
+        trace = db.query(Trace).filter(Trace.run_id == run_id).first()
+        if trace:
+            trace.quality_score = score
+            trace.user_feedback = note[:500]
+            db.commit()
+
+
 STEP1_RESEARCH_QUESTION = (
     "請根據系統指示分析這份文件，整理研究動機、研究方法、研究成果與研究限制。"
     "請根據文件證據回答，不要自行補充。"
@@ -262,47 +272,62 @@ async def extract_document_summary_with_raw(
         result = {**core_result, **question_result}
 
         if os.getenv("ENABLE_QUALITY_CHECK", "false").lower() == "true":
-            logger.info("Step 4: quality check for document %d", document_id)
-            await _emit_stage(on_stage, "品質檢查")
-            from services.extraction_quality import score_extraction
-            from tools.trace_tool import update_trace_quality
-
-            abstract_text = _get_document_abstract(document_id)
-            score, note = await score_extraction(result, abstract_text)
-
-            # Quality gate: retry once if score is below threshold
-            if score < 2.5:
-                logger.warning(
-                    "Quality score %.1f below threshold for document %d; retrying step 1",
-                    score, document_id,
-                )
-                await _emit_stage(on_stage, "品質未達標，重新搜尋")
-                answer2, _sources2, run_id2 = await run_document_research_step1(document_id, on_stage=on_stage)
-                if answer2 and answer2.strip() != "Unable to generate a response.":
-                    core2, question2 = await asyncio.gather(
-                        structure_research_step2(answer2),
-                        generate_interest_step3(answer2),
-                    )
-                    result2 = {**core2, **question2}
-                    score2, note2 = await score_extraction(result2, abstract_text)
-                    if score2 > score:
-                        logger.info(
-                            "Retry improved quality %.1f → %.1f for document %d",
-                            score, score2, document_id,
-                        )
-                        result, score, note = result2, score2, note2
-                        answer, _sources, run_id = answer2, _sources2, run_id2
-
-            result["quality_score"] = score
-            result["quality_note"] = note
-            update_trace_quality(run_id, quality_score=score)
+            result, run_id, answer, _sources = await _run_quality_check(
+                result=result,
+                run_id=run_id,
+                answer=answer,
+                sources=_sources,
+                document_id=document_id,
+                on_stage=on_stage,
+            )
         return result, run_id, answer, _sources
 
 
-async def extract_document_summary(
+@observe(as_type="chain", name="Step 4 Quality Check")
+async def _run_quality_check(
+    *,
+    result: dict,
+    run_id: str,
+    answer: str,
+    sources: list[str],
     document_id: int,
-    on_stage: Callable[[str], None] | None = None,
-) -> tuple[dict, str]:
-    """Compatibility wrapper for the full extraction pipeline."""
-    result, run_id, _answer, _sources = await extract_document_summary_with_raw(document_id, on_stage)
-    return result, run_id
+    on_stage: Callable[[str], None] | None,
+) -> tuple[dict, str, str, list[str]]:
+    """Run quality scoring and optionally retry Step 1 if score is below threshold."""
+    from services.extraction_quality import score_extraction
+
+    logger.info("Step 4: quality check for document %d", document_id)
+    await _emit_stage(on_stage, "品質檢查")
+
+    abstract_text = await asyncio.to_thread(_get_document_abstract, document_id)
+    score, note = await score_extraction(result, abstract_text)
+
+    update_current_observation_io(
+        input={"document_id": document_id, "run_id": run_id},
+        output={"quality_score": score, "quality_note": note, "retried": False},
+    )
+
+    # Quality gate: retry once if score is below threshold
+    if score < 2.5:
+        logger.warning("Quality score %.1f below threshold for doc %d; retrying step 1", score, document_id)
+        await _emit_stage(on_stage, "品質未達標，重新搜尋")
+        answer2, sources2, run_id2 = await run_document_research_step1(document_id, on_stage=on_stage)
+        if answer2 and answer2.strip() != "Unable to generate a response.":
+            core2, question2 = await asyncio.gather(
+                structure_research_step2(answer2),
+                generate_interest_step3(answer2),
+            )
+            result2 = {**core2, **question2}
+            score2, note2 = await score_extraction(result2, abstract_text)
+            if score2 > score:
+                logger.info("Retry improved quality %.1f → %.1f for doc %d", score, score2, document_id)
+                result, score, note = result2, score2, note2
+                answer, sources, run_id = answer2, sources2, run_id2
+                update_current_observation_io(
+                    output={"quality_score": score, "quality_note": note, "retried": True},
+                )
+
+    result["quality_score"] = score
+    result["quality_note"] = note
+    await asyncio.to_thread(_save_quality_score, run_id, score, note)
+    return result, run_id, answer, sources
