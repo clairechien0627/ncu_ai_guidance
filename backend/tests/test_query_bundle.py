@@ -3,7 +3,7 @@ import asyncio
 from agents.research.planner import build_slot_decision
 from agents.research.reflector import CoverageUpdate, Reflection, apply_reflection, reflect_results
 from agents.research.state import ResearchState
-from tools.rag_tool import expand_queries, set_query_expander_llm
+from tools.search_core import expand_queries, set_query_expander_llm
 
 
 def test_build_slot_decision_returns_query_bundle():
