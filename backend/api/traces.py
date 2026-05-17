@@ -378,19 +378,59 @@ def list_traces(
 
 
 @router.get("/api/traces/stats")
-def trace_stats(db: Session = Depends(get_db)):
+def trace_stats(days: int = 7, db: Session = Depends(get_db)):
+    from datetime import timedelta, timezone as tz
     root = _agent_execution_root()
-    total = db.query(func.count(Trace.id)).filter(root).scalar() or 0
-    errors = db.query(func.count(Trace.id)).filter(root, Trace.error.isnot(None)).scalar() or 0
-    traces = db.query(Trace).filter(root).order_by(Trace.start_time.desc()).limit(1000).all()
-    latencies = [v for v in (_latency_seconds(t) for t in traces) if v is not None]
+    now = datetime.now(tz.utc)
+    cur_start  = now - timedelta(days=days)
+    prev_start = now - timedelta(days=days * 2)
+
+    total_all = db.query(func.count(Trace.id)).filter(root).scalar() or 0
+
+    cur_traces  = db.query(Trace).filter(root, Trace.start_time >= cur_start).all()
+    prev_traces = db.query(Trace).filter(
+        root, Trace.start_time >= prev_start, Trace.start_time < cur_start,
+    ).all()
+
+    def _agg(traces):
+        n = len(traces)
+        errs = sum(1 for t in traces if t.error)
+        lats = [v for v in (_latency_seconds(t) for t in traces) if v is not None]
+        qs   = [t.quality_score for t in traces if t.quality_score is not None]
+        return {
+            "runs":        n,
+            "errors":      errs,
+            "error_rate":  round(errs / n * 100, 1) if n else 0.0,
+            "avg_latency": round(sum(lats) / len(lats), 2) if lats else None,
+            "avg_quality": round(sum(qs) / len(qs), 2) if qs else None,
+        }
+
+    def _trend(cur_val, prev_val):
+        if prev_val is None or prev_val == 0:
+            return None
+        return round((cur_val - prev_val) / prev_val * 100, 1)
+
+    cur  = _agg(cur_traces)
+    prev = _agg(prev_traces)
+
     return {
-        "total_runs": total,
-        "error_runs": errors,
-        "success_runs": total - errors,
-        "avg_latency": round(sum(latencies) / len(latencies), 2) if latencies else None,
-        "avg_tool_count": round(sum(t.tool_count or 0 for t in traces) / len(traces), 2) if traces else 0,
-        "avg_llm_call_count": round(sum(t.llm_call_count or 0 for t in traces) / len(traces), 2) if traces else 0,
+        # All-time
+        "total_runs": total_all,
+        # Current period
+        "period_runs":     cur["runs"],
+        "error_runs":      cur["errors"],
+        "success_runs":    cur["runs"] - cur["errors"],
+        "error_rate":      cur["error_rate"],
+        "avg_latency":     cur["avg_latency"],
+        "avg_quality":     cur["avg_quality"],
+        # Trends vs previous period (positive = up, negative = down)
+        "runs_trend":      _trend(cur["runs"],        prev["runs"]),
+        "error_rate_trend":_trend(cur["error_rate"],  prev["error_rate"]),
+        "latency_trend":   _trend(cur["avg_latency"], prev["avg_latency"]),
+        "quality_trend":   _trend(cur["avg_quality"], prev["avg_quality"]),
+        # Legacy fields kept for AdminTracesPage compatibility
+        "avg_tool_count":     0,
+        "avg_llm_call_count": 0,
     }
 
 

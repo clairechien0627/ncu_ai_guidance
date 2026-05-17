@@ -286,11 +286,23 @@ export interface TraceDetail extends TraceItem {
 
 export interface TraceStats {
   total_runs: number
+  period_runs: number
   error_runs: number
   success_runs: number
+  error_rate: number
   avg_latency: number | null
+  avg_quality: number | null
+  runs_trend: number | null
+  error_rate_trend: number | null
+  latency_trend: number | null
+  quality_trend: number | null
   avg_tool_count: number
   avg_llm_call_count: number
+}
+
+export const getTraceStats = async (days = 7): Promise<TraceStats> => {
+  const { data } = await api.get<TraceStats>(`/traces/stats?days=${days}`)
+  return data
 }
 
 export interface TraceGroupStats {
@@ -325,8 +337,9 @@ export const getTraces = async (limit = 40, filters: TraceFilters = {}): Promise
   return data
 }
 
-export const getTraceStats = async (): Promise<TraceStats> => {
-  const { data } = await api.get<TraceStats>('/traces/stats')
+
+export const getTracesByRouteIntent = async (): Promise<TraceGroupStats[]> => {
+  const { data } = await api.get<TraceGroupStats[]>('/traces/by-route-intent')
   return data
 }
 
@@ -411,6 +424,54 @@ export const getSessions = async (
 
 export const getSessionDetail = async (threadId: string): Promise<SessionItem & { traces: TraceItem[] }> => {
   const { data } = await api.get(`/traces/sessions/${encodeURIComponent(threadId)}`)
+  return data
+}
+
+// ── Prompts ───────────────────────────────────────────────────────────────────
+
+export interface PromptSummary {
+  name: string
+  current_hash: string | null
+  word_count: number | null
+  version_count: number
+  synced_at: string | null
+  avg_quality_score: number | null
+}
+
+export interface PromptVersion {
+  hash: string
+  full_hash: string
+  synced_at: string
+  word_count: number
+}
+
+export interface PromptDetail {
+  name: string
+  content: string
+  versions: PromptVersion[]
+}
+
+export interface PromptVersionContent {
+  name: string
+  hash: string
+  full_hash: string
+  content: string
+  synced_at: string
+  word_count: number
+}
+
+export const getPromptList2 = async (): Promise<PromptSummary[]> => {
+  const { data } = await api.get<PromptSummary[]>('/prompts')
+  return data
+}
+
+export const getPromptDetail = async (name: string): Promise<PromptDetail> => {
+  const { data } = await api.get<PromptDetail>(`/prompts/${encodeURIComponent(name)}`)
+  return data
+}
+
+export const getPromptVersionContent = async (name: string, hash: string): Promise<PromptVersionContent> => {
+  const { data } = await api.get<PromptVersionContent>(`/prompts/${encodeURIComponent(name)}/versions/${hash}`)
   return data
 }
 

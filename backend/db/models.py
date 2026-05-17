@@ -235,3 +235,13 @@ class Trace(Base):
 
     def __repr__(self) -> str:
         return f"<Trace run_id={self.run_id!r} task_type={self.task_type!r} agent={self.agent_name!r}>"
+
+
+class PromptVersion(Base):
+    __tablename__ = "prompt_versions"
+    id        = Column(Integer, primary_key=True)
+    name      = Column(String, nullable=False, index=True)
+    hash      = Column(String(64), nullable=False)
+    content   = Column(Text, nullable=False)
+    synced_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    __table_args__ = (UniqueConstraint("name", "hash", name="uq_prompt_versions_name_hash"),)

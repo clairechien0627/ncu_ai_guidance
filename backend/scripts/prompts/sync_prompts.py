@@ -86,11 +86,33 @@ def sync_one(langfuse, name: str, *, force: bool = False, dry_run: bool = False)
 
     try:
         langfuse.create_prompt(name=name, prompt=local, type="text", labels=["production"])
+        _record_version(name, local)
         print(f"  ✓ {name}")
         return "pushed"
     except Exception as e:
         print(f"  ✗ {name}: {e}")
         return "error"
+
+
+def _record_version(name: str, content: str) -> None:
+    """Persist this prompt version to the local DB (prompt_versions table)."""
+    try:
+        import sys as _sys
+        _sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+        from db import SessionLocal
+        from db.models import PromptVersion
+        from sqlalchemy.exc import IntegrityError
+        hash_ = _sha(content)
+        db = SessionLocal()
+        try:
+            db.add(PromptVersion(name=name, hash=hash_, content=content))
+            db.commit()
+        except IntegrityError:
+            db.rollback()  # already recorded
+        finally:
+            db.close()
+    except Exception:
+        pass  # version recording is best-effort, don't break sync
 
 
 def main() -> None:

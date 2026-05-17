@@ -10,6 +10,7 @@ import UserDetailPage from './pages/admin/UserDetailPage'
 import DocumentsPage from './pages/admin/DocumentsPage'
 import JobsPage from './pages/admin/JobsPage'
 import PromptsPage from './pages/admin/PromptsPage'
+import PromptDetailPage from './pages/admin/PromptDetailPage'
 
 export default function App() {
   return (
@@ -28,6 +29,7 @@ export default function App() {
           <Route path="documents" element={<DocumentsPage />} />
           <Route path="jobs" element={<JobsPage />} />
           <Route path="prompts" element={<PromptsPage />} />
+          <Route path="prompts/:name" element={<PromptDetailPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
       </Routes>

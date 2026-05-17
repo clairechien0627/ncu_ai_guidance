@@ -10,7 +10,7 @@ from .session import Base, engine
 
 # Import all models so Base.metadata knows about every table.
 from .models import (  # noqa: F401
-    Document, DocumentExtraction, JobHistory, Conversation, Trace,
+    Document, DocumentExtraction, JobHistory, Conversation, Trace, PromptVersion,
 )
 
 _logger = _logging.getLogger(__name__)
