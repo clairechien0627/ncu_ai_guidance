@@ -273,7 +273,7 @@ export interface TraceItem {
 }
 
 export interface TraceDetail extends TraceItem {
-  run_type?: string
+  run_type?: string        // 'llm' | 'tool' | 'chain' | 'retriever'
   parent_run_id?: string | null
   thread_id?: string | null
   document_ids?: number[] | null

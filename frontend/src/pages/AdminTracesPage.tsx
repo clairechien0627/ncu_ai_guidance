@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAdminStore } from '../stores/adminStore'
+import LatencyWaterfall from '../components/trace/LatencyWaterfall'
 import { Activity, AlertTriangle, ArrowLeft, CheckCheck, ChevronDown, ChevronRight, Clock, PanelLeftClose, PanelLeftOpen, RefreshCw, Save, X } from 'lucide-react'
 import {
   batchScoreTraces,
@@ -178,7 +179,7 @@ export default function AdminTracesPage({ onBack }: Props) {
 
   // ── Detail / UI state ──────────────────────────────────────────────────────
   const [selectedTrace, setSelectedTrace] = useState<TraceDetail | null>(null)
-  const [detailTab, setDetailTab] = useState<'overview' | 'events' | 'steps' | 'evidence' | 'raw'>('overview')
+  const [detailTab, setDetailTab] = useState<'overview' | 'events' | 'steps' | 'evidence' | 'latency' | 'raw'>('overview')
   const [feedbackScore, setFeedbackScore] = useState('')
   const [feedbackText, setFeedbackText] = useState('')
   const [detailLoading, setDetailLoading] = useState(false)
@@ -572,12 +573,13 @@ export default function AdminTracesPage({ onBack }: Props) {
                   </div>
 
                   <div className="trace-tabs">
-                    {(['overview', 'events', 'steps', 'evidence', 'raw'] as const).map(tab => {
-                      const labels: Record<string, string> = { overview: '總覽', events: '事件流', steps: '研究步驟', evidence: '證據', raw: '原始 JSON' }
+                    {(['overview', 'events', 'steps', 'evidence', 'latency', 'raw'] as const).map(tab => {
+                      const labels: Record<string, string> = { overview: '總覽', events: '事件流', steps: '研究步驟', evidence: '證據', latency: '延遲', raw: '原始 JSON' }
                       const rd = selectedTrace.display as ResearchDisplay | null
                       if (tab === 'events' && !(rd?.events?.length)) return null
                       if (tab === 'steps' && !rd?.trace_summary?.steps?.length) return null
                       if (tab === 'evidence' && !rd?.trace_summary) return null
+                      if (tab === 'latency' && !(selectedTrace.children?.length)) return null
                       return <button key={tab} className={`trace-tab-btn${detailTab === tab ? ' active' : ''}`} onClick={() => setDetailTab(tab)}>{labels[tab]}</button>
                     })}
                   </div>
@@ -642,6 +644,7 @@ export default function AdminTracesPage({ onBack }: Props) {
                   {detailTab === 'events' && <div className="trace-tab-pane"><TraceEventPanel events={(selectedTrace.display as ResearchDisplay | null)?.events ?? []} /></div>}
                   {detailTab === 'steps' && <div className="trace-tab-pane"><ResearchTracePanel display={selectedTrace.display as ResearchDisplay | null} /></div>}
                   {detailTab === 'evidence' && <div className="trace-tab-pane"><EvidencePanel display={selectedTrace.display as ResearchDisplay | null} /></div>}
+                  {detailTab === 'latency' && <div className="trace-tab-pane"><LatencyWaterfall root={selectedTrace} /></div>}
                   {detailTab === 'raw' && (
                     <div className="trace-detail-columns">
                       <div><h3>Input</h3><pre>{formatJson(selectedTrace.inputs_raw)}</pre></div>
