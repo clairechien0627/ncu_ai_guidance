@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+from collections import Counter
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -711,6 +713,156 @@ async def test_route(body: TestRouteRequest):
         "original_intent": route.original_intent,
         "resolved_intent": route.resolved_intent,
         "path": path,
+    }
+
+
+# ── Sessions ──────────────────────────────────────────────────────────────────
+
+@router.get("/api/traces/sessions")
+def list_sessions(
+    limit: int = 50,
+    offset: int = 0,
+    route_intent: str | None = None,
+    user_id: str | None = None,
+    environment: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    order_by: str = "created_at",
+    order_dir: str = "desc",
+    db: Session = Depends(get_db),
+):
+    q = db.query(Trace).filter(_agent_execution_root(), Trace.thread_id.isnot(None))
+
+    if environment:
+        q = q.filter(Trace.environment == environment)
+    if route_intent:
+        q = q.filter(Trace.route_intent == route_intent)
+    if user_id:
+        q = q.filter(Trace.user_id == user_id)
+    if date_from:
+        try:
+            q = q.filter(Trace.start_time >= datetime.fromisoformat(date_from))
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            q = q.filter(Trace.start_time <= datetime.fromisoformat(date_to))
+        except ValueError:
+            pass
+
+    traces = q.order_by(Trace.start_time.desc()).limit(2000).all()
+
+    sessions: dict[str, dict] = {}
+    for t in traces:
+        tid = t.thread_id
+        if tid not in sessions:
+            sessions[tid] = {
+                "thread_id": tid,
+                "_route_intents": [],
+                "created_at": t.start_time,
+                "ended_at": t.end_time,
+                "trace_count": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "_quality_scores": [],
+                "_user_ids": set(),
+            }
+        s = sessions[tid]
+        s["trace_count"] += 1
+        s["input_tokens"] += t.prompt_tokens or 0
+        s["output_tokens"] += t.completion_tokens or 0
+        if t.route_intent:
+            s["_route_intents"].append(t.route_intent)
+        if t.quality_score is not None:
+            s["_quality_scores"].append(t.quality_score)
+        if t.user_id:
+            s["_user_ids"].add(t.user_id)
+        if t.start_time and s["created_at"] and t.start_time < s["created_at"]:
+            s["created_at"] = t.start_time
+        if t.end_time and (s["ended_at"] is None or t.end_time > s["ended_at"]):
+            s["ended_at"] = t.end_time
+
+    result = []
+    for s in sessions.values():
+        intents = s.pop("_route_intents")
+        qs = s.pop("_quality_scores")
+        uid = s.pop("_user_ids")
+
+        task_type = Counter(intents).most_common(1)[0][0] if intents else None
+        total_tokens = s["input_tokens"] + s["output_tokens"]
+        avg_quality = round(sum(qs) / len(qs), 2) if qs else None
+        created_at = s["created_at"]
+        ended_at = s["ended_at"]
+        duration = (
+            round((ended_at - created_at).total_seconds(), 1)
+            if created_at and ended_at
+            else None
+        )
+        result.append({
+            "thread_id": s["thread_id"],
+            "task_type": task_type,
+            "created_at": created_at.isoformat() if created_at else None,
+            "ended_at": ended_at.isoformat() if ended_at else None,
+            "duration_seconds": duration,
+            "trace_count": s["trace_count"],
+            "input_tokens": s["input_tokens"],
+            "output_tokens": s["output_tokens"],
+            "total_tokens": total_tokens,
+            "avg_quality_score": avg_quality,
+            "user_ids": sorted(uid),
+        })
+
+    reverse = order_dir.lower() != "asc"
+    sort_key_fn = {
+        "created_at": lambda x: x["created_at"] or "",
+        "duration": lambda x: x["duration_seconds"] or 0,
+        "trace_count": lambda x: x["trace_count"],
+        "total_tokens": lambda x: x["total_tokens"],
+        "avg_quality": lambda x: x["avg_quality_score"] or 0,
+    }.get(order_by, lambda x: x["created_at"] or "")
+    result.sort(key=sort_key_fn, reverse=reverse)
+
+    total = len(result)
+    return {"sessions": result[offset: offset + limit], "total": total}
+
+
+@router.get("/api/traces/sessions/{thread_id}")
+def get_session_detail(thread_id: str, db: Session = Depends(get_db)):
+    traces = (
+        db.query(Trace)
+        .filter(_agent_execution_root(), Trace.thread_id == thread_id)
+        .order_by(Trace.start_time.asc())
+        .all()
+    )
+    if not traces:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    input_tokens = sum(t.prompt_tokens or 0 for t in traces)
+    output_tokens = sum(t.completion_tokens or 0 for t in traces)
+    qs = [t.quality_score for t in traces if t.quality_score is not None]
+    user_ids = sorted({t.user_id for t in traces if t.user_id})
+    created_at = min((t.start_time for t in traces if t.start_time), default=None)
+    ended_at = max((t.end_time for t in traces if t.end_time), default=None)
+    intents = [t.route_intent for t in traces if t.route_intent]
+    task_type = Counter(intents).most_common(1)[0][0] if intents else None
+
+    return {
+        "thread_id": thread_id,
+        "task_type": task_type,
+        "created_at": created_at.isoformat() if created_at else None,
+        "ended_at": ended_at.isoformat() if ended_at else None,
+        "duration_seconds": (
+            round((ended_at - created_at).total_seconds(), 1)
+            if created_at and ended_at
+            else None
+        ),
+        "trace_count": len(traces),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+        "avg_quality_score": round(sum(qs) / len(qs), 2) if qs else None,
+        "user_ids": user_ids,
+        "traces": [_trace_payload(t) for t in traces],
     }
 
 

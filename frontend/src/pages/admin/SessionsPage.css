@@ -1,0 +1,194 @@
+.sessions-page {
+  padding: 28px 32px;
+  max-width: 1200px;
+}
+
+.sessions-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.sessions-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 2px;
+}
+
+.sessions-subtitle {
+  font-size: 13px;
+  color: #6b7280;
+  margin: 0;
+}
+
+/* ── Filters ── */
+
+.sessions-filters {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.sessions-filter-select,
+.sessions-filter-input {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #374151;
+  background: #fff;
+  outline: none;
+}
+
+.sessions-filter-select:focus,
+.sessions-filter-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+}
+
+/* ── Table ── */
+
+.sessions-table-wrapper {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.sessions-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.sessions-table thead tr {
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.sessions-table th {
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+}
+
+.sessions-row {
+  border-bottom: 1px solid #f3f4f6;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.sessions-row:last-child {
+  border-bottom: none;
+}
+
+.sessions-row:hover {
+  background: #f9fafb;
+}
+
+.sessions-table td {
+  padding: 10px 14px;
+  color: #374151;
+}
+
+.sessions-td-id {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: #1d4ed8;
+  max-width: 200px;
+}
+
+.sessions-td-date {
+  white-space: nowrap;
+  color: #6b7280;
+}
+
+.sessions-td-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sessions-td-users {
+  font-size: 12px;
+  color: #6b7280;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessions-loading,
+.sessions-empty {
+  text-align: center;
+  padding: 40px;
+  color: #9ca3af;
+}
+
+/* ── Badges ── */
+
+.sessions-type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.sessions-type-badge--research  { background: #ede9fe; color: #5b21b6; }
+.sessions-type-badge--retrieval { background: #dbeafe; color: #1e40af; }
+.sessions-type-badge--chat      { background: #dcfce7; color: #166534; }
+.sessions-type-badge--question  { background: #fef3c7; color: #92400e; }
+.sessions-type-badge--evaluation{ background: #fce7f3; color: #9d174d; }
+.sessions-type-badge--unknown   { background: #f3f4f6; color: #6b7280; }
+
+.sessions-quality-badge {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.sessions-quality-empty {
+  color: #d1d5db;
+}
+
+/* ── Pagination ── */
+
+.sessions-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px 0 0;
+}
+
+.sessions-page-btn {
+  padding: 6px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+}
+
+.sessions-page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.sessions-page-btn:not(:disabled):hover {
+  background: #f9fafb;
+}
+
+.sessions-page-info {
+  font-size: 13px;
+  color: #6b7280;
+}

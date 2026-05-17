@@ -362,6 +362,57 @@ export const updateTraceFeedback = async (
   return data
 }
 
+// ── Sessions ──────────────────────────────────────────────────────────────────
+
+export interface SessionItem {
+  thread_id: string
+  task_type: string | null
+  created_at: string | null
+  ended_at: string | null
+  duration_seconds: number | null
+  trace_count: number
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  avg_quality_score: number | null
+  user_ids: string[]
+}
+
+export interface SessionsResponse {
+  sessions: SessionItem[]
+  total: number
+}
+
+export interface SessionFilters {
+  route_intent?: string
+  user_id?: string
+  environment?: string
+  date_from?: string
+  date_to?: string
+  order_by?: string
+  order_dir?: string
+  offset?: number
+}
+
+export const getSessions = async (
+  limit = 50,
+  filters: SessionFilters = {},
+): Promise<SessionsResponse> => {
+  const params = new URLSearchParams({ limit: String(limit) })
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      params.set(key, String(value))
+    }
+  })
+  const { data } = await api.get<SessionsResponse>(`/traces/sessions?${params.toString()}`)
+  return data
+}
+
+export const getSessionDetail = async (threadId: string): Promise<SessionItem & { traces: TraceItem[] }> => {
+  const { data } = await api.get(`/traces/sessions/${encodeURIComponent(threadId)}`)
+  return data
+}
+
 export const getDocumentTraces = async (docId: number): Promise<TraceItem[]> => {
   const { data } = await api.get<TraceItem[]>(`/documents/${docId}/traces`)
   return data
