@@ -81,16 +81,16 @@ def sync_one(langfuse, name: str, *, force: bool = False, dry_run: bool = False)
             return "skipped"
 
     if dry_run:
-        print(f"  ➜ {name} (would push)")
+        print(f"  >> {name} (would push)")
         return "pushed"
 
     try:
         langfuse.create_prompt(name=name, prompt=local, type="text", labels=["production"])
         _record_version(name, local)
-        print(f"  ✓ {name}")
+        print(f"  OK {name}")
         return "pushed"
     except Exception as e:
-        print(f"  ✗ {name}: {e}")
+        print(f"  FAIL {name}: {e}")
         return "error"
 
 
@@ -154,7 +154,7 @@ def main() -> None:
         parts.append(f"{counts['missing']} missing")
     if counts.get("error"):
         parts.append(f"{counts['error']} failed")
-    print(f"\nDone — {', '.join(parts)}.")
+    print(f"\nDone: {', '.join(parts)}.")
 
 
 if __name__ == "__main__":
