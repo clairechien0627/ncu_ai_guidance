@@ -7,19 +7,27 @@
 :root {
   color-scheme: light;
   --page-bg:
-    radial-gradient(circle at 14% 16%, rgba(201, 240, 229, 0.92) 0%, rgba(201, 240, 229, 0) 28%),
-    radial-gradient(circle at 84% 18%, rgba(255, 236, 200, 0.85) 0%, rgba(255, 236, 200, 0) 26%),
-    linear-gradient(180deg, #fcfdff 0%, #eef4ff 100%);
-  --surface: rgba(255, 255, 255, 0.84);
-  --surface-strong: rgba(255, 255, 255, 0.96);
-  --surface-soft: rgba(248, 250, 252, 0.9);
-  --border-soft: rgba(207, 219, 232, 0.9);
-  --border-strong: rgba(186, 201, 219, 0.95);
-  --text-strong: #163257;
+    radial-gradient(circle at 14% 16%, rgba(196, 244, 233, 0.92) 0%, rgba(196, 244, 233, 0) 34%),
+    radial-gradient(circle at 84% 18%, rgba(252, 241, 182, 0.88) 0%, rgba(252, 241, 182, 0) 32%),
+    linear-gradient(180deg, #fbfdff 0%, #eef5ff 100%);
+  --surface: rgba(255, 255, 255, 0.80);
+  --surface-strong: rgba(255, 255, 255, 0.95);
+  --surface-soft: rgba(248, 250, 252, 0.70);
+  --border-soft: rgba(255, 255, 255, 0.70);
+  --border-mid: rgba(226, 232, 240, 0.80);
+  --border-strong: #e2e8f0;
+  /* Primary: dark navy, matches reference #102a43 */
+  --primary-900: #102a43;
+  --primary-800: #243b53;
+  --primary-700: #334e68;
+  --primary-100: #d9e2ec;
+  --primary-50:  #f0f4f8;
+  --text-strong: #102a43;
+  --text-950: #020617;
   --text-body: #334155;
   --text-muted: #64748b;
   --text-faint: #94a3b8;
-  --accent: #19376b;
+  --accent: #102a43;
   --accent-2: #2563eb;
   --accent-soft: #e7efff;
   --success-soft: #eaf8ef;
@@ -27,9 +35,13 @@
   --danger-soft: #ffebe9;
   --radius-xl: 18px;
   --radius-2xl: 24px;
-  --shadow-soft: 0 10px 30px rgba(148, 163, 184, 0.18);
-  --shadow-card: 0 8px 24px rgba(148, 163, 184, 0.12);
-  --shadow-hover: 0 16px 34px rgba(148, 163, 184, 0.18);
+  /* Reference shadow system: pure black, very subtle */
+  --shadow-soft:   0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-medium: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-strong: 0 8px 24px rgba(0, 0, 0, 0.12);
+  /* Legacy aliases (used by admin/chat pages) */
+  --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
 body {

@@ -10,6 +10,8 @@ import {
   MessageSquare,
   ChevronRight,
   Globe,
+  Star,
+  Layers,
 } from 'lucide-react'
 import { getEnvironments } from '../api'
 import { useAdminStore } from '../stores/adminStore'
@@ -28,6 +30,8 @@ const NAV_GROUPS = [
       { label: 'Traces',   path: '/admin/traces',   icon: <List size={16} /> },
       { label: 'Sessions', path: '/admin/sessions', icon: <ChevronRight size={16} /> },
       { label: 'Users',    path: '/admin/users',    icon: <Users size={16} /> },
+      { label: 'Scores',       path: '/admin/scores',       icon: <Star size={16} /> },
+      { label: 'Observations', path: '/admin/observations', icon: <Layers size={16} /> },
     ],
   },
   {

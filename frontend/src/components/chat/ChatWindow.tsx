@@ -30,8 +30,8 @@ interface ChatWindowProps {
   onUpload: (files: File[]) => void
   onDeleteDoc: (id: number) => void
   onReindexDoc: (id: number) => void
-  pdfOpen: boolean
-  onTogglePdf: () => void
+  docPanelOpen: boolean
+  onToggleDocPanel: () => void
   onOpenDoc: (id: number) => void
   conversationTitle?: string | null
   conversationId?: number | null
@@ -50,8 +50,8 @@ export default function ChatWindow({
   onUpload,
   onDeleteDoc,
   onReindexDoc,
-  pdfOpen,
-  onTogglePdf,
+  docPanelOpen,
+  onToggleDocPanel,
   onOpenDoc,
   conversationTitle,
   conversationId,
@@ -209,9 +209,9 @@ export default function ChatWindow({
           )}
         </div>
         <button
-          className={`topbar-icon-btn ${pdfOpen ? 'active-toggle' : ''}`}
-          onClick={onTogglePdf}
-          title={pdfOpen ? '關閉 PDF 預覽' : '開啟 PDF 預覽'}
+          className={`topbar-icon-btn ${docPanelOpen ? 'active-toggle' : ''}`}
+          onClick={onToggleDocPanel}
+          title={docPanelOpen ? '關閉文件面板' : '開啟文件面板'}
         >
           <PanelRight size={16} />
         </button>

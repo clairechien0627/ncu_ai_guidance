@@ -324,6 +324,8 @@ def list_traces(
     prompt_version: str | None = None,
     status: str | None = None,
     min_latency: float | None = None,
+    max_quality: float | None = None,
+    has_score: bool | None = None,
     original_intent: str | None = None,
     resolved_intent: str | None = None,
     environment: str | None = None,
@@ -357,6 +359,12 @@ def list_traces(
         q = q.filter(Trace.resolved_intent == resolved_intent)
     if environment:
         q = q.filter(Trace.environment == environment)
+    if max_quality is not None:
+        q = q.filter(Trace.quality_score.isnot(None), Trace.quality_score < max_quality)
+    if has_score is True:
+        q = q.filter(Trace.quality_score.isnot(None))
+    elif has_score is False:
+        q = q.filter(Trace.quality_score.is_(None))
 
     traces = (
         q.order_by(Trace.start_time.desc())
@@ -552,6 +560,58 @@ def trace_errors(limit: int = 40, db: Session = Depends(get_db)):
     ]
 
 
+@router.get("/api/traces/observations")
+def list_observations(
+    limit: int = 100,
+    offset: int = 0,
+    run_type: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Return child spans (LLM calls, tool calls, chains) — i.e. non-root traces."""
+    q = db.query(Trace).filter(Trace.parent_run_id.isnot(None))
+    if run_type and run_type != "all":
+        q = q.filter(Trace.run_type == run_type)
+    rows = q.order_by(Trace.start_time.desc()).offset(offset).limit(limit).all()
+    return [
+        {
+            "id":               t.run_id,
+            "run_type":         t.run_type,
+            "name":             t.name,
+            "parent_run_id":    t.parent_run_id,
+            "thread_id":        t.thread_id,
+            "start_time":       t.start_time.isoformat() + "Z" if t.start_time else None,
+            "latency":          _latency_seconds(t),
+            "prompt_tokens":    t.prompt_tokens,
+            "completion_tokens": t.completion_tokens,
+            "error":            t.error,
+            "input":            _truncate(t.inputs, 120),
+            "output":           _truncate(t.outputs, 120),
+        }
+        for t in rows
+    ]
+
+
+@router.get("/api/traces/observations/stats")
+def observations_stats(db: Session = Depends(get_db)):
+    """Aggregate counts and token totals for the Observations page KPI row."""
+    from sqlalchemy import case
+    rows = (
+        db.query(
+            Trace.run_type,
+            func.count(Trace.id).label("cnt"),
+            func.coalesce(func.sum(Trace.prompt_tokens), 0).label("prompt_tok"),
+            func.coalesce(func.sum(Trace.completion_tokens), 0).label("completion_tok"),
+        )
+        .filter(Trace.parent_run_id.isnot(None))
+        .group_by(Trace.run_type)
+        .all()
+    )
+    total = sum(r.cnt for r in rows)
+    by_type = {r.run_type: {"count": r.cnt, "prompt_tokens": int(r.prompt_tok), "completion_tokens": int(r.completion_tok)} for r in rows}
+    total_tokens = sum(int(r.prompt_tok) + int(r.completion_tok) for r in rows)
+    return {"total": total, "by_type": by_type, "total_tokens": total_tokens}
+
+
 @router.get("/api/traces/slow-runs")
 def slow_runs(limit: int = 40, min_latency: float = 10, db: Session = Depends(get_db)):
     candidates = (
@@ -737,6 +797,62 @@ async def batch_score_traces(
 
     asyncio.create_task(_score_all(run_ids_context))
     return {"queued": len(run_ids_context), "message": f"已排入 {len(run_ids_context)} 條追蹤記錄的自動評分。"}
+
+
+@router.get("/api/traces/score-stats")
+def score_stats(db: Session = Depends(get_db)):
+    """Score distribution, dimension averages, and queue counts for the Scores page."""
+    traces = (
+        db.query(Trace)
+        .filter(_agent_execution_root())
+        .all()
+    )
+
+    scored = [t for t in traces if t.quality_score is not None]
+    unscored_count = len(traces) - len(scored)
+
+    # Distribution buckets
+    buckets = {"0-1": 0, "1-2": 0, "2-3": 0, "3-4": 0, "4-5": 0}
+    for t in scored:
+        s = t.quality_score
+        if s < 1:   buckets["0-1"] += 1
+        elif s < 2: buckets["1-2"] += 1
+        elif s < 3: buckets["2-3"] += 1
+        elif s < 4: buckets["3-4"] += 1
+        else:        buckets["4-5"] += 1
+
+    avg_score = round(sum(t.quality_score for t in scored) / len(scored), 2) if scored else None
+    low_quality_count = sum(1 for t in scored if t.quality_score < 3)
+
+    # Per-dimension averages from quality_detail JSON
+    dim_sums: dict[str, list[float]] = {
+        k: [] for k in ["grounding", "task_fit", "completeness", "specificity",
+                         "source_quality", "uncertainty_honesty", "format_fit"]
+    }
+    for t in scored:
+        detail = _parse_json(t.quality_detail) if t.quality_detail else None
+        if not isinstance(detail, dict):
+            continue
+        for k in dim_sums:
+            v = detail.get(k)
+            if isinstance(v, (int, float)):
+                dim_sums[k].append(float(v))
+
+    dimension_avgs = {
+        k: round(sum(v) / len(v), 2) if v else None
+        for k, v in dim_sums.items()
+    }
+
+    return {
+        "total": len(traces),
+        "scored": len(scored),
+        "unscored": unscored_count,
+        "avg_score": avg_score,
+        "low_quality_count": low_quality_count,
+        "low_quality_pct": round(low_quality_count / len(scored) * 100, 1) if scored else None,
+        "distribution": [{"bucket": k, "count": v} for k, v in buckets.items()],
+        "dimension_avgs": dimension_avgs,
+    }
 
 
 class TestRouteRequest(BaseModel):

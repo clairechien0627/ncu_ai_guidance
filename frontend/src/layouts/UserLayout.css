@@ -1,0 +1,15 @@
+.user-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.user-main {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.user-main::-webkit-scrollbar { width: 6px; }
+.user-main::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }

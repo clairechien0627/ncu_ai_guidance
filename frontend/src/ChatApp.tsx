@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Sidebar from './components/Sidebar'
 import ChatWindow from './components/chat/ChatWindow'
+import DocInfoPanel from './components/DocInfoPanel'
 import {
   uploadDocument,
   getDocuments,
@@ -28,6 +29,7 @@ export default function ChatApp() {
   const [pdfOpen, setPdfOpen] = useState(false)
   const [pdfViewDocId, setPdfViewDocId] = useState<number | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [docPanelOpen, setDocPanelOpen] = useState(false)
 
   // ── Server state ───────────────────────────────────────────────────────────
 
@@ -192,18 +194,18 @@ export default function ChatApp() {
     setPdfOpen(true)
   }, [])
 
+  const handleOpenPdfFromPanel = useCallback((docId: number) => {
+    setDocPanelOpen(false)
+    setPdfViewDocId(docId)
+    setSidebarCollapsed(true)
+    setPdfOpen(true)
+  }, [])
+
   const handleNewChat = () => {
     setMessages([])
     setConversationId(null)
     setError(null)
     setSelectedDocIds([])
-  }
-
-  const handleTogglePdf = () => {
-    setPdfOpen((v) => {
-      if (!v) setSidebarCollapsed(true)
-      return !v
-    })
   }
 
   const handleToggleSidebar = () => {
@@ -229,8 +231,7 @@ export default function ChatApp() {
         loading={loading || convLoading}
         collapsed={sidebarCollapsed}
         onToggleCollapse={handleToggleSidebar}
-        onOpenSummaries={() => navigate('/admin/documents')}
-        onOpenTraces={() => navigate('/admin/traces')}
+        onOpenSummaries={() => navigate('/projects')}
       />
       <ChatWindow
         messages={messages}
@@ -246,8 +247,8 @@ export default function ChatApp() {
         onUpload={handleUpload}
         onDeleteDoc={handleDeleteDoc}
         onReindexDoc={handleReindexDoc}
-        pdfOpen={pdfOpen}
-        onTogglePdf={handleTogglePdf}
+        docPanelOpen={docPanelOpen}
+        onToggleDocPanel={() => setDocPanelOpen(v => !v)}
         onOpenDoc={handleOpenDoc}
         conversationId={conversationId}
         conversationTitle={conversations.find(c => c.id === conversationId)?.title ?? null}
@@ -265,6 +266,18 @@ export default function ChatApp() {
             onClose={() => { setPdfOpen(false); setSidebarCollapsed(false) }}
           />
         </Suspense>
+      )}
+      {!pdfOpen && docPanelOpen && (
+        <DocInfoPanel
+          documents={documents}
+          selectedDocIds={selectedDocIds}
+          onToggleDoc={(id) => setSelectedDocIds(prev =>
+            prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id]
+          )}
+          onUpload={handleUpload}
+          onOpenPdf={handleOpenPdfFromPanel}
+          onClose={() => setDocPanelOpen(false)}
+        />
       )}
     </div>
   )

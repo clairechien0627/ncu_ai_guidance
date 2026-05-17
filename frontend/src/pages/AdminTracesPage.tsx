@@ -1,8 +1,9 @@
 import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAdminStore } from '../stores/adminStore'
 import LatencyWaterfall from '../components/trace/LatencyWaterfall'
-import { Activity, AlertTriangle, ArrowLeft, CheckCheck, ChevronDown, ChevronRight, Clock, PanelLeftClose, PanelLeftOpen, RefreshCw, Save, X } from 'lucide-react'
+import { Activity, AlertTriangle, ArrowLeft, CheckCheck, ChevronDown, ChevronRight, Clock, ExternalLink, PanelLeftClose, PanelLeftOpen, RefreshCw, Save, X } from 'lucide-react'
 import {
   batchScoreTraces,
   compareTraceVersions,
@@ -216,7 +217,7 @@ export default function AdminTracesPage({ onBack }: Props) {
 
   const { data: stats = null, isPending: statsLoading } = useQuery({
     queryKey: ['trace-stats'],
-    queryFn: getTraceStats,
+    queryFn: () => getTraceStats(),
   })
   const { data: byPrompt = [] } = useQuery({ queryKey: ['traces-by-prompt'], queryFn: getTracesByPrompt })
   const { data: byPromptVersion = [] } = useQuery({ queryKey: ['traces-by-version'], queryFn: getTracesByPromptVersion })
@@ -610,14 +611,26 @@ export default function AdminTracesPage({ onBack }: Props) {
                       </div>
                       {selectedTrace.quality_detail && (
                         <div className="trace-quality-detail">
-                          <p className="trace-quality-detail-title">品質細項</p>
-                          {(['grounding', 'completeness', 'source_quality', 'format_fit', 'limitations_honesty'] as const).map(k => {
-                            const qLabels: Record<string, string> = { grounding: '接地性', completeness: '完整性', source_quality: '來源品質', format_fit: '格式適切', limitations_honesty: '限制誠實' }
-                            const v = selectedTrace.quality_detail?.[k]
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                            <p className="trace-quality-detail-title" style={{ margin: 0 }}>品質細項</p>
+                            {selectedTrace.quality_detail.verdict && (
+                              <span style={{ fontSize: 11, color: '#64748b', fontStyle: 'italic' }}>{selectedTrace.quality_detail.verdict}</span>
+                            )}
+                          </div>
+                          {([
+                            ['grounding',           '證據支撐'],
+                            ['task_fit',            '任務符合'],
+                            ['completeness',        '完整度'],
+                            ['specificity',         '具體性'],
+                            ['source_quality',      '來源品質'],
+                            ['uncertainty_honesty', '不確定誠實'],
+                            ['format_fit',          '格式適切'],
+                          ] as const).map(([k, label]) => {
+                            const v = selectedTrace.quality_detail?.[k] as number | undefined
                             if (v == null) return null
                             return (
                               <div key={k} className="trace-quality-bar-row">
-                                <span className="trace-quality-bar-label">{qLabels[k]}</span>
+                                <span className="trace-quality-bar-label">{label}</span>
                                 <div className="trace-quality-bar-track"><div className={`trace-quality-bar-fill ${v >= 4 ? 'high' : v >= 2.5 ? 'mid' : 'low'}`} style={{ width: `${(v / 5) * 100}%` }} /></div>
                                 <span className="trace-quality-bar-value">{v.toFixed(1)}</span>
                               </div>
@@ -625,7 +638,30 @@ export default function AdminTracesPage({ onBack }: Props) {
                           })}
                           {(selectedTrace.quality_detail.issues ?? []).length > 0 && (
                             <div className="trace-quality-issues">
-                              {selectedTrace.quality_detail.issues!.map((issue, i) => <span key={i}>• {issue}</span>)}
+                              <span style={{ fontSize: 10, fontWeight: 700, color: '#dc2626', display: 'block', marginBottom: 2 }}>問題</span>
+                              {selectedTrace.quality_detail.issues!.map((s, i) => <span key={i}>• {s}</span>)}
+                            </div>
+                          )}
+                          {(selectedTrace.quality_detail.evidence_gaps ?? []).length > 0 && (
+                            <div className="trace-quality-issues" style={{ marginTop: 4 }}>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: '#d97706', display: 'block', marginBottom: 2 }}>證據缺口</span>
+                              {selectedTrace.quality_detail.evidence_gaps!.map((s, i) => <span key={i}>• {s}</span>)}
+                            </div>
+                          )}
+                          {(selectedTrace.quality_detail.suggested_fixes ?? []).length > 0 && (
+                            <div className="trace-quality-issues" style={{ marginTop: 4 }}>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', display: 'block', marginBottom: 2 }}>建議修正</span>
+                              {selectedTrace.quality_detail.suggested_fixes!.map((s, i) => <span key={i}>• {s}</span>)}
+                            </div>
+                          )}
+                          {(selectedTrace.quality_detail.should_rerun_retrieval || selectedTrace.quality_detail.should_rerun_research) && (
+                            <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              {selectedTrace.quality_detail.should_rerun_retrieval && (
+                                <span style={{ fontSize: 10, background: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: 999, fontWeight: 700 }}>建議重跑 retrieval</span>
+                              )}
+                              {selectedTrace.quality_detail.should_rerun_research && (
+                                <span style={{ fontSize: 10, background: '#fce7f3', color: '#9d174d', padding: '2px 6px', borderRadius: 999, fontWeight: 700 }}>建議重跑 research</span>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1298,6 +1334,14 @@ function TraceList({
                 <span className={`trace-list-status ${isErr ? 'err' : 'ok'}`}>
                   {isErr ? '✕' : '✓'}
                 </span>
+                <Link
+                  to={`/admin/traces/${row.id}`}
+                  className="trace-list-detail-link"
+                  title="Open detail page"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <ExternalLink size={11} />
+                </Link>
               </span>
             </div>
           </div>

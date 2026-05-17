@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import {
-  Activity,
   BookOpen,
   MessageSquare,
   PanelLeftClose,
@@ -23,7 +22,6 @@ interface SidebarProps {
   collapsed: boolean
   onToggleCollapse: () => void
   onOpenSummaries: () => void
-  onOpenTraces: () => void
 }
 
 export default function Sidebar({
@@ -36,7 +34,6 @@ export default function Sidebar({
   collapsed,
   onToggleCollapse,
   onOpenSummaries,
-  onOpenTraces,
 }: SidebarProps) {
   const [query, setQuery] = useState('')
   const [confirmId, setConfirmId] = useState<number | null>(null)
@@ -83,9 +80,6 @@ export default function Sidebar({
           <button className="new-chat-icon-btn" onClick={onOpenSummaries} title="Summaries">
             <BookOpen size={16} strokeWidth={1.8} />
           </button>
-          <button className="new-chat-icon-btn" onClick={onOpenTraces} title="Traces">
-            <Activity size={16} strokeWidth={1.8} />
-          </button>
         </>
       )}
 
@@ -114,11 +108,6 @@ export default function Sidebar({
           <button className="new-chat-btn" onClick={onOpenSummaries} style={{ backgroundColor: 'transparent', border: '1px solid #45475a' }}>
             <BookOpen size={14} strokeWidth={1.8} />
             Summaries
-          </button>
-
-          <button className="new-chat-btn" onClick={onOpenTraces} style={{ backgroundColor: 'transparent', border: '1px solid #45475a' }}>
-            <Activity size={14} strokeWidth={1.8} />
-            Traces
           </button>
 
           <div className="section-label">Recent chats</div>

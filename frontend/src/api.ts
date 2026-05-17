@@ -135,8 +135,8 @@ export interface SummaryItem {
   caches: { pymupdf4llm: boolean; azure_di: boolean; llamaparse: boolean }
 }
 
-export const getSummaries = async (): Promise<SummaryItem[]> => {
-  const { data } = await api.get<SummaryItem[]>('/summaries')
+export const getSummaries = async (slim = false): Promise<SummaryItem[]> => {
+  const { data } = await api.get<SummaryItem[]>(`/summaries${slim ? '?slim=true' : ''}`)
   return data
 }
 
@@ -263,12 +263,19 @@ export interface TraceItem {
   resolved_intent?: string | null
   quality_detail?: {
     grounding?: number
+    task_fit?: number
     completeness?: number
+    specificity?: number
     source_quality?: number
+    uncertainty_honesty?: number
     format_fit?: number
-    limitations_honesty?: number
     overall?: number
+    verdict?: string
     issues?: string[]
+    evidence_gaps?: string[]
+    suggested_fixes?: string[]
+    should_rerun_retrieval?: boolean
+    should_rerun_research?: boolean
   } | null
 }
 
@@ -320,6 +327,8 @@ export interface TraceFilters {
   prompt_version?: string
   status?: string
   min_latency?: string
+  max_quality?: number
+  has_score?: boolean
   original_intent?: string
   resolved_intent?: string
   environment?: string
@@ -590,8 +599,69 @@ export const compareTraceVersions = async (v1: string, v2: string): Promise<Vers
   return data
 }
 
+export interface ObservationItem {
+  id: string
+  run_type: string
+  name: string
+  parent_run_id: string | null
+  thread_id: string | null
+  start_time: string | null
+  latency: number | null
+  prompt_tokens: number | null
+  completion_tokens: number | null
+  error: string | null
+  input: string | null
+  output: string | null
+}
+
+export interface ObservationStats {
+  total: number
+  total_tokens: number
+  by_type: Record<string, { count: number; prompt_tokens: number; completion_tokens: number }>
+}
+
+export const getObservations = async (
+  limit = 100,
+  runType?: string,
+  offset = 0,
+): Promise<ObservationItem[]> => {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (runType && runType !== 'all') params.set('run_type', runType)
+  const { data } = await api.get<ObservationItem[]>(`/traces/observations?${params}`)
+  return data
+}
+
+export const getObservationStats = async (): Promise<ObservationStats> => {
+  const { data } = await api.get<ObservationStats>('/traces/observations/stats')
+  return data
+}
+
 export const batchScoreTraces = async (limit = 50): Promise<{ queued: number; message: string }> => {
   const { data } = await api.post<{ queued: number; message: string }>(`/traces/batch-score?limit=${limit}`)
+  return data
+}
+
+export interface ScoreStats {
+  total: number
+  scored: number
+  unscored: number
+  avg_score: number | null
+  low_quality_count: number
+  low_quality_pct: number | null
+  distribution: { bucket: string; count: number }[]
+  dimension_avgs: {
+    grounding?: number | null
+    task_fit?: number | null
+    completeness?: number | null
+    specificity?: number | null
+    source_quality?: number | null
+    uncertainty_honesty?: number | null
+    format_fit?: number | null
+  }
+}
+
+export const getScoreStats = async (): Promise<ScoreStats> => {
+  const { data } = await api.get<ScoreStats>('/traces/score-stats')
   return data
 }
 
@@ -604,8 +674,18 @@ export const testRoute = async (message: string, documentIds?: number[]): Promis
 }
 
 export const getPromptList = async (): Promise<PromptInfo[]> => {
-  const { data } = await api.get<PromptInfo[] | { prompts: PromptInfo[] }>('/prompts')
-  return Array.isArray(data) ? data : data.prompts
+  const { data } = await api.get<PromptInfo[] | PromptSummary[] | { prompts: PromptInfo[] }>('/prompts')
+  if (!Array.isArray(data)) return (data as { prompts: PromptInfo[] }).prompts
+  // New API returns PromptSummary[]; map to legacy PromptInfo shape
+  if (data.length === 0 || 'word_count' in data[0]) {
+    return (data as PromptSummary[]).map(p => ({
+      name:          p.name,
+      version:       p.current_hash ? `sha256:${p.current_hash}` : '',
+      size_chars:    p.word_count ?? 0,
+      last_modified: p.synced_at ?? null,
+    }))
+  }
+  return data as PromptInfo[]
 }
 
 export const runEval = async (): Promise<EvalReport> => {

@@ -1,0 +1,87 @@
+- generic [ref=e3]:
+  - navigation [ref=e4]:
+    - generic [ref=e5]:
+      - link "R Report Agent 大專生研究計畫平台" [ref=e6] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e7]: R
+        - generic [ref=e8]:
+          - generic [ref=e9]: Report Agent
+          - generic [ref=e10]: 大專生研究計畫平台
+      - generic [ref=e11]:
+        - link "計畫瀏覽" [ref=e12] [cursor=pointer]:
+          - /url: /projects
+        - link "問答助理" [ref=e13] [cursor=pointer]:
+          - /url: /chat
+        - link "適性探索" [ref=e14] [cursor=pointer]:
+          - /url: /assessment
+  - main [ref=e15]:
+    - generic [ref=e17]:
+      - generic [ref=e18]:
+        - generic [ref=e19]:
+          - img [ref=e20]
+          - text: 大專生研究計畫平台
+        - heading "用更清楚的資訊， 找到更適合的研究方向。" [level=1] [ref=e22]:
+          - text: 用更清楚的資訊，
+          - text: 找到更適合的研究方向。
+        - paragraph [ref=e23]: 結合 RAG 與多智能體技術，讓你快速理解、分析與探索大專生研究計畫， 從摘要瀏覽到 AI 深度問答一站完成。
+        - generic [ref=e24]:
+          - link "開始瀏覽" [ref=e25] [cursor=pointer]:
+            - /url: /projects
+            - text: 開始瀏覽
+            - img [ref=e26]
+          - link "AI 問答助理" [ref=e28] [cursor=pointer]:
+            - /url: /chat
+      - generic [ref=e29]:
+        - paragraph [ref=e30]: Core Modules
+        - heading "平台功能" [level=2] [ref=e31]
+        - paragraph [ref=e32]: 拖曳或點擊切換卡片，點擊中間卡片即可前往對應功能。
+        - generic [ref=e34]:
+          - button "上一張" [ref=e35] [cursor=pointer]:
+            - img [ref=e36]
+          - button "下一張" [ref=e38] [cursor=pointer]:
+            - img [ref=e39]
+          - button "計畫瀏覽 資料瀏覽 瀏覽歷年大專生研究計畫摘要，快速掌握研究動機、方法與成果，支援標籤與系所篩選。 前往功能" [ref=e41] [cursor=pointer]:
+            - generic [ref=e42]:
+              - img [ref=e44]
+              - generic [ref=e46]:
+                - generic [ref=e47]: 計畫瀏覽
+                - generic [ref=e48]: 資料瀏覽
+              - paragraph [ref=e49]: 瀏覽歷年大專生研究計畫摘要，快速掌握研究動機、方法與成果，支援標籤與系所篩選。
+              - generic [ref=e50]:
+                - text: 前往功能
+                - img [ref=e51]
+          - button "問答助理 AI 問答 上傳 PDF 報告，透過多智能體 AI 深度問答分析研究內容，支援 RAG 精確檢索。" [ref=e53]:
+            - generic [ref=e54]:
+              - img [ref=e56]
+              - generic [ref=e58]:
+                - generic [ref=e59]: 問答助理
+                - generic [ref=e60]: AI 問答
+              - paragraph [ref=e61]: 上傳 PDF 報告，透過多智能體 AI 深度問答分析研究內容，支援 RAG 精確檢索。
+          - button "適性探索 興趣探索 瀏覽由 AI 為各研究計畫生成的導讀題目，探索研究興趣，題目分析功能持續開發中。" [ref=e62]:
+            - generic [ref=e63]:
+              - img [ref=e65]
+              - generic [ref=e69]:
+                - generic [ref=e70]: 適性探索
+                - generic [ref=e71]: 興趣探索
+              - paragraph [ref=e72]: 瀏覽由 AI 為各研究計畫生成的導讀題目，探索研究興趣，題目分析功能持續開發中。
+        - generic [ref=e73]:
+          - button "Go to feature 1" [ref=e74] [cursor=pointer]
+          - button "Go to feature 2" [ref=e75] [cursor=pointer]
+          - button "Go to feature 3" [ref=e76] [cursor=pointer]
+      - generic [ref=e78]:
+        - generic [ref=e79]:
+          - paragraph [ref=e80]: Platform Data
+          - heading "平台數據" [level=2] [ref=e81]
+        - generic [ref=e82]:
+          - generic [ref=e83]:
+            - generic [ref=e84]: "0"
+            - generic [ref=e85]: 研究計畫
+            - generic [ref=e86]: 收錄大專生研究計畫文件
+          - generic [ref=e87]:
+            - generic [ref=e88]: "0"
+            - generic [ref=e89]: 已提取摘要
+            - generic [ref=e90]: 動機、方法、成果完整分析
+          - generic [ref=e91]:
+            - generic [ref=e92]: "0"
+            - generic [ref=e93]: 導讀題目
+            - generic [ref=e94]: AI 自動生成的探索題目

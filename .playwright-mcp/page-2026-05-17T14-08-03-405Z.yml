@@ -1,0 +1,2553 @@
+- generic [ref=e3]:
+  - navigation [ref=e4]:
+    - generic [ref=e5]:
+      - link "R Report Agent 大專生研究計畫平台" [ref=e6] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e7]: R
+        - generic [ref=e8]:
+          - generic [ref=e9]: Report Agent
+          - generic [ref=e10]: 大專生研究計畫平台
+      - generic [ref=e11]:
+        - link "計畫瀏覽" [ref=e12] [cursor=pointer]:
+          - /url: /projects
+        - link "問答助理" [ref=e13] [cursor=pointer]:
+          - /url: /chat
+        - link "適性探索" [ref=e14] [cursor=pointer]:
+          - /url: /assessment
+  - main [ref=e15]:
+    - generic [ref=e16]:
+      - generic [ref=e17]:
+        - generic [ref=e18]:
+          - generic [ref=e19]: Report Agent
+          - button "Collapse" [ref=e20] [cursor=pointer]:
+            - img [ref=e21]
+        - button "New chat" [ref=e24] [cursor=pointer]:
+          - img [ref=e25]
+          - text: New chat
+        - generic [ref=e26]:
+          - img
+          - textbox "Search chats" [ref=e27]
+        - button "Summaries" [ref=e28] [cursor=pointer]:
+          - img [ref=e29]
+          - text: Summaries
+        - generic [ref=e31]: Recent chats
+        - generic [ref=e32]:
+          - generic [ref=e54] [cursor=pointer]:
+            - img [ref=e55]
+            - generic [ref=e57]:
+              - generic [ref=e58]: 熔鹽法合成探討
+              - generic [ref=e59]:
+                - generic [ref=e60]: 5月2日
+                - generic [ref=e61]: "-"
+                - generic [ref=e62]: 2 msgs
+            - button "Delete chat" [ref=e63]:
+              - img [ref=e64]
+          - generic [ref=e67] [cursor=pointer]:
+            - img [ref=e68]
+            - generic [ref=e70]:
+              - generic [ref=e71]: 硼矽酸鹽化合物研究
+              - generic [ref=e72]:
+                - generic [ref=e73]: 5月2日
+                - generic [ref=e74]: "-"
+                - generic [ref=e75]: 2 msgs
+            - button "Delete chat" [ref=e76]:
+              - img [ref=e77]
+          - generic [ref=e80] [cursor=pointer]:
+            - img [ref=e81]
+            - generic [ref=e83]:
+              - generic [ref=e84]: 剪切力塗佈研究
+              - generic [ref=e85]:
+                - generic [ref=e86]: 5月2日
+                - generic [ref=e87]: "-"
+                - generic [ref=e88]: 2 msgs
+            - button "Delete chat" [ref=e89]:
+              - img [ref=e90]
+          - generic [ref=e93] [cursor=pointer]:
+            - img [ref=e94]
+            - generic [ref=e96]:
+              - generic [ref=e97]: 載子移動率與材料分析
+              - generic [ref=e98]:
+                - generic [ref=e99]: 5月2日
+                - generic [ref=e100]: "-"
+                - generic [ref=e101]: 2 msgs
+            - button "Delete chat" [ref=e102]:
+              - img [ref=e103]
+          - generic [ref=e106] [cursor=pointer]:
+            - img [ref=e107]
+            - generic [ref=e109]:
+              - generic [ref=e110]: 視障導航系統研究
+              - generic [ref=e111]:
+                - generic [ref=e112]: 5月2日
+                - generic [ref=e113]: "-"
+                - generic [ref=e114]: 2 msgs
+            - button "Delete chat" [ref=e115]:
+              - img [ref=e116]
+          - generic [ref=e119] [cursor=pointer]:
+            - img [ref=e120]
+            - generic [ref=e122]:
+              - generic [ref=e123]: 智慧視障導航設計
+              - generic [ref=e124]:
+                - generic [ref=e125]: 5月2日
+                - generic [ref=e126]: "-"
+                - generic [ref=e127]: 2 msgs
+            - button "Delete chat" [ref=e128]:
+              - img [ref=e129]
+          - generic [ref=e132] [cursor=pointer]:
+            - img [ref=e133]
+            - generic [ref=e135]:
+              - generic [ref=e136]: 熔鹽法合成探討
+              - generic [ref=e137]:
+                - generic [ref=e138]: 5月2日
+                - generic [ref=e139]: "-"
+                - generic [ref=e140]: 2 msgs
+            - button "Delete chat" [ref=e141]:
+              - img [ref=e142]
+          - generic [ref=e145] [cursor=pointer]:
+            - img [ref=e146]
+            - generic [ref=e148]:
+              - generic [ref=e149]: 硼矽酸鹽化合物合成
+              - generic [ref=e150]:
+                - generic [ref=e151]: 5月2日
+                - generic [ref=e152]: "-"
+                - generic [ref=e153]: 2 msgs
+            - button "Delete chat" [ref=e154]:
+              - img [ref=e155]
+          - generic [ref=e158] [cursor=pointer]:
+            - img [ref=e159]
+            - generic [ref=e161]:
+              - generic [ref=e162]: 剪切力塗佈法解析
+              - generic [ref=e163]:
+                - generic [ref=e164]: 5月2日
+                - generic [ref=e165]: "-"
+                - generic [ref=e166]: 2 msgs
+            - button "Delete chat" [ref=e167]:
+              - img [ref=e168]
+          - generic [ref=e171] [cursor=pointer]:
+            - img [ref=e172]
+            - generic [ref=e174]:
+              - generic [ref=e175]: 有機半導體載子移動率
+              - generic [ref=e176]:
+                - generic [ref=e177]: 5月2日
+                - generic [ref=e178]: "-"
+                - generic [ref=e179]: 2 msgs
+            - button "Delete chat" [ref=e180]:
+              - img [ref=e181]
+          - generic [ref=e184] [cursor=pointer]:
+            - img [ref=e185]
+            - generic [ref=e187]:
+              - generic [ref=e188]: 智慧視障導航研究
+              - generic [ref=e189]:
+                - generic [ref=e190]: 5月2日
+                - generic [ref=e191]: "-"
+                - generic [ref=e192]: 2 msgs
+            - button "Delete chat" [ref=e193]:
+              - img [ref=e194]
+          - generic [ref=e197] [cursor=pointer]:
+            - img [ref=e198]
+            - generic [ref=e200]:
+              - generic [ref=e201]: 智慧視障導航研究
+              - generic [ref=e202]:
+                - generic [ref=e203]: 5月2日
+                - generic [ref=e204]: "-"
+                - generic [ref=e205]: 2 msgs
+            - button "Delete chat" [ref=e206]:
+              - img [ref=e207]
+          - generic [ref=e210] [cursor=pointer]:
+            - img [ref=e211]
+            - generic [ref=e213]:
+              - generic [ref=e214]: "Chat #84"
+              - generic [ref=e215]:
+                - generic [ref=e216]: 5月1日
+                - generic [ref=e217]: "-"
+                - generic [ref=e218]: 0 msgs
+            - button "Delete chat" [ref=e219]:
+              - img [ref=e220]
+          - generic [ref=e223] [cursor=pointer]:
+            - img [ref=e224]
+            - generic [ref=e226]:
+              - generic [ref=e227]: 論文載子移動率分析
+              - generic [ref=e228]:
+                - generic [ref=e229]: 5月1日
+                - generic [ref=e230]: "-"
+                - generic [ref=e231]: 2 msgs
+            - button "Delete chat" [ref=e232]:
+              - img [ref=e233]
+          - generic [ref=e236] [cursor=pointer]:
+            - img [ref=e237]
+            - generic [ref=e239]:
+              - generic [ref=e240]: 視障導航新突破
+              - generic [ref=e241]:
+                - generic [ref=e242]: 5月1日
+                - generic [ref=e243]: "-"
+                - generic [ref=e244]: 2 msgs
+            - button "Delete chat" [ref=e245]:
+              - img [ref=e246]
+          - generic [ref=e249] [cursor=pointer]:
+            - img [ref=e250]
+            - generic [ref=e252]:
+              - generic [ref=e253]: 智慧視障導航研究
+              - generic [ref=e254]:
+                - generic [ref=e255]: 5月1日
+                - generic [ref=e256]: "-"
+                - generic [ref=e257]: 2 msgs
+            - button "Delete chat" [ref=e258]:
+              - img [ref=e259]
+          - generic [ref=e262] [cursor=pointer]:
+            - img [ref=e263]
+            - generic [ref=e265]:
+              - generic [ref=e266]: "Chat #80"
+              - generic [ref=e267]:
+                - generic [ref=e268]: 4月30日
+                - generic [ref=e269]: "-"
+                - generic [ref=e270]: 4 msgs
+            - button "Delete chat" [ref=e271]:
+              - img [ref=e272]
+          - generic [ref=e275] [cursor=pointer]:
+            - img [ref=e276]
+            - generic [ref=e278]:
+              - generic [ref=e279]: "Chat #79"
+              - generic [ref=e280]:
+                - generic [ref=e281]: 4月30日
+                - generic [ref=e282]: "-"
+                - generic [ref=e283]: 2 msgs
+            - button "Delete chat" [ref=e284]:
+              - img [ref=e285]
+          - generic [ref=e288] [cursor=pointer]:
+            - img [ref=e289]
+            - generic [ref=e291]:
+              - generic [ref=e292]: "Chat #78"
+              - generic [ref=e293]:
+                - generic [ref=e294]: 4月30日
+                - generic [ref=e295]: "-"
+                - generic [ref=e296]: 2 msgs
+            - button "Delete chat" [ref=e297]:
+              - img [ref=e298]
+          - generic [ref=e301] [cursor=pointer]:
+            - img [ref=e302]
+            - generic [ref=e304]:
+              - generic [ref=e305]: "Chat #77"
+              - generic [ref=e306]:
+                - generic [ref=e307]: 4月30日
+                - generic [ref=e308]: "-"
+                - generic [ref=e309]: 6 msgs
+            - button "Delete chat" [ref=e310]:
+              - img [ref=e311]
+      - generic [ref=e34]:
+        - button "關閉文件面板" [active] [ref=e314] [cursor=pointer]:
+          - img [ref=e37]
+        - generic [ref=e40]:
+          - generic [ref=e41]: 有什麼我可以幫你的？
+          - paragraph [ref=e42]: 上傳 PDF 報告，或直接提問開始分析
+        - generic [ref=e43]:
+          - generic [ref=e44]:
+            - textbox "傳訊息給 AI 分析師…" [ref=e45]
+            - generic [ref=e46]:
+              - button "附加文件" [ref=e48] [cursor=pointer]:
+                - img [ref=e49]
+              - button "送出" [disabled] [ref=e51]:
+                - img [ref=e52]
+          - paragraph
+      - generic [ref=e315]:
+        - generic [ref=e316]:
+          - generic [ref=e317]: 參考文件
+          - button "關閉" [ref=e318] [cursor=pointer]:
+            - img [ref=e319]
+        - generic [ref=e322]:
+          - generic [ref=e323]:
+            - checkbox [ref=e324] [cursor=pointer]
+            - generic [ref=e325] [cursor=pointer]:
+              - generic "107-2813-C-008-033-E_許竣翔_智慧視障導航系統.pdf" [ref=e326]: 智慧視障導航系統
+              - generic [ref=e327]: 就緒
+          - generic [ref=e328]:
+            - checkbox [ref=e329] [cursor=pointer]
+            - generic [ref=e330] [cursor=pointer]:
+              - generic "113-2813-C-008-020-H_吳孟璇_憂鬱症藥物控制與醫患溝通平台建置研究.pdf" [ref=e331]: 憂鬱症藥物控制與醫患溝通平台建置研究
+              - generic [ref=e332]: 就緒
+          - generic [ref=e333]:
+            - checkbox [ref=e334] [cursor=pointer]
+            - generic [ref=e335] [cursor=pointer]:
+              - generic "108-2813-C-008-049-H_蕭名軒_人體舞蹈肢體動作偵測並快速結合動態特效研究計畫-VIVIdeo(在本研究計畫內簡稱VIVI).pdf" [ref=e336]: 人體舞蹈肢體動作偵測並快速結合動態特效研究計畫-VIVIdeo(在本研究計畫內簡稱VIVI)
+              - generic [ref=e337]: 就緒
+          - generic [ref=e338]:
+            - checkbox [ref=e339] [cursor=pointer]
+            - generic [ref=e340] [cursor=pointer]:
+              - generic "113-2813-C-008-012-H_余姿柔_台灣自然災害與公司ESG揭露分數之關係.pdf" [ref=e341]: 台灣自然災害與公司ESG揭露分數之關係
+              - generic [ref=e342]: 就緒
+          - generic [ref=e343]:
+            - checkbox [ref=e344] [cursor=pointer]
+            - generic [ref=e345] [cursor=pointer]:
+              - generic "111-2813-C-008-015-H_黃政毅_綜合ESG與綠色債券的分析對台灣金融機構的影響.pdf" [ref=e346]: 綜合ESG與綠色債券的分析對台灣金融機構的影響
+              - generic [ref=e347]: 就緒
+          - generic [ref=e348]:
+            - checkbox [ref=e349] [cursor=pointer]
+            - generic [ref=e350] [cursor=pointer]:
+              - generic "109-2813-C-008-050-H_郭孟華_藉貼現作業探討常人之衝動機制之差異.pdf" [ref=e351]: 藉貼現作業探討常人之衝動機制之差異
+              - generic [ref=e352]: 就緒
+          - generic [ref=e353]:
+            - checkbox [ref=e354] [cursor=pointer]
+            - generic [ref=e355] [cursor=pointer]:
+              - generic "108-2813-C-008-047-H_陳品瑋_統計學習與情節記憶的關聯性.pdf" [ref=e356]: 統計學習與情節記憶的關聯性
+              - generic [ref=e357]: 就緒
+          - generic [ref=e358]:
+            - checkbox [ref=e359] [cursor=pointer]
+            - generic [ref=e360] [cursor=pointer]:
+              - generic "113-2813-C-008-043-E_游承員_陰離子交換膜水解產氫之銅鐵鎳合金觸媒製程開發.pdf" [ref=e361]: 陰離子交換膜水解產氫之銅鐵鎳合金觸媒製程開發
+              - generic [ref=e362]: 就緒
+          - generic [ref=e363]:
+            - checkbox [ref=e364] [cursor=pointer]
+            - generic [ref=e365] [cursor=pointer]:
+              - generic "108-2813-C-008-059-B_莊凱文_流感疫苗與致死性心律不整之回溯性世代研究與視覺探索平台建置：以全國性縱貫資料中慢性縱貫資料中慢性阻塞性肺病老年患者為研究對象.pdf" [ref=e366]: 流感疫苗與致死性心律不整之回溯性世代研究與視覺探索平台建置：以全國性縱貫資料中慢性縱貫資料中慢性阻塞性肺病老年患者為研究對象
+              - generic [ref=e367]: 就緒
+          - generic [ref=e368]:
+            - checkbox [ref=e369] [cursor=pointer]
+            - generic [ref=e370] [cursor=pointer]:
+              - generic "113-2813-C-008-029-E_林哲宇_基於理論同位素的質譜訊號校準.pdf" [ref=e371]: 基於理論同位素的質譜訊號校準
+              - generic [ref=e372]: 就緒
+          - generic [ref=e373]:
+            - checkbox [ref=e374] [cursor=pointer]
+            - generic [ref=e375] [cursor=pointer]:
+              - generic "113-2813-C-008-027-E_王品喻_應用機器學習於代謝物特徵峰質量評估 (Integrating Machine Learning for Metabolite Peak Quality Assessment).pdf" [ref=e376]: 應用機器學習於代謝物特徵峰質量評估 (Integrating Machine Learning for Metabolite Peak Quality Assessment)
+              - generic [ref=e377]: 就緒
+          - generic [ref=e378]:
+            - checkbox [ref=e379] [cursor=pointer]
+            - generic [ref=e380] [cursor=pointer]:
+              - generic "111-2813-C-008-064-B_吳岳宸_製備具抗菌及促細胞吸附之功能性鈦合金塗層材料於感染預防與促進骨整合之應用.pdf" [ref=e381]: 製備具抗菌及促細胞吸附之功能性鈦合金塗層材料於感染預防與促進骨整合之應用
+              - generic [ref=e382]: 就緒
+          - generic [ref=e383]:
+            - checkbox [ref=e384] [cursor=pointer]
+            - generic [ref=e385] [cursor=pointer]:
+              - generic "109-2813-C-008-032-B_藍宜秀_腎臟癌細胞與免疫巨噬細胞互動之機制.pdf" [ref=e386]: 腎臟癌細胞與免疫巨噬細胞互動之機制
+              - generic [ref=e387]: 就緒
+          - generic [ref=e388]:
+            - checkbox [ref=e389] [cursor=pointer]
+            - generic [ref=e390] [cursor=pointer]:
+              - generic "108-2813-C-008-006-E_朱柏瑞_電腦視覺與深度學習追蹤斑馬魚.pdf" [ref=e391]: 電腦視覺與深度學習追蹤斑馬魚
+              - generic [ref=e392]: 就緒
+          - generic [ref=e393]:
+            - checkbox [ref=e394] [cursor=pointer]
+            - generic [ref=e395] [cursor=pointer]:
+              - generic "108-2813-C-008-003-E_張堂真_使用多重感測器融合與人工智慧技術的年長者跌倒即時檢測.pdf" [ref=e396]: 使用多重感測器融合與人工智慧技術的年長者跌倒即時檢測
+              - generic [ref=e397]: 就緒
+          - generic [ref=e398]:
+            - checkbox [ref=e399] [cursor=pointer]
+            - generic [ref=e400] [cursor=pointer]:
+              - generic "112-2813-C-008-059-B_彭怡文_探討侵襲性A群鏈球菌Rgg與CovR_CovS突變菌株之胞外囊泡對小鼠巨噬細胞極化的影響.pdf" [ref=e401]: 探討侵襲性A群鏈球菌Rgg與CovR_CovS突變菌株之胞外囊泡對小鼠巨噬細胞極化的影響
+              - generic [ref=e402]: 就緒
+          - generic [ref=e403]:
+            - checkbox [ref=e404] [cursor=pointer]
+            - generic [ref=e405] [cursor=pointer]:
+              - generic "112-2813-C-008-057-B_蕭文柏_Pex3於肌肉生成過程扮演的角色及機制 (The role and mechanism of Pex3 in requlating myogensis).pdf" [ref=e406]: Pex3於肌肉生成過程扮演的角色及機制 (The role and mechanism of Pex3 in requlating myogensis)
+              - generic [ref=e407]: 就緒
+          - generic [ref=e408]:
+            - checkbox [ref=e409] [cursor=pointer]
+            - generic [ref=e410] [cursor=pointer]:
+              - generic "110-2813-C-008-042-B_陳姿任_探討肌肉流失惡質症對骨骼肌中過氧化氫體生合成的影響.pdf" [ref=e411]: 探討肌肉流失惡質症對骨骼肌中過氧化氫體生合成的影響
+              - generic [ref=e412]: 就緒
+          - generic [ref=e413]:
+            - checkbox [ref=e414] [cursor=pointer]
+            - generic [ref=e415] [cursor=pointer]:
+              - generic "109-2813-C-008-029-B_翁子涵_探討RA及T3對MRFs的表現調控機制 Defining the mechanism mediating the regulation of MRFs by RA and T3.pdf" [ref=e416]: 探討RA及T3對MRFs的表現調控機制 Defining the mechanism mediating the regulation of MRFs by RA and T3
+              - generic [ref=e417]: 就緒
+          - generic [ref=e418]:
+            - checkbox [ref=e419] [cursor=pointer]
+            - generic [ref=e420] [cursor=pointer]:
+              - generic "105-2815-C-008-012-B_洪廷芸_酸敏性基因剔除小鼠建立慢性神經損傷性模型後神經膠細胞和神經細胞的表現模式.pdf" [ref=e421]: 酸敏性基因剔除小鼠建立慢性神經損傷性模型後神經膠細胞和神經細胞的表現模式
+              - generic [ref=e422]: 就緒
+          - generic [ref=e423]:
+            - checkbox [ref=e424] [cursor=pointer]
+            - generic [ref=e425] [cursor=pointer]:
+              - generic "113-2813-C-008-084-M_郭子維_Development of the Purcell filter for the superconducting qubit.pdf" [ref=e426]: Development of the Purcell filter for the superconducting qubit
+              - generic [ref=e427]: 就緒
+          - generic [ref=e428]:
+            - checkbox [ref=e429] [cursor=pointer]
+            - generic [ref=e430] [cursor=pointer]:
+              - generic "107-2813-C-008-008-M_張祐禎_以磁控電容耦合式射頻電漿輔助化學氣相沉積法成長石墨烯.pdf" [ref=e431]: 以磁控電容耦合式射頻電漿輔助化學氣相沉積法成長石墨烯
+              - generic [ref=e432]: 就緒
+          - generic [ref=e433]:
+            - checkbox [ref=e434] [cursor=pointer]
+            - generic [ref=e435] [cursor=pointer]:
+              - generic "107-2813-C-008-006-M_李律昕_氧化鈣在鉭(100)表面上的成長機制.pdf" [ref=e436]: 氧化鈣在鉭(100)表面上的成長機制
+              - generic [ref=e437]: 就緒
+          - generic [ref=e438]:
+            - checkbox [ref=e439] [cursor=pointer]
+            - generic [ref=e440] [cursor=pointer]:
+              - generic "106-2813-C-008-027-M_廖冠智_於不同尺寸銠奈米團簇上一氧化碳對甲醇分解之影響.pdf" [ref=e441]: 於不同尺寸銠奈米團簇上一氧化碳對甲醇分解之影響
+              - generic [ref=e442]: 就緒
+          - generic [ref=e443]:
+            - checkbox [ref=e444] [cursor=pointer]
+            - generic [ref=e445] [cursor=pointer]:
+              - generic "106-2813-C-008-026-M_賴培築_The use of multivariate techniques for the energy of b-quark jets in CEPC.pdf" [ref=e446]: The use of multivariate techniques for the energy of b-quark jets in CEPC
+              - generic [ref=e447]: 就緒
+          - generic [ref=e448]:
+            - checkbox [ref=e449] [cursor=pointer]
+            - generic [ref=e450] [cursor=pointer]:
+              - generic "106-2813-C-008-025-M_李明晏_Higgs decays to Z and one photon related analysis with the 13 TeV data to be collected in 2017.pdf" [ref=e451]: Higgs decays to Z and one photon related analysis with the 13 TeV data to be collected in 2017
+              - generic [ref=e452]: 就緒
+          - generic [ref=e453]:
+            - checkbox [ref=e454] [cursor=pointer]
+            - generic [ref=e455] [cursor=pointer]:
+              - generic "104-2815-C-008-034-M_曾揚富_利用NICE-OHM測量雙光子吸收光譜線.pdf" [ref=e456]: 利用NICE-OHM測量雙光子吸收光譜線
+              - generic [ref=e457]: 就緒
+          - generic [ref=e458]:
+            - checkbox [ref=e459] [cursor=pointer]
+            - generic [ref=e460] [cursor=pointer]:
+              - generic "104-2815-C-008-032-M_葉政威_Study of isolated γ+jet correlation in PbPb and pp collisions.pdf" [ref=e461]: Study of isolated γ+jet correlation in PbPb and pp collisions
+              - generic [ref=e462]: 就緒
+          - generic [ref=e463]:
+            - checkbox [ref=e464] [cursor=pointer]
+            - generic [ref=e465] [cursor=pointer]:
+              - generic "111-2813-C-008-036-M_柯亞岑_都市低衝擊開發設施結合物聯網系統之減洪效用評估－以台北市玉成抽水站集水區為例.pdf" [ref=e466]: 都市低衝擊開發設施結合物聯網系統之減洪效用評估－以台北市玉成抽水站集水區為例
+              - generic [ref=e467]: 就緒
+          - generic [ref=e468]:
+            - checkbox [ref=e469] [cursor=pointer]
+            - generic [ref=e470] [cursor=pointer]:
+              - generic "106-2813-C-008-024-E_陳苡榕_汽油替代燃料層紊流燃燒速度實作研究.pdf" [ref=e471]: 汽油替代燃料層紊流燃燒速度實作研究
+              - generic [ref=e472]: 就緒
+          - generic [ref=e473]:
+            - checkbox [ref=e474] [cursor=pointer]
+            - generic [ref=e475] [cursor=pointer]:
+              - generic "105-2815-C-008-025-M_楊鈞凱_透過巴黎氣候協議探討適合台灣的減碳方向.pdf" [ref=e476]: 透過巴黎氣候協議探討適合台灣的減碳方向
+              - generic [ref=e477]: 就緒
+          - generic [ref=e478]:
+            - checkbox [ref=e479] [cursor=pointer]
+            - generic [ref=e480] [cursor=pointer]:
+              - generic "105-2815-C-008-015-H_呂沅蓉_客家年輕收視族群對於客家文化整體圖像之建構—以客家電視偶像劇《出境事務所》為例.pdf" [ref=e481]: 客家年輕收視族群對於客家文化整體圖像之建構—以客家電視偶像劇《出境事務所》為例
+              - generic [ref=e482]: 就緒
+          - generic [ref=e483]:
+            - checkbox [ref=e484] [cursor=pointer]
+            - generic [ref=e485] [cursor=pointer]:
+              - generic "112-2813-C-008-001-M_郭俊葦_機器學習於高光譜遙測影像分析之探討.pdf" [ref=e486]: 機器學習於高光譜遙測影像分析之探討
+              - generic [ref=e487]: 就緒
+          - generic [ref=e488]:
+            - checkbox [ref=e489] [cursor=pointer]
+            - generic [ref=e490] [cursor=pointer]:
+              - generic "113-2813-C-008-044-E_孫奇睿_核廢水中放射性碘核種之去除—設計低成本且簡易合成之有機小分子吸附劑.pdf" [ref=e491]: 核廢水中放射性碘核種之去除—設計低成本且簡易合成之有機小分子吸附劑
+              - generic [ref=e492]: 就緒
+          - generic [ref=e493]:
+            - checkbox [ref=e494] [cursor=pointer]
+            - generic [ref=e495] [cursor=pointer]:
+              - generic "113-2813-C-008-004-E_陳馨_開發製作具三維立體 Cu6Sn5化合物支架銲點的錫膏.pdf" [ref=e496]: 開發製作具三維立體 Cu6Sn5化合物支架銲點的錫膏
+              - generic [ref=e497]: 就緒
+          - generic [ref=e498]:
+            - checkbox [ref=e499] [cursor=pointer]
+            - generic [ref=e500] [cursor=pointer]:
+              - generic "113-2813-C-008-002-E_劉孟杰_深共熔溶劑合成碳纖維_鎳銅鈣合金複合電極應用於水分解製氫之研究.pdf" [ref=e501]: 深共熔溶劑合成碳纖維_鎳銅鈣合金複合電極應用於水分解製氫之研究
+              - generic [ref=e502]: 就緒
+          - generic [ref=e503]:
+            - checkbox [ref=e504] [cursor=pointer]
+            - generic [ref=e505] [cursor=pointer]:
+              - generic "112-2813-C-008-065-M_許書榕_萘骨架選擇性雌激素受體調節物(Selective estrogen receptor modulators, SERMs)的合成及其生物活性之研究.pdf" [ref=e506]: 萘骨架選擇性雌激素受體調節物(Selective estrogen receptor modulators, SERMs)的合成及其生物活性之研究
+              - generic [ref=e507]: 就緒
+          - generic [ref=e508]:
+            - checkbox [ref=e509] [cursor=pointer]
+            - generic [ref=e510] [cursor=pointer]:
+              - generic "111-2813-C-008-008-M_陳世恩_手性肌醇衍生物myo-inositol-2,4,5,6-tetraangelate之合成研究.pdf" [ref=e511]: 手性肌醇衍生物myo-inositol-2,4,5,6-tetraangelate之合成研究
+              - generic [ref=e512]: 就緒
+          - generic [ref=e513]:
+            - checkbox [ref=e514] [cursor=pointer]
+            - generic [ref=e515] [cursor=pointer]:
+              - generic "111-2813-C-008-006-M_許芸臻_有機光伏太陽能電池非富勒烯(NFA)材料-2D-環戊併二噻吩衍生物之開發.pdf" [ref=e516]: 有機光伏太陽能電池非富勒烯(NFA)材料-2D-環戊併二噻吩衍生物之開發
+              - generic [ref=e517]: 就緒
+          - generic [ref=e518]:
+            - checkbox [ref=e519] [cursor=pointer]
+            - generic [ref=e520] [cursor=pointer]:
+              - generic "109-2813-C-008-038-M_黃禮黎_(S)-3-(3-furyl)alanine的合成.pdf" [ref=e521]: (S)-3-(3-furyl)alanine的合成
+              - generic [ref=e522]: 就緒
+          - generic [ref=e523]:
+            - checkbox [ref=e524] [cursor=pointer]
+            - generic [ref=e525] [cursor=pointer]:
+              - generic "108-2813-C-008-045-M_廖育嬋_製備聚苯胺摻雜鐵探討其對氧氣還原反應(ORR)之活性.pdf" [ref=e526]: 製備聚苯胺摻雜鐵探討其對氧氣還原反應(ORR)之活性
+              - generic [ref=e527]: 就緒
+          - generic [ref=e528]:
+            - checkbox [ref=e529] [cursor=pointer]
+            - generic [ref=e530] [cursor=pointer]:
+              - generic "104-2815-C-008-022-M_陳妍淳_具酸性官能基之SBA-15中孔洞材料對纖維素轉化之研究.pdf" [ref=e531]: 具酸性官能基之SBA-15中孔洞材料對纖維素轉化之研究
+              - generic [ref=e532]: 就緒
+          - generic [ref=e533]:
+            - checkbox [ref=e534] [cursor=pointer]
+            - generic [ref=e535] [cursor=pointer]:
+              - generic "104-2815-C-008-020-M_黃詩雅_以振盪輔助液液微萃取法檢測飲用水中含氮消毒副產物.pdf" [ref=e536]: 以振盪輔助液液微萃取法檢測飲用水中含氮消毒副產物
+              - generic [ref=e537]: 就緒
+          - generic [ref=e538]:
+            - checkbox [ref=e539] [cursor=pointer]
+            - generic [ref=e540] [cursor=pointer]:
+              - generic "104-2815-C-008-013-E_張碩耘_A Study on User Association in LTE MIMO HetNets.pdf" [ref=e541]: A Study on User Association in LTE MIMO HetNets
+              - generic [ref=e542]: 就緒
+          - generic [ref=e543]:
+            - checkbox [ref=e544] [cursor=pointer]
+            - generic [ref=e545] [cursor=pointer]:
+              - generic "112-2813-C-008-021-H_呂采蓉_1945~1960歐洲公路電影—以《第七封印》為例.pdf" [ref=e546]: 1945~1960歐洲公路電影—以《第七封印》為例
+              - generic [ref=e547]: 就緒
+          - generic [ref=e548]:
+            - checkbox [ref=e549] [cursor=pointer]
+            - generic [ref=e550] [cursor=pointer]:
+              - generic "108-2813-C-008-058-H_楊文嘉_藍牙無線感測結合室內定位技術應用於IoT桌遊之系統開發.pdf" [ref=e551]: 藍牙無線感測結合室內定位技術應用於IoT桌遊之系統開發
+              - generic [ref=e552]: 就緒
+          - generic [ref=e553]:
+            - checkbox [ref=e554] [cursor=pointer]
+            - generic [ref=e555] [cursor=pointer]:
+              - generic "108-2813-C-008-050-M_陳文威_黎曼映射函數在邊界上面的問題.pdf" [ref=e556]: 黎曼映射函數在邊界上面的問題
+              - generic [ref=e557]: 就緒
+          - generic [ref=e558]:
+            - checkbox [ref=e559] [cursor=pointer]
+            - generic [ref=e560] [cursor=pointer]:
+              - generic "104-2815-C-008-036-E_黃丞佑_鋼管混凝土之鋼管及內注混凝土介面脫離尺寸之檢測.pdf" [ref=e561]: 鋼管混凝土之鋼管及內注混凝土介面脫離尺寸之檢測
+              - generic [ref=e562]: 就緒
+          - generic [ref=e563]:
+            - checkbox [ref=e564] [cursor=pointer]
+            - generic [ref=e565] [cursor=pointer]:
+              - generic "113-2813-C-008-056-H_李郡儀_知音、史識與仙心：清代才女管筠與其書寫研究.pdf" [ref=e566]: 知音、史識與仙心：清代才女管筠與其書寫研究
+              - generic [ref=e567]: 就緒
+          - generic [ref=e568]:
+            - checkbox [ref=e569] [cursor=pointer]
+            - generic [ref=e570] [cursor=pointer]:
+              - generic "113-2813-C-008-063-E_簡嘉佑_考量最短線長的固定輪廓平面規劃演算法開發與實現.pdf" [ref=e571]: 考量最短線長的固定輪廓平面規劃演算法開發與實現
+              - generic [ref=e572]: 就緒
+          - generic [ref=e573]:
+            - checkbox [ref=e574] [cursor=pointer]
+            - generic [ref=e575] [cursor=pointer]:
+              - generic "113-2813-C-008-062-E_王堉虹_Fault Modeling and Testing of Digital Computing In Memories.pdf" [ref=e576]: Fault Modeling and Testing of Digital Computing In Memories
+              - generic [ref=e577]: 就緒
+          - generic [ref=e578]:
+            - checkbox [ref=e579] [cursor=pointer]
+            - generic [ref=e580] [cursor=pointer]:
+              - generic "113-2813-C-008-061-E_陳又正_Influence of footprints in CFET.pdf" [ref=e581]: Influence of footprints in CFET
+              - generic [ref=e582]: 就緒
+          - generic [ref=e583]:
+            - checkbox [ref=e584] [cursor=pointer]
+            - generic [ref=e585] [cursor=pointer]:
+              - generic "113-2813-C-008-060-E_陳楷豐_基於FPGA平台整合電阻式記憶體(RRAM)矩陣和周邊電路系統實現記憶體內運算(.pdf" [ref=e586]: 基於FPGA平台整合電阻式記憶體(RRAM)矩陣和周邊電路系統實現記憶體內運算(
+              - generic [ref=e587]: 就緒
+          - generic [ref=e588]:
+            - checkbox [ref=e589] [cursor=pointer]
+            - generic [ref=e590] [cursor=pointer]:
+              - generic "113-2813-C-008-039-E_黃中佑_室溫液態鎵鋅合金製備二維氧化鎵摻雜氧化鋅材料應用於光電元件.pdf" [ref=e591]: 室溫液態鎵鋅合金製備二維氧化鎵摻雜氧化鋅材料應用於光電元件
+              - generic [ref=e592]: 就緒
+          - generic [ref=e593]:
+            - checkbox [ref=e594] [cursor=pointer]
+            - generic [ref=e595] [cursor=pointer]:
+              - generic "112-2813-C-008-061-E_丁慧慈_傷口即時影像暨硬體木馬攻防.pdf" [ref=e596]: 傷口即時影像暨硬體木馬攻防
+              - generic [ref=e597]: 就緒
+          - generic [ref=e598]:
+            - checkbox [ref=e599] [cursor=pointer]
+            - generic [ref=e600] [cursor=pointer]:
+              - generic "111-2813-C-008-029-E_陳蕙琳_探討巨集元件合法擺置之方法.pdf" [ref=e601]: 探討巨集元件合法擺置之方法
+              - generic [ref=e602]: 就緒
+          - generic [ref=e603]:
+            - checkbox [ref=e604] [cursor=pointer]
+            - generic [ref=e605] [cursor=pointer]:
+              - generic "107-2813-C-008-031-E_潘榮村_氮化鋁銦_氮化鋁_氮化鎵高電子遷移率電晶體位障層鋁含量對閘極漏電流之影響.pdf" [ref=e606]: 氮化鋁銦_氮化鋁_氮化鎵高電子遷移率電晶體位障層鋁含量對閘極漏電流之影響
+              - generic [ref=e607]: 就緒
+          - generic [ref=e608]:
+            - checkbox [ref=e609] [cursor=pointer]
+            - generic [ref=e610] [cursor=pointer]:
+              - generic "107-2813-C-008-030-E_江子杰_Reconfigurable DNN Engine For Different Compressed Models.pdf" [ref=e611]: Reconfigurable DNN Engine For Different Compressed Models
+              - generic [ref=e612]: 就緒
+          - generic [ref=e613]:
+            - checkbox [ref=e614] [cursor=pointer]
+            - generic [ref=e615] [cursor=pointer]:
+              - generic "106-2813-C-008-016-E_盧曉穎_Deep Convolution Neural Network Accelera Design.pdf" [ref=e616]: Deep Convolution Neural Network Accelera Design
+              - generic [ref=e617]: 就緒
+          - generic [ref=e618]:
+            - checkbox [ref=e619] [cursor=pointer]
+            - generic [ref=e620] [cursor=pointer]:
+              - generic "104-2815-C-008-030-E_孫逸然_Metal_AlO_GaN結構電容－電壓量測與界面缺陷分析.pdf" [ref=e621]: Metal_AlO_GaN結構電容－電壓量測與界面缺陷分析
+              - generic [ref=e622]: 就緒
+          - generic [ref=e623]:
+            - checkbox [ref=e624] [cursor=pointer]
+            - generic [ref=e625] [cursor=pointer]:
+              - generic "113-2813-C-008-017-E_林巧翎_結合微型地震盒之智慧物聯網應急救助服務.pdf" [ref=e626]: 結合微型地震盒之智慧物聯網應急救助服務
+              - generic [ref=e627]: 就緒
+          - generic [ref=e628]:
+            - checkbox [ref=e629] [cursor=pointer]
+            - generic [ref=e630] [cursor=pointer]:
+              - generic "113-2813-C-008-016-E_鍾秉辰_基於多移動車輛感測回報之即時車輛互動資料庫暨即時交通監測與警示系統.pdf" [ref=e631]: 基於多移動車輛感測回報之即時車輛互動資料庫暨即時交通監測與警示系統
+              - generic [ref=e632]: 就緒
+          - generic [ref=e633]:
+            - checkbox [ref=e634] [cursor=pointer]
+            - generic [ref=e635] [cursor=pointer]:
+              - generic "113-2813-C-008-015-E_許嘉峻_基於可解釋深度學習的無人機實體層密鑰生成技術.pdf" [ref=e636]: 基於可解釋深度學習的無人機實體層密鑰生成技術
+              - generic [ref=e637]: 就緒
+          - generic [ref=e638]:
+            - checkbox [ref=e639] [cursor=pointer]
+            - generic [ref=e640] [cursor=pointer]:
+              - generic "112-2813-C-008-036-E_龍芃如_以3D空間模型作為訓練資料之深度學習的室內影像定位技術.pdf" [ref=e641]: 以3D空間模型作為訓練資料之深度學習的室內影像定位技術
+              - generic [ref=e642]: 就緒
+          - generic [ref=e643]:
+            - checkbox [ref=e644] [cursor=pointer]
+            - generic [ref=e645] [cursor=pointer]:
+              - generic "112-2813-C-008-035-E_鄒穎麒_結合實體層密鑰生成與區塊鏈的高安全無人機聯網通訊技術之設計與實作.pdf" [ref=e646]: 結合實體層密鑰生成與區塊鏈的高安全無人機聯網通訊技術之設計與實作
+              - generic [ref=e647]: 就緒
+          - generic [ref=e648]:
+            - checkbox [ref=e649] [cursor=pointer]
+            - generic [ref=e650] [cursor=pointer]:
+              - generic "111-2813-C-008-026-E_黃顥_以 BLE 實現無線 TSN 應用於 IIoT 系統之研究.pdf" [ref=e651]: 以 BLE 實現無線 TSN 應用於 IIoT 系統之研究
+              - generic [ref=e652]: 就緒
+          - generic [ref=e653]:
+            - checkbox [ref=e654] [cursor=pointer]
+            - generic [ref=e655] [cursor=pointer]:
+              - generic "111-2813-C-008-025-E_張以侑_以SDR技術實現CCSDS通訊標準之發射機.pdf" [ref=e656]: 以SDR技術實現CCSDS通訊標準之發射機
+              - generic [ref=e657]: 就緒
+          - generic [ref=e658]:
+            - checkbox [ref=e659] [cursor=pointer]
+            - generic [ref=e660] [cursor=pointer]:
+              - generic "111-2813-C-008-024-E_詹宇舜_基於Wi-Fi無線通道狀態資訊與機器學習之睡眠品質成效分析及改善.pdf" [ref=e661]: 基於Wi-Fi無線通道狀態資訊與機器學習之睡眠品質成效分析及改善
+              - generic [ref=e662]: 就緒
+          - generic [ref=e663]:
+            - checkbox [ref=e664] [cursor=pointer]
+            - generic [ref=e665] [cursor=pointer]:
+              - generic "111-2813-C-008-023-E_羅慧婷_基於transformer生成多軌流行音樂.pdf" [ref=e666]: 基於transformer生成多軌流行音樂
+              - generic [ref=e667]: 就緒
+          - generic [ref=e668]:
+            - checkbox [ref=e669] [cursor=pointer]
+            - generic [ref=e670] [cursor=pointer]:
+              - generic "111-2813-C-008-022-E_陳泊言_考量車雲網路差異化之多角色深度強化學習資源分配研究.pdf" [ref=e671]: 考量車雲網路差異化之多角色深度強化學習資源分配研究
+              - generic [ref=e672]: 就緒
+          - generic [ref=e673]:
+            - checkbox [ref=e674] [cursor=pointer]
+            - generic [ref=e675] [cursor=pointer]:
+              - generic "110-2813-C-008-044-E_黃宇梵_智慧太陽能發電調節系統.pdf" [ref=e676]: 智慧太陽能發電調節系統
+              - generic [ref=e677]: 就緒
+          - generic [ref=e678]:
+            - checkbox [ref=e679] [cursor=pointer]
+            - generic [ref=e680] [cursor=pointer]:
+              - generic "110-2813-C-008-025-E_曾俊傑_量測影像串流及識別之延遲與延伸應用.pdf" [ref=e681]: 量測影像串流及識別之延遲與延伸應用
+              - generic [ref=e682]: 就緒
+          - generic [ref=e683]:
+            - checkbox [ref=e684] [cursor=pointer]
+            - generic [ref=e685] [cursor=pointer]:
+              - generic "109-2813-C-008-009-E_李妍潔_通用型直播資訊自動抓取系統與大數據資料庫之研製.pdf" [ref=e686]: 通用型直播資訊自動抓取系統與大數據資料庫之研製
+              - generic [ref=e687]: 就緒
+          - generic [ref=e688]:
+            - checkbox [ref=e689] [cursor=pointer]
+            - generic [ref=e690] [cursor=pointer]:
+              - generic "109-2813-C-008-008-E_陳羿竹_基於RSSI與機器學習之室內免持裝置活動辨識研究.pdf" [ref=e691]: 基於RSSI與機器學習之室內免持裝置活動辨識研究
+              - generic [ref=e692]: 就緒
+          - generic [ref=e693]:
+            - checkbox [ref=e694] [cursor=pointer]
+            - generic [ref=e695] [cursor=pointer]:
+              - generic "108-2813-C-008-021-E_林威廷_基於時頻感知域之類神經網路在語音情緒辨識上的應用.pdf" [ref=e696]: 基於時頻感知域之類神經網路在語音情緒辨識上的應用
+              - generic [ref=e697]: 就緒
+          - generic [ref=e698]:
+            - checkbox [ref=e699] [cursor=pointer]
+            - generic [ref=e700] [cursor=pointer]:
+              - generic "108-2813-C-008-020-E_羅廣丞_基於深度學習之X光影像中危險物品判讀輔助系統.pdf" [ref=e701]: 基於深度學習之X光影像中危險物品判讀輔助系統
+              - generic [ref=e702]: 就緒
+          - generic [ref=e703]:
+            - checkbox [ref=e704] [cursor=pointer]
+            - generic [ref=e705] [cursor=pointer]:
+              - generic "107-2813-C-008-019-E_游采青_基於深度學習之大學校園聲音場景辨識.pdf" [ref=e706]: 基於深度學習之大學校園聲音場景辨識
+              - generic [ref=e707]: 就緒
+          - generic [ref=e708]:
+            - checkbox [ref=e709] [cursor=pointer]
+            - generic [ref=e710] [cursor=pointer]:
+              - generic "107-2813-C-008-018-E_温子翔_AI@AP.pdf" [ref=e711]: AI@AP
+              - generic [ref=e712]: 就緒
+          - generic [ref=e713]:
+            - checkbox [ref=e714] [cursor=pointer]
+            - generic [ref=e715] [cursor=pointer]:
+              - generic "107-2813-C-008-017-E_張君豪_Deep Multimodal Learning based Data Fusion for Mobile Traffic Forecasting.pdf" [ref=e716]: Deep Multimodal Learning based Data Fusion for Mobile Traffic Forecasting
+              - generic [ref=e717]: 就緒
+          - generic [ref=e718]:
+            - checkbox [ref=e719] [cursor=pointer]
+            - generic [ref=e720] [cursor=pointer]:
+              - generic "106-2813-C-008-005-E_黃姵寧_區塊鏈在物聯網之應用與實作.pdf" [ref=e721]: 區塊鏈在物聯網之應用與實作
+              - generic [ref=e722]: 就緒
+          - generic [ref=e723]:
+            - checkbox [ref=e724] [cursor=pointer]
+            - generic [ref=e725] [cursor=pointer]:
+              - generic "105-2815-C-008-014-E_陳姿玲_雲端OpenStack環境架設及網路功能虛擬化之實作.pdf" [ref=e726]: 雲端OpenStack環境架設及網路功能虛擬化之實作
+              - generic [ref=e727]: 就緒
+          - generic [ref=e728]:
+            - checkbox [ref=e729] [cursor=pointer]
+            - generic [ref=e730] [cursor=pointer]:
+              - generic "104-2815-C-008-014-E_侯景文_SDN虛擬主機預防網路攻擊.pdf" [ref=e731]: SDN虛擬主機預防網路攻擊
+              - generic [ref=e732]: 就緒
+          - generic [ref=e733]:
+            - checkbox [ref=e734] [cursor=pointer]
+            - generic [ref=e735] [cursor=pointer]:
+              - generic "114-2813-C-008-071-H_孫碩甫_智慧防詐語音助理：自然語言處理與檢索增強生成.pdf" [ref=e736]: 智慧防詐語音助理：自然語言處理與檢索增強生成
+              - generic [ref=e737]: 就緒
+          - generic [ref=e738]:
+            - checkbox [ref=e739] [cursor=pointer]
+            - generic [ref=e740] [cursor=pointer]:
+              - generic "113-2813-C-008-075-E_顏嘉緯_去中心化身份驗證投票系統_ 結合 DID 和區塊鏈技術於電子投票.pdf" [ref=e741]: 去中心化身份驗證投票系統_ 結合 DID 和區塊鏈技術於電子投票
+              - generic [ref=e742]: 就緒
+          - generic [ref=e743]:
+            - checkbox [ref=e744] [cursor=pointer]
+            - generic [ref=e745] [cursor=pointer]:
+              - generic "113-2813-C-008-023-H_呂學宇_基於隱性風險與隱性不公平的評論不一致之研究-以餐廳為例.pdf" [ref=e746]: 基於隱性風險與隱性不公平的評論不一致之研究-以餐廳為例
+              - generic [ref=e747]: 就緒
+          - generic [ref=e748]:
+            - checkbox [ref=e749] [cursor=pointer]
+            - generic [ref=e750] [cursor=pointer]:
+              - generic "113-2813-C-008-022-H_葉羿君_以CGAN技術達成依據角色設計圖穩定上色.pdf" [ref=e751]: 以CGAN技術達成依據角色設計圖穩定上色
+              - generic [ref=e752]: 就緒
+          - generic [ref=e753]:
+            - checkbox [ref=e754] [cursor=pointer]
+            - generic [ref=e755] [cursor=pointer]:
+              - generic "113-2813-C-008-021-H_陳昱翔_探討生成式 AI 於社交工程之發展應用.pdf" [ref=e756]: 探討生成式 AI 於社交工程之發展應用
+              - generic [ref=e757]: 就緒
+          - generic [ref=e758]:
+            - checkbox [ref=e759] [cursor=pointer]
+            - generic [ref=e760] [cursor=pointer]:
+              - generic "113-2813-C-008-019-H_趙翊安_多模態資料應用於服務業滿意度分析.pdf" [ref=e761]: 多模態資料應用於服務業滿意度分析
+              - generic [ref=e762]: 就緒
+          - generic [ref=e763]:
+            - checkbox [ref=e764] [cursor=pointer]
+            - generic [ref=e765] [cursor=pointer]:
+              - generic "113-2813-C-008-018-H_楊雲杰_基於生成式AI與語音辨識之人性化記帳軟體技術研究.pdf" [ref=e766]: 基於生成式AI與語音辨識之人性化記帳軟體技術研究
+              - generic [ref=e767]: 就緒
+          - generic [ref=e768]:
+            - checkbox [ref=e769] [cursor=pointer]
+            - generic [ref=e770] [cursor=pointer]:
+              - generic "113-2813-C-008-013-H_黃鉅燊_結合股市異常現象指標及生成式 AI 之股票追蹤系統.pdf" [ref=e771]: 結合股市異常現象指標及生成式 AI 之股票追蹤系統
+              - generic [ref=e772]: 就緒
+          - generic [ref=e773]:
+            - checkbox [ref=e774] [cursor=pointer]
+            - generic [ref=e775] [cursor=pointer]:
+              - generic "112-2813-C-008-017-H_鄒翔宇_泛用型智慧治療檢查表系統：使用文字探勘於電子病歷.pdf" [ref=e776]: 泛用型智慧治療檢查表系統：使用文字探勘於電子病歷
+              - generic [ref=e777]: 就緒
+          - generic [ref=e778]:
+            - checkbox [ref=e779] [cursor=pointer]
+            - generic [ref=e780] [cursor=pointer]:
+              - generic "112-2813-C-008-016-H_盧亮澐_群眾募資社會力：以文字探勘技術探究公益募資專案之成功因素.pdf" [ref=e781]: 群眾募資社會力：以文字探勘技術探究公益募資專案之成功因素
+              - generic [ref=e782]: 就緒
+          - generic [ref=e783]:
+            - checkbox [ref=e784] [cursor=pointer]
+            - generic [ref=e785] [cursor=pointer]:
+              - generic "112-2813-C-008-015-H_林俊霆_防止藥物交互作用之手機藥袋辨識系統與智慧藥盒開發.pdf" [ref=e786]: 防止藥物交互作用之手機藥袋辨識系統與智慧藥盒開發
+              - generic [ref=e787]: 就緒
+          - generic [ref=e788]:
+            - checkbox [ref=e789] [cursor=pointer]
+            - generic [ref=e790] [cursor=pointer]:
+              - generic "111-2813-C-008-035-H_黃鉦鈞_深度學習疾病模型之解釋性研究.pdf" [ref=e791]: 深度學習疾病模型之解釋性研究
+              - generic [ref=e792]: 就緒
+          - generic [ref=e793]:
+            - checkbox [ref=e794] [cursor=pointer]
+            - generic [ref=e795] [cursor=pointer]:
+              - generic "111-2813-C-008-034-H_蕭名容_結合智慧型語音互動與介面優化之食譜App系統開發.pdf" [ref=e796]: 結合智慧型語音互動與介面優化之食譜App系統開發
+              - generic [ref=e797]: 就緒
+          - generic [ref=e798]:
+            - checkbox [ref=e799] [cursor=pointer]
+            - generic [ref=e800] [cursor=pointer]:
+              - generic "111-2813-C-008-033-H_葉揚昀_利用即時骨架辨識及感測器輔助分析劍道訓練與運動管理系統之開發.pdf" [ref=e801]: 利用即時骨架辨識及感測器輔助分析劍道訓練與運動管理系統之開發
+              - generic [ref=e802]: 就緒
+          - generic [ref=e803]:
+            - checkbox [ref=e804] [cursor=pointer]
+            - generic [ref=e805] [cursor=pointer]:
+              - generic "110-2813-C-008-061-H_蔡誠修_智慧寵物醫療—影像辨識系統暨寵物健康管理發展實作.pdf" [ref=e806]: 智慧寵物醫療—影像辨識系統暨寵物健康管理發展實作
+              - generic [ref=e807]: 就緒
+          - generic [ref=e808]:
+            - checkbox [ref=e809] [cursor=pointer]
+            - generic [ref=e810] [cursor=pointer]:
+              - generic "110-2813-C-008-060-H_廖佳莉_基於深度學習之穿搭推薦模型-Styler.pdf" [ref=e811]: 基於深度學習之穿搭推薦模型-Styler
+              - generic [ref=e812]: 就緒
+          - generic [ref=e813]:
+            - checkbox [ref=e814] [cursor=pointer]
+            - generic [ref=e815] [cursor=pointer]:
+              - generic "110-2813-C-008-059-H_林于詩_利用穿戴式裝置預測睡眠發生中風及行動健康管理系統之開發.pdf" [ref=e816]: 利用穿戴式裝置預測睡眠發生中風及行動健康管理系統之開發
+              - generic [ref=e817]: 就緒
+          - generic [ref=e818]:
+            - checkbox [ref=e819] [cursor=pointer]
+            - generic [ref=e820] [cursor=pointer]:
+              - generic "109-2813-C-008-060-E_謝昀蓉_應用機器學習演算法建立流感併發重症預測模型.pdf" [ref=e821]: 應用機器學習演算法建立流感併發重症預測模型
+              - generic [ref=e822]: 就緒
+          - generic [ref=e823]:
+            - checkbox [ref=e824] [cursor=pointer]
+            - generic [ref=e825] [cursor=pointer]:
+              - generic "109-2813-C-008-026-E_劉承亞_基於自然語言處理與機器學習之總體市場交易訊號預測模型.pdf" [ref=e826]: 基於自然語言處理與機器學習之總體市場交易訊號預測模型
+              - generic [ref=e827]: 就緒
+          - generic [ref=e828]:
+            - checkbox [ref=e829] [cursor=pointer]
+            - generic [ref=e830] [cursor=pointer]:
+              - generic "113-2813-C-008-078-E_陳柏燊_基於系統調用的容器及叢集安全.pdf" [ref=e831]: 基於系統調用的容器及叢集安全
+              - generic [ref=e832]: 就緒
+          - generic [ref=e833]:
+            - checkbox [ref=e834] [cursor=pointer]
+            - generic [ref=e835] [cursor=pointer]:
+              - generic "113-2813-C-008-077-E_連翔胤_未知攻擊辨識之混合式入侵偵測系統.pdf" [ref=e836]: 未知攻擊辨識之混合式入侵偵測系統
+              - generic [ref=e837]: 就緒
+          - generic [ref=e838]:
+            - checkbox [ref=e839] [cursor=pointer]
+            - generic [ref=e840] [cursor=pointer]:
+              - generic "113-2813-C-008-076-E_汪秉翔_ScaleBCFL-使用HLF實作之去中心化聯邦學習任務發布及訓練-聚合框架.pdf" [ref=e841]: ScaleBCFL-使用HLF實作之去中心化聯邦學習任務發布及訓練-聚合框架
+              - generic [ref=e842]: 就緒
+          - generic [ref=e843]:
+            - checkbox [ref=e844] [cursor=pointer]
+            - generic [ref=e845] [cursor=pointer]:
+              - generic "113-2813-C-008-074-E_廖鑰宇_增加鍵值索引架構與OCSSD裝置上平行效能.pdf" [ref=e846]: 增加鍵值索引架構與OCSSD裝置上平行效能
+              - generic [ref=e847]: 就緒
+          - generic [ref=e848]:
+            - checkbox [ref=e849] [cursor=pointer]
+            - generic [ref=e850] [cursor=pointer]:
+              - generic "113-2813-C-008-032-E_林盈利_修復和識別基於擴散模型的英文手寫字生成錯誤.pdf" [ref=e851]: 修復和識別基於擴散模型的英文手寫字生成錯誤
+              - generic [ref=e852]: 就緒
+          - generic [ref=e853]:
+            - checkbox [ref=e854] [cursor=pointer]
+            - generic [ref=e855] [cursor=pointer]:
+              - generic "113-2813-C-008-031-E_黃守榕_Reciprocal Generative Learning for Multi-task Reinforcement Learning.pdf" [ref=e856]: Reciprocal Generative Learning for Multi-task Reinforcement Learning
+              - generic [ref=e857]: 就緒
+          - generic [ref=e858]:
+            - checkbox [ref=e859] [cursor=pointer]
+            - generic [ref=e860] [cursor=pointer]:
+              - generic "113-2813-C-008-030-E_陳永軒_Intrusion Detection System based on Open Set Transformer Image Classifier.pdf" [ref=e861]: Intrusion Detection System based on Open Set Transformer Image Classifier
+              - generic [ref=e862]: 就緒
+          - generic [ref=e863]:
+            - checkbox [ref=e864] [cursor=pointer]
+            - generic [ref=e865] [cursor=pointer]:
+              - generic "113-2813-C-008-026-E_顏婕葳_失聰長者長照嵌入式LLM系統：以Neo4j知識圖譜實現個人化輔助裝置.pdf" [ref=e866]: 失聰長者長照嵌入式LLM系統：以Neo4j知識圖譜實現個人化輔助裝置
+              - generic [ref=e867]: 就緒
+          - generic [ref=e868]:
+            - checkbox [ref=e869] [cursor=pointer]
+            - generic [ref=e870] [cursor=pointer]:
+              - generic "113-2813-C-008-024-E_李倬安_基於深度學習的跨多輸入法編輯器整合系統.pdf" [ref=e871]: 基於深度學習的跨多輸入法編輯器整合系統
+              - generic [ref=e872]: 就緒
+          - generic [ref=e873]:
+            - checkbox [ref=e874] [cursor=pointer]
+            - generic [ref=e875] [cursor=pointer]:
+              - generic "112-2813-C-008-045-E_楊力瑜_學習專注度分析與疲勞辨識系統.pdf" [ref=e876]: 學習專注度分析與疲勞辨識系統
+              - generic [ref=e877]: 就緒
+          - generic [ref=e878]:
+            - checkbox [ref=e879] [cursor=pointer]
+            - generic [ref=e880] [cursor=pointer]:
+              - generic "112-2813-C-008-040-E_朱柏勳_高速光學文字辨識FPGA硬體加速器設計.pdf" [ref=e881]: 高速光學文字辨識FPGA硬體加速器設計
+              - generic [ref=e882]: 就緒
+          - generic [ref=e883]:
+            - checkbox [ref=e884] [cursor=pointer]
+            - generic [ref=e885] [cursor=pointer]:
+              - generic "112-2813-C-008-039-E_張志愷_決策樹之於Skyrmion到記憶體優化之研究.pdf" [ref=e886]: 決策樹之於Skyrmion到記憶體優化之研究
+              - generic [ref=e887]: 就緒
+          - generic [ref=e888]:
+            - checkbox [ref=e889] [cursor=pointer]
+            - generic [ref=e890] [cursor=pointer]:
+              - generic "112-2813-C-008-038-E_謝振杰_容器檢測入侵資料集之蒐集.pdf" [ref=e891]: 容器檢測入侵資料集之蒐集
+              - generic [ref=e892]: 就緒
+          - generic [ref=e893]:
+            - checkbox [ref=e894] [cursor=pointer]
+            - generic [ref=e895] [cursor=pointer]:
+              - generic "112-2813-C-008-014-E_陳柏仲_自駕車軌跡預測之資料轉換工具.pdf" [ref=e896]: 自駕車軌跡預測之資料轉換工具
+              - generic [ref=e897]: 就緒
+          - generic [ref=e898]:
+            - checkbox [ref=e899] [cursor=pointer]
+            - generic [ref=e900] [cursor=pointer]:
+              - generic "112-2813-C-008-013-E_陳培宜_網紅經濟學：由電腦視覺預測社群互動.pdf" [ref=e901]: 網紅經濟學：由電腦視覺預測社群互動
+              - generic [ref=e902]: 就緒
+          - generic [ref=e903]:
+            - checkbox [ref=e904] [cursor=pointer]
+            - generic [ref=e905] [cursor=pointer]:
+              - generic "112-2813-C-008-012-E_王政鈞_基於字元注意力與修正網路之場景文字辨識.pdf" [ref=e906]: 基於字元注意力與修正網路之場景文字辨識
+              - generic [ref=e907]: 就緒
+          - generic [ref=e908]:
+            - checkbox [ref=e909] [cursor=pointer]
+            - generic [ref=e910] [cursor=pointer]:
+              - generic "112-2813-C-008-011-E_黃守榕_透過動作圖與課程學習對基於物理的角色控制進行動作探索.pdf" [ref=e911]: 透過動作圖與課程學習對基於物理的角色控制進行動作探索
+              - generic [ref=e912]: 就緒
+          - generic [ref=e913]:
+            - checkbox [ref=e914] [cursor=pointer]
+            - generic [ref=e915] [cursor=pointer]:
+              - generic "112-2813-C-008-009-E_葉容瑄_利用虛擬實境結合深度學習進行空間認知障礙診斷.pdf" [ref=e916]: 利用虛擬實境結合深度學習進行空間認知障礙診斷
+              - generic [ref=e917]: 就緒
+          - generic [ref=e918]:
+            - checkbox [ref=e919] [cursor=pointer]
+            - generic [ref=e920] [cursor=pointer]:
+              - generic "111-2813-C-008-058-E_謝瑄_花式滑冰評分輔助系統.pdf" [ref=e921]: 花式滑冰評分輔助系統
+              - generic [ref=e922]: 就緒
+          - generic [ref=e923]:
+            - checkbox [ref=e924] [cursor=pointer]
+            - generic [ref=e925] [cursor=pointer]:
+              - generic "111-2813-C-008-021-E_林書宇_應用先進的時空圖預測模型到多個台灣的數據集.pdf" [ref=e926]: 應用先進的時空圖預測模型到多個台灣的數據集
+              - generic [ref=e927]: 就緒
+          - generic [ref=e928]:
+            - checkbox [ref=e929] [cursor=pointer]
+            - generic [ref=e930] [cursor=pointer]:
+              - generic "111-2813-C-008-020-E_鄭以新_UBI基礎車險駕駛行為資料分析平台建置.pdf" [ref=e931]: UBI基礎車險駕駛行為資料分析平台建置
+              - generic [ref=e932]: 就緒
+          - generic [ref=e933]:
+            - checkbox [ref=e934] [cursor=pointer]
+            - generic [ref=e935] [cursor=pointer]:
+              - generic "111-2813-C-008-019-E_陳彥嘉_嚴重影響office安全的emotet malware的追蹤.pdf" [ref=e936]: 嚴重影響office安全的emotet malware的追蹤
+              - generic [ref=e937]: 就緒
+          - generic [ref=e938]:
+            - checkbox [ref=e939] [cursor=pointer]
+            - generic [ref=e940] [cursor=pointer]:
+              - generic "111-2813-C-008-017-E_林昱求_在自駕車上之交通警察手勢辨識.pdf" [ref=e941]: 在自駕車上之交通警察手勢辨識
+              - generic [ref=e942]: 就緒
+          - generic [ref=e943]:
+            - checkbox [ref=e944] [cursor=pointer]
+            - generic [ref=e945] [cursor=pointer]:
+              - generic "111-2813-C-008-016-E_張鈞富_基於深度學習的心律不整分析模型.pdf" [ref=e946]: 基於深度學習的心律不整分析模型
+              - generic [ref=e947]: 就緒
+          - generic [ref=e948]:
+            - checkbox [ref=e949] [cursor=pointer]
+            - generic [ref=e950] [cursor=pointer]:
+              - generic "111-2813-C-008-013-H_朱容德_應用先進機器學習理論預測與評估數位線上課程之學習成效.pdf" [ref=e951]: 應用先進機器學習理論預測與評估數位線上課程之學習成效
+              - generic [ref=e952]: 就緒
+          - generic [ref=e953]:
+            - checkbox [ref=e954] [cursor=pointer]
+            - generic [ref=e955] [cursor=pointer]:
+              - generic "110-2813-C-008-055-E_趙若羽_結合命名實體辨識與自動產生之標註資料進行人名命名實體鏈結之數位人文研究系統：以清.pdf" [ref=e956]: 結合命名實體辨識與自動產生之標註資料進行人名命名實體鏈結之數位人文研究系統：以清
+              - generic [ref=e957]: 就緒
+          - generic [ref=e958]:
+            - checkbox [ref=e959] [cursor=pointer]
+            - generic [ref=e960] [cursor=pointer]:
+              - generic "110-2813-C-008-054-E_王昱翔_語者分離技術輔助學習障礙診斷.pdf" [ref=e961]: 語者分離技術輔助學習障礙診斷
+              - generic [ref=e962]: 就緒
+          - generic [ref=e963]:
+            - checkbox [ref=e964] [cursor=pointer]
+            - generic [ref=e965] [cursor=pointer]:
+              - generic "110-2813-C-008-053-E_施泓丞_智慧型PPG脈診儀設計和研製.pdf" [ref=e966]: 智慧型PPG脈診儀設計和研製
+              - generic [ref=e967]: 就緒
+          - generic [ref=e968]:
+            - checkbox [ref=e969] [cursor=pointer]
+            - generic [ref=e970] [cursor=pointer]:
+              - generic "110-2813-C-008-047-E_劉盛興_IOT設備之惡意流量與節點分析.pdf" [ref=e971]: IOT設備之惡意流量與節點分析
+              - generic [ref=e972]: 就緒
+          - generic [ref=e973]:
+            - checkbox [ref=e974] [cursor=pointer]
+            - generic [ref=e975] [cursor=pointer]:
+              - generic "110-2813-C-008-046-E_施述哲_智能障礙生之虛擬實境職業訓練暨腦波回饋系統的建置.pdf" [ref=e976]: 智能障礙生之虛擬實境職業訓練暨腦波回饋系統的建置
+              - generic [ref=e977]: 就緒
+          - generic [ref=e978]:
+            - checkbox [ref=e979] [cursor=pointer]
+            - generic [ref=e980] [cursor=pointer]:
+              - generic "110-2813-C-008-045-E_張晉瑋_於斯格明子賽道記憶體技術上優化B+樹索引架構.pdf" [ref=e981]: 於斯格明子賽道記憶體技術上優化B+樹索引架構
+              - generic [ref=e982]: 就緒
+          - generic [ref=e983]:
+            - checkbox [ref=e984] [cursor=pointer]
+            - generic [ref=e985] [cursor=pointer]:
+              - generic "109-2813-C-008-027-E_張秉洋_基於長短期記憶模型之多日逐時空汙預測研究.pdf" [ref=e986]: 基於長短期記憶模型之多日逐時空汙預測研究
+              - generic [ref=e987]: 就緒
+          - generic [ref=e988]:
+            - checkbox [ref=e989] [cursor=pointer]
+            - generic [ref=e990] [cursor=pointer]:
+              - generic "109-2813-C-008-025-E_遲偉平_以機器學習預測策略走向以提升銷售獲利.pdf" [ref=e991]: 以機器學習預測策略走向以提升銷售獲利
+              - generic [ref=e992]: 就緒
+          - generic [ref=e993]:
+            - checkbox [ref=e994] [cursor=pointer]
+            - generic [ref=e995] [cursor=pointer]:
+              - generic "109-2813-C-008-024-E_拾以兆_混合式快閃記憶體裝置實施高效能重複資料刪除策略設計.pdf" [ref=e996]: 混合式快閃記憶體裝置實施高效能重複資料刪除策略設計
+              - generic [ref=e997]: 就緒
+          - generic [ref=e998]:
+            - checkbox [ref=e999] [cursor=pointer]
+            - generic [ref=e1000] [cursor=pointer]:
+              - generic "109-2813-C-008-023-E_張智諺_Windows上實踐分散式阻斷服務攻擊的防禦機制.pdf" [ref=e1001]: Windows上實踐分散式阻斷服務攻擊的防禦機制
+              - generic [ref=e1002]: 就緒
+          - generic [ref=e1003]:
+            - checkbox [ref=e1004] [cursor=pointer]
+            - generic [ref=e1005] [cursor=pointer]:
+              - generic "109-2813-C-008-022-E_杜萬珩_取得動態伺服器位置的方法設計與效率分析.pdf" [ref=e1006]: 取得動態伺服器位置的方法設計與效率分析
+              - generic [ref=e1007]: 就緒
+          - generic [ref=e1008]:
+            - checkbox [ref=e1009] [cursor=pointer]
+            - generic [ref=e1010] [cursor=pointer]:
+              - generic "109-2813-C-008-021-E_張予瀞_應用區塊鏈技術於T-BOX以進行高效查詢.pdf" [ref=e1011]: 應用區塊鏈技術於T-BOX以進行高效查詢
+              - generic [ref=e1012]: 就緒
+          - generic [ref=e1013]:
+            - checkbox [ref=e1014] [cursor=pointer]
+            - generic [ref=e1015] [cursor=pointer]:
+              - generic "109-2813-C-008-020-E_陳俊凱_5G基地台端下行方向排程優化與緊急排程.pdf" [ref=e1016]: 5G基地台端下行方向排程優化與緊急排程
+              - generic [ref=e1017]: 就緒
+          - generic [ref=e1018]:
+            - checkbox [ref=e1019] [cursor=pointer]
+            - generic [ref=e1020] [cursor=pointer]:
+              - generic "109-2813-C-008-019-E_范家慈_PM2.5空氣盒子異常偵測之驗證.pdf" [ref=e1021]: PM2.5空氣盒子異常偵測之驗證
+              - generic [ref=e1022]: 就緒
+          - generic [ref=e1023]:
+            - checkbox [ref=e1024] [cursor=pointer]
+            - generic [ref=e1025] [cursor=pointer]:
+              - generic "109-2813-C-008-018-E_張立彥_基於虛擬實境技術模擬心理旋轉實驗之遊戲開發與研究.pdf" [ref=e1026]: 基於虛擬實境技術模擬心理旋轉實驗之遊戲開發與研究
+              - generic [ref=e1027]: 就緒
+          - generic [ref=e1028]:
+            - checkbox [ref=e1029] [cursor=pointer]
+            - generic [ref=e1030] [cursor=pointer]:
+              - generic "109-2813-C-008-017-E_陳亮宇_以虛擬實境技術模擬認知復健環境之遊戲開發.pdf" [ref=e1031]: 以虛擬實境技術模擬認知復健環境之遊戲開發
+              - generic [ref=e1032]: 就緒
+          - generic [ref=e1033]:
+            - checkbox [ref=e1034] [cursor=pointer]
+            - generic [ref=e1035] [cursor=pointer]:
+              - generic "108-2813-C-008-019-E_徐梓育_以虛擬實境技術模擬失智症復健環境之遊戲暨成效評估與研究.pdf" [ref=e1036]: 以虛擬實境技術模擬失智症復健環境之遊戲暨成效評估與研究
+              - generic [ref=e1037]: 就緒
+          - generic [ref=e1038]:
+            - checkbox [ref=e1039] [cursor=pointer]
+            - generic [ref=e1040] [cursor=pointer]:
+              - generic "108-2813-C-008-018-E_雷舜婷_5G下行排程方法.pdf" [ref=e1041]: 5G下行排程方法
+              - generic [ref=e1042]: 就緒
+          - generic [ref=e1043]:
+            - checkbox [ref=e1044] [cursor=pointer]
+            - generic [ref=e1045] [cursor=pointer]:
+              - generic "108-2813-C-008-012-E_施長佑_基於遷移學習之文言文斷詞技術開發.pdf" [ref=e1046]: 基於遷移學習之文言文斷詞技術開發
+              - generic [ref=e1047]: 就緒
+          - generic [ref=e1048]:
+            - checkbox [ref=e1049] [cursor=pointer]
+            - generic [ref=e1050] [cursor=pointer]:
+              - generic "108-2813-C-008-010-E_許芳馨_視覺語音轉換系統應用於導盲機器人.pdf" [ref=e1051]: 視覺語音轉換系統應用於導盲機器人
+              - generic [ref=e1052]: 就緒
+          - generic [ref=e1053]:
+            - checkbox [ref=e1054] [cursor=pointer]
+            - generic [ref=e1055] [cursor=pointer]:
+              - generic "108-2813-C-008-009-E_藍詩雅_CGP和DQN強化式學習在Atari遊戲的應用.pdf" [ref=e1056]: CGP和DQN強化式學習在Atari遊戲的應用
+              - generic [ref=e1057]: 就緒
+          - generic [ref=e1058]:
+            - checkbox [ref=e1059] [cursor=pointer]
+            - generic [ref=e1060] [cursor=pointer]:
+              - generic "108-2813-C-008-008-E_趙昱傑_基於深度學習與關注機制之標點符號填補與文字校正.pdf" [ref=e1061]: 基於深度學習與關注機制之標點符號填補與文字校正
+              - generic [ref=e1062]: 就緒
+          - generic [ref=e1063]:
+            - checkbox [ref=e1064] [cursor=pointer]
+            - generic [ref=e1065] [cursor=pointer]:
+              - generic "108-2813-C-008-007-E_吳宗育_食譜自動問答系統.pdf" [ref=e1066]: 食譜自動問答系統
+              - generic [ref=e1067]: 就緒
+          - generic [ref=e1068]:
+            - checkbox [ref=e1069] [cursor=pointer]
+            - generic [ref=e1070] [cursor=pointer]:
+              - generic "108-2813-C-008-005-E_黃士憲_以機器學習_深度學習預測高雄鎮興凱旋路口車輛軌跡以提升輕軌安全性.pdf" [ref=e1071]: 以機器學習_深度學習預測高雄鎮興凱旋路口車輛軌跡以提升輕軌安全性
+              - generic [ref=e1072]: 就緒
+          - generic [ref=e1073]:
+            - checkbox [ref=e1074] [cursor=pointer]
+            - generic [ref=e1075] [cursor=pointer]:
+              - generic "107-2813-C-008-040-E_陳品蓉_擴增實境實驗室-科技生活學習新體驗.pdf" [ref=e1076]: 擴增實境實驗室-科技生活學習新體驗
+              - generic [ref=e1077]: 就緒
+          - generic [ref=e1078]:
+            - checkbox [ref=e1079] [cursor=pointer]
+            - generic [ref=e1080] [cursor=pointer]:
+              - generic "107-2813-C-008-039-E_曾薷慧_以資料分散式服務優化物流中心的車輛自動故障偵測與備援.pdf" [ref=e1081]: 以資料分散式服務優化物流中心的車輛自動故障偵測與備援
+              - generic [ref=e1082]: 就緒
+          - generic [ref=e1083]:
+            - checkbox [ref=e1084] [cursor=pointer]
+            - generic [ref=e1085] [cursor=pointer]:
+              - generic "107-2813-C-008-035-E_謝献爵_應用深度學習於社群網路活動文本分類.pdf" [ref=e1086]: 應用深度學習於社群網路活動文本分類
+              - generic [ref=e1087]: 就緒
+          - generic [ref=e1088]:
+            - checkbox [ref=e1089] [cursor=pointer]
+            - generic [ref=e1090] [cursor=pointer]:
+              - generic "107-2813-C-008-034-E_黃悅文_應用排序學習模型於社群網路活動搜尋結果之改善.pdf" [ref=e1091]: 應用排序學習模型於社群網路活動搜尋結果之改善
+              - generic [ref=e1092]: 就緒
+          - generic [ref=e1093]:
+            - checkbox [ref=e1094] [cursor=pointer]
+            - generic [ref=e1095] [cursor=pointer]:
+              - generic "106-2813-C-008-023-E_黃馨誼_應用整體學習結合多任務學習於類神經網路以提升語音辨識效果之研究.pdf" [ref=e1096]: 應用整體學習結合多任務學習於類神經網路以提升語音辨識效果之研究
+              - generic [ref=e1097]: 就緒
+          - generic [ref=e1098]:
+            - checkbox [ref=e1099] [cursor=pointer]
+            - generic [ref=e1100] [cursor=pointer]:
+              - generic "106-2813-C-008-022-E_邱威誠_互動式廣告的節能設計Design of Energy-saving interactive advertisement.pdf" [ref=e1101]: 互動式廣告的節能設計Design of Energy-saving interactive advertisement
+              - generic [ref=e1102]: 就緒
+          - generic [ref=e1103]:
+            - checkbox [ref=e1104] [cursor=pointer]
+            - generic [ref=e1105] [cursor=pointer]:
+              - generic "106-2813-C-008-021-E_李宜穎_深度學習於殘響去除之研究.pdf" [ref=e1106]: 深度學習於殘響去除之研究
+              - generic [ref=e1107]: 就緒
+          - generic [ref=e1108]:
+            - checkbox [ref=e1109] [cursor=pointer]
+            - generic [ref=e1110] [cursor=pointer]:
+              - generic "106-2813-C-008-015-E_邱翊倫_車輛行進路徑預測系統開發.pdf" [ref=e1111]: 車輛行進路徑預測系統開發
+              - generic [ref=e1112]: 就緒
+          - generic [ref=e1113]:
+            - checkbox [ref=e1114] [cursor=pointer]
+            - generic [ref=e1115] [cursor=pointer]:
+              - generic "106-2813-C-008-009-H_黃詩芸_結合命名實體辨識與時空資訊連結之歷史文本數位人文研究工具：以明實錄為例.pdf" [ref=e1116]: 結合命名實體辨識與時空資訊連結之歷史文本數位人文研究工具：以明實錄為例
+              - generic [ref=e1117]: 就緒
+          - generic [ref=e1118]:
+            - checkbox [ref=e1119] [cursor=pointer]
+            - generic [ref=e1120] [cursor=pointer]:
+              - generic "105-2815-C-008-024-E_黃昌第_四串流卷積神經網路對居家行為動作辨識之研究.pdf" [ref=e1121]: 四串流卷積神經網路對居家行為動作辨識之研究
+              - generic [ref=e1122]: 就緒
+          - generic [ref=e1123]:
+            - checkbox [ref=e1124] [cursor=pointer]
+            - generic [ref=e1125] [cursor=pointer]:
+              - generic "105-2815-C-008-022-E_黃泓淥_資料探勘在中小企業篩選新進業務員的應用.pdf" [ref=e1126]: 資料探勘在中小企業篩選新進業務員的應用
+              - generic [ref=e1127]: 就緒
+          - generic [ref=e1128]:
+            - checkbox [ref=e1129] [cursor=pointer]
+            - generic [ref=e1130] [cursor=pointer]:
+              - generic "105-2815-C-008-023-E_林彥伯_基於流形學習之單通道盲訊號源分離研究.pdf" [ref=e1131]: 基於流形學習之單通道盲訊號源分離研究
+              - generic [ref=e1132]: 就緒
+          - generic [ref=e1133]:
+            - checkbox [ref=e1134] [cursor=pointer]
+            - generic [ref=e1135] [cursor=pointer]:
+              - generic "105-2815-C-008-021-E_黃詩凱_巨量資料在中小企業中業務員之工作分配的應用.pdf" [ref=e1136]: 巨量資料在中小企業中業務員之工作分配的應用
+              - generic [ref=e1137]: 就緒
+          - generic [ref=e1138]:
+            - checkbox [ref=e1139] [cursor=pointer]
+            - generic [ref=e1140] [cursor=pointer]:
+              - generic "105-2815-C-008-020-E_黃品嫚_車門後方危險警示系統.pdf" [ref=e1141]: 車門後方危險警示系統
+              - generic [ref=e1142]: 就緒
+          - generic [ref=e1143]:
+            - checkbox [ref=e1144] [cursor=pointer]
+            - generic [ref=e1145] [cursor=pointer]:
+              - generic "105-2815-C-008-019-E_莊侑穎_畫作推薦系統.pdf" [ref=e1146]: 畫作推薦系統
+              - generic [ref=e1147]: 就緒
+          - generic [ref=e1148]:
+            - checkbox [ref=e1149] [cursor=pointer]
+            - generic [ref=e1150] [cursor=pointer]:
+              - generic "104-2815-C-008-010-E_何昱璋_整合式 RFID 資訊驗證模擬系統.pdf" [ref=e1151]: 整合式 RFID 資訊驗證模擬系統
+              - generic [ref=e1152]: 就緒
+          - generic [ref=e1153]:
+            - checkbox [ref=e1154] [cursor=pointer]
+            - generic [ref=e1155] [cursor=pointer]:
+              - generic "104-2815-C-008-017-E_姜智展_指紋紋理特徵擷取及其辨識方法.pdf" [ref=e1156]: 指紋紋理特徵擷取及其辨識方法
+              - generic [ref=e1157]: 就緒
+          - generic [ref=e1158]:
+            - checkbox [ref=e1159] [cursor=pointer]
+            - generic [ref=e1160] [cursor=pointer]:
+              - generic "104-2815-C-008-009-E_連振安_在行動網路中路由的後優化機制.pdf" [ref=e1161]: 在行動網路中路由的後優化機制
+              - generic [ref=e1162]: 就緒
+          - generic [ref=e1163]:
+            - checkbox [ref=e1164] [cursor=pointer]
+            - generic [ref=e1165] [cursor=pointer]:
+              - generic "104-2815-C-008-008-E_謝天然_在異質網路中利用多網卡支援多媒體傳輸的機制.pdf" [ref=e1166]: 在異質網路中利用多網卡支援多媒體傳輸的機制
+              - generic [ref=e1167]: 就緒
+          - generic [ref=e1168]:
+            - checkbox [ref=e1169] [cursor=pointer]
+            - generic [ref=e1170] [cursor=pointer]:
+              - generic "104-2815-C-008-007-E_黃宇強_IoT 物聯網 穩定作業系統研究與設計.pdf" [ref=e1171]: IoT 物聯網 穩定作業系統研究與設計
+              - generic [ref=e1172]: 就緒
+          - generic [ref=e1173]:
+            - checkbox [ref=e1174] [cursor=pointer]
+            - generic [ref=e1175] [cursor=pointer]:
+              - generic "113-2813-C-008-073-E_張勛皓_基於評價理論與圖神經網路預測匯率之研究.pdf" [ref=e1176]: 基於評價理論與圖神經網路預測匯率之研究
+              - generic [ref=e1177]: 就緒
+          - generic [ref=e1178]:
+            - checkbox [ref=e1179] [cursor=pointer]
+            - generic [ref=e1180] [cursor=pointer]:
+              - generic "113-2813-C-008-011-H_鄭曉琪_企業從事綠色創新對融資約束的影響.pdf" [ref=e1181]: 企業從事綠色創新對融資約束的影響
+              - generic [ref=e1182]: 就緒
+          - generic [ref=e1183]:
+            - checkbox [ref=e1184] [cursor=pointer]
+            - generic [ref=e1185] [cursor=pointer]:
+              - generic "113-2813-C-008-010-H_謝亞芸_企業二氧化碳排放量潛在因素：以董事會與經理人觀點.pdf" [ref=e1186]: 企業二氧化碳排放量潛在因素：以董事會與經理人觀點
+              - generic [ref=e1187]: 就緒
+          - generic [ref=e1188]:
+            - checkbox [ref=e1189] [cursor=pointer]
+            - generic [ref=e1190] [cursor=pointer]:
+              - generic "112-2813-C-008-003-H_廖于晴_臺灣金融控股公司之風險因子研究.pdf" [ref=e1191]: 臺灣金融控股公司之風險因子研究
+              - generic [ref=e1192]: 就緒
+          - generic [ref=e1193]:
+            - checkbox [ref=e1194] [cursor=pointer]
+            - generic [ref=e1195] [cursor=pointer]:
+              - generic "111-2813-C-008-014-H_黃子騏_商譽、金融創新、和ESG對台灣金融機構的影響.pdf" [ref=e1196]: 商譽、金融創新、和ESG對台灣金融機構的影響
+              - generic [ref=e1197]: 就緒
+          - generic [ref=e1198]:
+            - checkbox [ref=e1199] [cursor=pointer]
+            - generic [ref=e1200] [cursor=pointer]:
+              - generic "110-2813-C-008-065-H_周歆晏_新冠肺炎(COVID-19)對台股加權指數報酬率之影響.pdf" [ref=e1201]: 新冠肺炎(COVID-19)對台股加權指數報酬率之影響
+              - generic [ref=e1202]: 就緒
+          - generic [ref=e1203]:
+            - checkbox [ref=e1204] [cursor=pointer]
+            - generic [ref=e1205] [cursor=pointer]:
+              - generic "108-2813-C-008-048-H_黃玟瑄_企業社會責任與綠色信用評等之相關性探討.pdf" [ref=e1206]: 企業社會責任與綠色信用評等之相關性探討
+              - generic [ref=e1207]: 就緒
+          - generic [ref=e1208]:
+            - checkbox [ref=e1209] [cursor=pointer]
+            - generic [ref=e1210] [cursor=pointer]:
+              - generic "107-2813-C-008-003-H_陳采晴_資訊交易機率之估計方法比較.pdf" [ref=e1211]: 資訊交易機率之估計方法比較
+              - generic [ref=e1212]: 就緒
+          - generic [ref=e1213]:
+            - checkbox [ref=e1214] [cursor=pointer]
+            - generic [ref=e1215] [cursor=pointer]:
+              - generic "106-2813-C-008-019-H_梁可靖_相關性的不對稱與投資組合建構探討.pdf" [ref=e1216]: 相關性的不對稱與投資組合建構探討
+              - generic [ref=e1217]: 就緒
+          - generic [ref=e1218]:
+            - checkbox [ref=e1219] [cursor=pointer]
+            - generic [ref=e1220] [cursor=pointer]:
+              - generic "104-2815-C-008-011-H_陳俊諺_以下行風險建構新技術分析的有效性研究---台灣市場實證.pdf" [ref=e1221]: 以下行風險建構新技術分析的有效性研究---台灣市場實證
+              - generic [ref=e1222]: 就緒
+          - generic [ref=e1223]:
+            - checkbox [ref=e1224] [cursor=pointer]
+            - generic [ref=e1225] [cursor=pointer]:
+              - generic "111-2813-C-008-032-H_楊沂潔_以機器學習、建模取向探討臉部吸引力評分的異族效應.pdf" [ref=e1226]: 以機器學習、建模取向探討臉部吸引力評分的異族效應
+              - generic [ref=e1227]: 就緒
+          - generic [ref=e1228]:
+            - checkbox [ref=e1229] [cursor=pointer]
+            - generic [ref=e1230] [cursor=pointer]:
+              - generic "111-2813-C-008-031-H_劉昱廷_音樂能力與旋律結構對中文語句哼唱的工作記憶表現探討.pdf" [ref=e1231]: 音樂能力與旋律結構對中文語句哼唱的工作記憶表現探討
+              - generic [ref=e1232]: 就緒
+          - generic [ref=e1233]:
+            - checkbox [ref=e1234] [cursor=pointer]
+            - generic [ref=e1235] [cursor=pointer]:
+              - generic "111-2813-C-008-030-H_張芳媐_間歇性高頻脈衝式經顱磁刺激對與憂鬱相關注意力偏誤之調節.pdf" [ref=e1236]: 間歇性高頻脈衝式經顱磁刺激對與憂鬱相關注意力偏誤之調節
+              - generic [ref=e1237]: 就緒
+          - generic [ref=e1238]:
+            - checkbox [ref=e1239] [cursor=pointer]
+            - generic [ref=e1240] [cursor=pointer]:
+              - generic "110-2813-C-008-066-H_翁楷杰_以Simon Effect和SNARC Effect檢驗與人腦和電腦合作時的共享.pdf" [ref=e1241]: 以Simon Effect和SNARC Effect檢驗與人腦和電腦合作時的共享
+              - generic [ref=e1242]: 就緒
+          - generic [ref=e1243]:
+            - checkbox [ref=e1244] [cursor=pointer]
+            - generic [ref=e1245] [cursor=pointer]:
+              - generic "109-2813-C-008-052-H_蘇梓鈞_利用深度學習注意力機制視覺化分析連續自然口語理解.pdf" [ref=e1246]: 利用深度學習注意力機制視覺化分析連續自然口語理解
+              - generic [ref=e1247]: 就緒
+          - generic [ref=e1248]:
+            - checkbox [ref=e1249] [cursor=pointer]
+            - generic [ref=e1250] [cursor=pointer]:
+              - generic "109-2813-C-008-049-H_周立安_間歇性高頻脈衝式經顱磁刺激對不同傷害逃避特質受試者的神經電生理機制影響.pdf" [ref=e1251]: 間歇性高頻脈衝式經顱磁刺激對不同傷害逃避特質受試者的神經電生理機制影響
+              - generic [ref=e1252]: 就緒
+          - generic [ref=e1253]:
+            - checkbox [ref=e1254] [cursor=pointer]
+            - generic [ref=e1255] [cursor=pointer]:
+              - generic "109-2813-C-008-048-H_曾虹臻_音感認知能力與噪音環境中聽辨表現之相關機制探討.pdf" [ref=e1256]: 音感認知能力與噪音環境中聽辨表現之相關機制探討
+              - generic [ref=e1257]: 就緒
+          - generic [ref=e1258]:
+            - checkbox [ref=e1259] [cursor=pointer]
+            - generic [ref=e1260] [cursor=pointer]:
+              - generic "108-2813-C-008-029-E_林胤臣_利用共同空間模式與小波分析方法優化運動想像腦機介面.pdf" [ref=e1261]: 利用共同空間模式與小波分析方法優化運動想像腦機介面
+              - generic [ref=e1262]: 就緒
+          - generic [ref=e1263]:
+            - checkbox [ref=e1264] [cursor=pointer]
+            - generic [ref=e1265] [cursor=pointer]:
+              - generic "107-2813-C-008-005-H_胡予瑄_音樂特質與心血管律動週期之關聯性探討.pdf" [ref=e1266]: 音樂特質與心血管律動週期之關聯性探討
+              - generic [ref=e1267]: 就緒
+          - generic [ref=e1268]:
+            - checkbox [ref=e1269] [cursor=pointer]
+            - generic [ref=e1270] [cursor=pointer]:
+              - generic "107-2813-C-008-004-H_陳彥勳_利用非線性刺激與非線性訊號分析方法優化穩態視覺誘發電位腦機介面.pdf" [ref=e1271]: 利用非線性刺激與非線性訊號分析方法優化穩態視覺誘發電位腦機介面
+              - generic [ref=e1272]: 就緒
+          - generic [ref=e1273]:
+            - checkbox [ref=e1274] [cursor=pointer]
+            - generic [ref=e1275] [cursor=pointer]:
+              - generic "106-2813-C-008-018-H_施為騫_The ERPs Elicited in the Process of the Early State of L3 Acquisition.pdf" [ref=e1276]: The ERPs Elicited in the Process of the Early State of L3 Acquisition
+              - generic [ref=e1277]: 就緒
+          - generic [ref=e1278]:
+            - checkbox [ref=e1279] [cursor=pointer]
+            - generic [ref=e1280] [cursor=pointer]:
+              - generic "105-2815-C-008-011-H_王孜勻_書法美感體驗之神經造影研究.pdf" [ref=e1281]: 書法美感體驗之神經造影研究
+              - generic [ref=e1282]: 就緒
+          - generic [ref=e1283]:
+            - checkbox [ref=e1284] [cursor=pointer]
+            - generic [ref=e1285] [cursor=pointer]:
+              - generic "104-2815-C-008-039-H_郭亮瑋_太極拳訓練對手眼協調與力量控制學習之影響.pdf" [ref=e1286]: 太極拳訓練對手眼協調與力量控制學習之影響
+              - generic [ref=e1287]: 就緒
+          - generic [ref=e1288]:
+            - checkbox [ref=e1289] [cursor=pointer]
+            - generic [ref=e1290] [cursor=pointer]:
+              - generic "113-2813-C-008-041-E_許凱捷_液態金屬錫輔助高溫甲烷裂解產氫反應器數值模擬研究.pdf" [ref=e1291]: 液態金屬錫輔助高溫甲烷裂解產氫反應器數值模擬研究
+              - generic [ref=e1292]: 就緒
+          - generic [ref=e1293]:
+            - checkbox [ref=e1294] [cursor=pointer]
+            - generic [ref=e1295] [cursor=pointer]:
+              - generic "113-2813-C-008-040-E_侯益荃_二維半導體材料合成和電子特性之研究.pdf" [ref=e1296]: 二維半導體材料合成和電子特性之研究
+              - generic [ref=e1297]: 就緒
+          - generic [ref=e1298]:
+            - checkbox [ref=e1299] [cursor=pointer]
+            - generic [ref=e1300] [cursor=pointer]:
+              - generic "110-2813-C-008-010-E_余碩恩_氟化石墨烯應用於鋰金屬電池之介面性質調控與效能提升.pdf" [ref=e1301]: 氟化石墨烯應用於鋰金屬電池之介面性質調控與效能提升
+              - generic [ref=e1302]: 就緒
+          - generic [ref=e1303]:
+            - checkbox [ref=e1304] [cursor=pointer]
+            - generic [ref=e1305] [cursor=pointer]:
+              - generic "112-2813-C-008-002-H_簡李家同_建置適性化自動出題系統於程式設計通識課程之應用.pdf" [ref=e1306]: 建置適性化自動出題系統於程式設計通識課程之應用
+              - generic [ref=e1307]: 就緒
+          - generic [ref=e1308]:
+            - checkbox [ref=e1309] [cursor=pointer]
+            - generic [ref=e1310] [cursor=pointer]:
+              - generic "109-2813-C-008-047-H_楊竣評_科學探究情境遊戲之設計開發與實證研究.pdf" [ref=e1311]: 科學探究情境遊戲之設計開發與實證研究
+              - generic [ref=e1312]: 就緒
+          - generic [ref=e1313]:
+            - checkbox [ref=e1314] [cursor=pointer]
+            - generic [ref=e1315] [cursor=pointer]:
+              - generic "108-2813-C-008-002-M_王敬慈_探討WTI原油期貨選擇權的評價.pdf" [ref=e1316]: 探討WTI原油期貨選擇權的評價
+              - generic [ref=e1317]: 就緒
+          - generic [ref=e1318]:
+            - checkbox [ref=e1319] [cursor=pointer]
+            - generic [ref=e1320] [cursor=pointer]:
+              - generic "104-2815-C-008-005-B_尤冠景_研究牛樟芝萃取物及其成分對表觀遺傳學的影響.pdf" [ref=e1321]: 研究牛樟芝萃取物及其成分對表觀遺傳學的影響
+              - generic [ref=e1322]: 就緒
+          - generic [ref=e1323]:
+            - checkbox [ref=e1324] [cursor=pointer]
+            - generic [ref=e1325] [cursor=pointer]:
+              - generic "104-2815-C-008-002-B_劉重佑_合併微型核糖核酸與標靶治療藥物用於黑色素瘤治療.pdf" [ref=e1326]: 合併微型核糖核酸與標靶治療藥物用於黑色素瘤治療
+              - generic [ref=e1327]: 就緒
+          - generic [ref=e1328]:
+            - checkbox [ref=e1329] [cursor=pointer]
+            - generic [ref=e1330] [cursor=pointer]:
+              - generic "104-2815-C-008-001-B_劉韋辰_Invasion assay screening assessment for heparan sulfate-Escherichia coli protein interactome.pdf" [ref=e1331]: Invasion assay screening assessment for heparan sulfate-Escherichia coli protein interactome
+              - generic [ref=e1332]: 就緒
+          - generic [ref=e1333]:
+            - checkbox [ref=e1334] [cursor=pointer]
+            - generic [ref=e1335] [cursor=pointer]:
+              - generic "113-2813-C-008-038-E_蔡怡平_Classification for Prostate Cancer diagnosis via Deep-Learning-Enabled Raman Spectroscopy.pdf" [ref=e1336]: Classification for Prostate Cancer diagnosis via Deep-Learning-Enabled Raman Spectroscopy
+              - generic [ref=e1337]: 就緒
+          - generic [ref=e1338]:
+            - checkbox [ref=e1339] [cursor=pointer]
+            - generic [ref=e1340] [cursor=pointer]:
+              - generic "113-2813-C-008-037-E_吳秉叡_用於診斷因藥物治療引起心臟毒性的可攜式檢測系統.pdf" [ref=e1341]: 用於診斷因藥物治療引起心臟毒性的可攜式檢測系統
+              - generic [ref=e1342]: 就緒
+          - generic [ref=e1343]:
+            - checkbox [ref=e1344] [cursor=pointer]
+            - generic [ref=e1345] [cursor=pointer]:
+              - generic "113-2813-C-008-036-E_夏子涵_應用人工智慧辨識老鼠認知行為.pdf" [ref=e1346]: 應用人工智慧辨識老鼠認知行為
+              - generic [ref=e1347]: 就緒
+          - generic [ref=e1348]:
+            - checkbox [ref=e1349] [cursor=pointer]
+            - generic [ref=e1350] [cursor=pointer]:
+              - generic "113-2813-C-008-025-E_江育瑄_幾何快速資料密度泛函轉換於生物特徵辨識的生成對抗之研究.pdf" [ref=e1351]: 幾何快速資料密度泛函轉換於生物特徵辨識的生成對抗之研究
+              - generic [ref=e1352]: 就緒
+          - generic [ref=e1353]:
+            - checkbox [ref=e1354] [cursor=pointer]
+            - generic [ref=e1355] [cursor=pointer]:
+              - generic "112-2813-C-008-058-B_李怡華_The effects of exosomal miR-148a-3p from WJMSC on radiotherapy for head and neck cancer cells.pdf" [ref=e1356]: The effects of exosomal miR-148a-3p from WJMSC on radiotherapy for head and neck cancer cells
+              - generic [ref=e1357]: 就緒
+          - generic [ref=e1358]:
+            - checkbox [ref=e1359] [cursor=pointer]
+            - generic [ref=e1360] [cursor=pointer]:
+              - generic "112-2813-C-008-054-B_陳靜可_開發具有生物活性植入物應用於空鼻症臨床下鼻甲重建手術.pdf" [ref=e1361]: 開發具有生物活性植入物應用於空鼻症臨床下鼻甲重建手術
+              - generic [ref=e1362]: 就緒
+          - generic [ref=e1363]:
+            - checkbox [ref=e1364] [cursor=pointer]
+            - generic [ref=e1365] [cursor=pointer]:
+              - generic "112-2813-C-008-037-E_林映汝_開發癌細胞膜包覆之靛青綠-喜樹鹼-全氟化奈米乳劑用於HER2表現之乳癌光化學治療之研究---材料製作與功 能性驗證.pdf" [ref=e1366]: 開發癌細胞膜包覆之靛青綠-喜樹鹼-全氟化奈米乳劑用於HER2表現之乳癌光化學治療之研究---材料製作與功 能性驗證
+              - generic [ref=e1367]: 就緒
+          - generic [ref=e1368]:
+            - checkbox [ref=e1369] [cursor=pointer]
+            - generic [ref=e1370] [cursor=pointer]:
+              - generic "112-2813-C-008-010-E_梁亘亞_先驗特徵擴散編碼解碼辨識分割神經網路於腦腫瘤影像之辨識與分割的應用.pdf" [ref=e1371]: 先驗特徵擴散編碼解碼辨識分割神經網路於腦腫瘤影像之辨識與分割的應用
+              - generic [ref=e1372]: 就緒
+          - generic [ref=e1373]:
+            - checkbox [ref=e1374] [cursor=pointer]
+            - generic [ref=e1375] [cursor=pointer]:
+              - generic "111-2813-C-008-063-B_孫克文_Investigating the LIF-mediated metabolic regulation in tumor-associated macrophages.pdf" [ref=e1376]: Investigating the LIF-mediated metabolic regulation in tumor-associated macrophages
+              - generic [ref=e1377]: 就緒
+          - generic [ref=e1378]:
+            - checkbox [ref=e1379] [cursor=pointer]
+            - generic [ref=e1380] [cursor=pointer]:
+              - generic "111-2813-C-008-062-B_吳思廷_Development of 3D Biomimetic Skin Tissue for Skin Regeneration on Burn Injury 開發用於燒燙傷 後皮膚重建之三維仿生皮膚組織.pdf" [ref=e1381]: Development of 3D Biomimetic Skin Tissue for Skin Regeneration on Burn Injury 開發用於燒燙傷 後皮膚重建之三維仿生皮膚組織
+              - generic [ref=e1382]: 就緒
+          - generic [ref=e1383]:
+            - checkbox [ref=e1384] [cursor=pointer]
+            - generic [ref=e1385] [cursor=pointer]:
+              - generic "111-2813-C-008-053-E_劉仁信_Human Brain Image Segmentation Using self-embedded Neural Networks & DDFT.pdf" [ref=e1386]: Human Brain Image Segmentation Using self-embedded Neural Networks & DDFT
+              - generic [ref=e1387]: 就緒
+          - generic [ref=e1388]:
+            - checkbox [ref=e1389] [cursor=pointer]
+            - generic [ref=e1390] [cursor=pointer]:
+              - generic "111-2813-C-008-018-E_郭逸典_Peak alignment with False discovery rate in metabolomics.pdf" [ref=e1391]: Peak alignment with False discovery rate in metabolomics
+              - generic [ref=e1392]: 就緒
+          - generic [ref=e1393]:
+            - checkbox [ref=e1394] [cursor=pointer]
+            - generic [ref=e1395] [cursor=pointer]:
+              - generic "110-2813-C-008-073-E_鄭皓姿_混合式C-RNN深度學習模型於人體電訊號模擬與視覺化之研究.pdf" [ref=e1396]: 混合式C-RNN深度學習模型於人體電訊號模擬與視覺化之研究
+              - generic [ref=e1397]: 就緒
+          - generic [ref=e1398]:
+            - checkbox [ref=e1399] [cursor=pointer]
+            - generic [ref=e1400] [cursor=pointer]:
+              - generic "110-2813-C-008-070-E_闕華恩_A Virus Instant Detection System Incorporating Magnetic Beads and Electrochemistry (VIDS-IN-ME).pdf" [ref=e1401]: A Virus Instant Detection System Incorporating Magnetic Beads and Electrochemistry (VIDS-IN-ME)
+              - generic [ref=e1402]: 就緒
+          - generic [ref=e1403]:
+            - checkbox [ref=e1404] [cursor=pointer]
+            - generic [ref=e1405] [cursor=pointer]:
+              - generic "110-2813-C-008-069-E_曾上益_以包含靛氰綠與喜樹鹼奈米粒子之異質透明質酸水凝膠用於皮膚癌光化學治療之研究---材料製作與功能性驗證.pdf" [ref=e1406]: 以包含靛氰綠與喜樹鹼奈米粒子之異質透明質酸水凝膠用於皮膚癌光化學治療之研究---材料製作與功能性驗證
+              - generic [ref=e1407]: 就緒
+          - generic [ref=e1408]:
+            - checkbox [ref=e1409] [cursor=pointer]
+            - generic [ref=e1410] [cursor=pointer]:
+              - generic "110-2813-C-008-030-B_李心慈_初代口腔癌細胞對自然殺手細胞的防禦機制探討.pdf" [ref=e1411]: 初代口腔癌細胞對自然殺手細胞的防禦機制探討
+              - generic [ref=e1412]: 就緒
+          - generic [ref=e1413]:
+            - checkbox [ref=e1414] [cursor=pointer]
+            - generic [ref=e1415] [cursor=pointer]:
+              - generic "109-2813-C-008-056-B_柯慧沂_以大數據方法建構最佳化中醫藥模組之可行性及藥物模組對痔瘡治療之實驗評估.pdf" [ref=e1416]: 以大數據方法建構最佳化中醫藥模組之可行性及藥物模組對痔瘡治療之實驗評估
+              - generic [ref=e1417]: 就緒
+          - generic [ref=e1418]:
+            - checkbox [ref=e1419] [cursor=pointer]
+            - generic [ref=e1420] [cursor=pointer]:
+              - generic "109-2813-C-008-054-E_吳哲廷_A portable impedance spectroscopy detection system for myocardial infarction diagnosis.pdf" [ref=e1421]: A portable impedance spectroscopy detection system for myocardial infarction diagnosis
+              - generic [ref=e1422]: 就緒
+          - generic [ref=e1423]:
+            - checkbox [ref=e1424] [cursor=pointer]
+            - generic [ref=e1425] [cursor=pointer]:
+              - generic "109-2813-C-008-045-E_張書榕_人工智慧混合型深度學習網路應用於心臟醫學影像之組織分割與建模.pdf" [ref=e1426]: 人工智慧混合型深度學習網路應用於心臟醫學影像之組織分割與建模
+              - generic [ref=e1427]: 就緒
+          - generic [ref=e1428]:
+            - checkbox [ref=e1429] [cursor=pointer]
+            - generic [ref=e1430] [cursor=pointer]:
+              - generic "109-2813-C-008-034-B_隋昀華_The role of NPC-derived leukemia inhibitory factor in regulating immune responses..pdf" [ref=e1431]: The role of NPC-derived leukemia inhibitory factor in regulating immune responses.
+              - generic [ref=e1432]: 就緒
+          - generic [ref=e1433]:
+            - checkbox [ref=e1434] [cursor=pointer]
+            - generic [ref=e1435] [cursor=pointer]:
+              - generic "109-2813-C-008-033-B_劉子彤_鼻咽癌細胞的外吐小體調控巨噬細胞及T細胞的分化與免疫監督功能.pdf" [ref=e1436]: 鼻咽癌細胞的外吐小體調控巨噬細胞及T細胞的分化與免疫監督功能
+              - generic [ref=e1437]: 就緒
+          - generic [ref=e1438]:
+            - checkbox [ref=e1439] [cursor=pointer]
+            - generic [ref=e1440] [cursor=pointer]:
+              - generic "108-2813-C-008-030-E_陳品君_Multiple Responsive Smart Block Copolymers Prepared via RAFT.pdf" [ref=e1441]: Multiple Responsive Smart Block Copolymers Prepared via RAFT
+              - generic [ref=e1442]: 就緒
+          - generic [ref=e1443]:
+            - checkbox [ref=e1444] [cursor=pointer]
+            - generic [ref=e1445] [cursor=pointer]:
+              - generic "108-2813-C-008-004-E_蘇梓鈞_目標檢測神經網路框架優化與智慧居家安全即時影像檢測實現.pdf" [ref=e1446]: 目標檢測神經網路框架優化與智慧居家安全即時影像檢測實現
+              - generic [ref=e1447]: 就緒
+          - generic [ref=e1448]:
+            - checkbox [ref=e1449] [cursor=pointer]
+            - generic [ref=e1450] [cursor=pointer]:
+              - generic "107-2813-C-008-059-B_李柏儒_Mechanistic study of saracatinib-mediate effects on tumor microenvironment.pdf" [ref=e1451]: Mechanistic study of saracatinib-mediate effects on tumor microenvironment
+              - generic [ref=e1452]: 就緒
+          - generic [ref=e1453]:
+            - checkbox [ref=e1454] [cursor=pointer]
+            - generic [ref=e1455] [cursor=pointer]:
+              - generic "107-2813-C-008-046-B_許家睿_腎臟細胞癌早期發炎中NFkB活化之機制探討.pdf" [ref=e1456]: 腎臟細胞癌早期發炎中NFkB活化之機制探討
+              - generic [ref=e1457]: 就緒
+          - generic [ref=e1458]:
+            - checkbox [ref=e1459] [cursor=pointer]
+            - generic [ref=e1460] [cursor=pointer]:
+              - generic "106-2813-C-008-028-B_洪子婷_Identification of E.coli Proteins Involved in Colorectal Cancer Progression Using a Proteome Chip.pdf" [ref=e1461]: Identification of E.coli Proteins Involved in Colorectal Cancer Progression Using a Proteome Chip
+              - generic [ref=e1462]: 就緒
+          - generic [ref=e1463]:
+            - checkbox [ref=e1464] [cursor=pointer]
+            - generic [ref=e1465] [cursor=pointer]:
+              - generic "105-2815-C-008-013-B_黃昱齊_探討microRNA-518f在細胞遷移的機制.pdf" [ref=e1466]: 探討microRNA-518f在細胞遷移的機制
+              - generic [ref=e1467]: 就緒
+          - generic [ref=e1468]:
+            - checkbox [ref=e1469] [cursor=pointer]
+            - generic [ref=e1470] [cursor=pointer]:
+              - generic "113-2813-C-008-066-B_范芸榛_荖藤中的異丁香酚透過細胞自噬途徑調控正常結腸細胞和結腸癌細胞的自然凋亡.pdf" [ref=e1471]: 荖藤中的異丁香酚透過細胞自噬途徑調控正常結腸細胞和結腸癌細胞的自然凋亡
+              - generic [ref=e1472]: 就緒
+          - generic [ref=e1473]:
+            - checkbox [ref=e1474] [cursor=pointer]
+            - generic [ref=e1475] [cursor=pointer]:
+              - generic "113-2813-C-008-065-B_林煒瑄_PGC1α基因之肌肉特有啟動子在運動以及病理下的調控機制.pdf" [ref=e1476]: PGC1α基因之肌肉特有啟動子在運動以及病理下的調控機制
+              - generic [ref=e1477]: 就緒
+          - generic [ref=e1478]:
+            - checkbox [ref=e1479] [cursor=pointer]
+            - generic [ref=e1480] [cursor=pointer]:
+              - generic "113-2813-C-008-064-B_董柏廷_研究人類粒線體C-Ala(human mit C-Ala)對人類tRNAmAla的專一性和親和力.pdf" [ref=e1481]: 研究人類粒線體C-Ala(human mit C-Ala)對人類tRNAmAla的專一性和親和力
+              - generic [ref=e1482]: 就緒
+          - generic [ref=e1483]:
+            - checkbox [ref=e1484] [cursor=pointer]
+            - generic [ref=e1485] [cursor=pointer]:
+              - generic "113-2813-C-008-059-B_郭映妤_熱休克蛋白質AtHSP17.4B參與耐熱機制之生理功能分析.pdf" [ref=e1486]: 熱休克蛋白質AtHSP17.4B參與耐熱機制之生理功能分析
+              - generic [ref=e1487]: 就緒
+          - generic [ref=e1488]:
+            - checkbox [ref=e1489] [cursor=pointer]
+            - generic [ref=e1490] [cursor=pointer]:
+              - generic "112-2813-C-008-056-B_陳盈霓_探討exosomes 與glutamine depletion-induced exosomes在黑色素瘤患者惡病質(cachexia)的進程中所扮演的角色.pdf" [ref=e1491]: 探討exosomes 與glutamine depletion-induced exosomes在黑色素瘤患者惡病質(cachexia)的進程中所扮演的角色
+              - generic [ref=e1492]: 就緒
+          - generic [ref=e1493]:
+            - checkbox [ref=e1494] [cursor=pointer]
+            - generic [ref=e1495] [cursor=pointer]:
+              - generic "112-2813-C-008-055-B_劉世暘_研究人類C-Ala突變與CMT神經退化性疾病之關聯.pdf" [ref=e1496]: 研究人類C-Ala突變與CMT神經退化性疾病之關聯
+              - generic [ref=e1497]: 就緒
+          - generic [ref=e1498]:
+            - checkbox [ref=e1499] [cursor=pointer]
+            - generic [ref=e1500] [cursor=pointer]:
+              - generic "112-2813-C-008-053-B_陳柔妤_探討含硒奈米金粒子針對Nrf2成癮的結直腸癌的抗癌分子機制.pdf" [ref=e1501]: 探討含硒奈米金粒子針對Nrf2成癮的結直腸癌的抗癌分子機制
+              - generic [ref=e1502]: 就緒
+          - generic [ref=e1503]:
+            - checkbox [ref=e1504] [cursor=pointer]
+            - generic [ref=e1505] [cursor=pointer]:
+              - generic "112-2813-C-008-052-E_程宣融_Acetobacterium wieringae CH1增強Dehalococcoides mccarty菌株將三氯乙烯完全脫氯到乙烯_Vitamin B12在完全脫氯中的關鍵因素.pdf" [ref=e1506]: Acetobacterium wieringae CH1增強Dehalococcoides mccarty菌株將三氯乙烯完全脫氯到乙烯_Vitamin B12在完全脫氯中的關鍵因素
+              - generic [ref=e1507]: 就緒
+          - generic [ref=e1508]:
+            - checkbox [ref=e1509] [cursor=pointer]
+            - generic [ref=e1510] [cursor=pointer]:
+              - generic "111-2813-C-008-061-B_唐銢淳_定位sable基因與測試sable突變影響之性狀.pdf" [ref=e1511]: 定位sable基因與測試sable突變影響之性狀
+              - generic [ref=e1512]: 就緒
+          - generic [ref=e1513]:
+            - checkbox [ref=e1514] [cursor=pointer]
+            - generic [ref=e1515] [cursor=pointer]:
+              - generic "111-2813-C-008-060-B_謝同昊_Characterization of a non-canonical alanyl-tRNA synthetase from Dictyostelium discoideum.pdf" [ref=e1516]: Characterization of a non-canonical alanyl-tRNA synthetase from Dictyostelium discoideum
+              - generic [ref=e1517]: 就緒
+          - generic [ref=e1518]:
+            - checkbox [ref=e1519] [cursor=pointer]
+            - generic [ref=e1520] [cursor=pointer]:
+              - generic "111-2813-C-008-059-B_廖怡萱_MEHP及癌症惡病質症對骨骼肌萎縮的加乘性影響.pdf" [ref=e1521]: MEHP及癌症惡病質症對骨骼肌萎縮的加乘性影響
+              - generic [ref=e1522]: 就緒
+          - generic [ref=e1523]:
+            - checkbox [ref=e1524] [cursor=pointer]
+            - generic [ref=e1525] [cursor=pointer]:
+              - generic "111-2813-C-008-057-B_郭柏陞_建立硫酸還原菌與脫鹵球菌 Dehalococcoides mccartyi 共培養系統移除硫酸鹽進而促進厭氧還原脫氯反應之研究.pdf" [ref=e1526]: 建立硫酸還原菌與脫鹵球菌 Dehalococcoides mccartyi 共培養系統移除硫酸鹽進而促進厭氧還原脫氯反應之研究
+              - generic [ref=e1527]: 就緒
+          - generic [ref=e1528]:
+            - checkbox [ref=e1529] [cursor=pointer]
+            - generic [ref=e1530] [cursor=pointer]:
+              - generic "111-2813-C-008-050-E_吳清碧_建立地桿菌Geobacter sp.與脫鹵球菌Dehalococcoides mccartyi共培養菌群降解高濃度三氯乙烯之研究.pdf" [ref=e1531]: 建立地桿菌Geobacter sp.與脫鹵球菌Dehalococcoides mccartyi共培養菌群降解高濃度三氯乙烯之研究
+              - generic [ref=e1532]: 就緒
+          - generic [ref=e1533]:
+            - checkbox [ref=e1534] [cursor=pointer]
+            - generic [ref=e1535] [cursor=pointer]:
+              - generic "111-2813-C-008-040-B_程詩涵_水稻ERA1突變株高溫逆境下耐熱性分析.pdf" [ref=e1536]: 水稻ERA1突變株高溫逆境下耐熱性分析
+              - generic [ref=e1537]: 就緒
+          - generic [ref=e1538]:
+            - checkbox [ref=e1539] [cursor=pointer]
+            - generic [ref=e1540] [cursor=pointer]:
+              - generic "111-2813-C-008-039-B_吳芷晴_水稻種子內OsHsp101降解機制及耐熱性分析.pdf" [ref=e1541]: 水稻種子內OsHsp101降解機制及耐熱性分析
+              - generic [ref=e1542]: 就緒
+          - generic [ref=e1543]:
+            - checkbox [ref=e1544] [cursor=pointer]
+            - generic [ref=e1545] [cursor=pointer]:
+              - generic "110-2813-C-008-039-B_顏廷禎_水稻種子萌芽期光啟動OsHsp101降解機制之探討.pdf" [ref=e1546]: 水稻種子萌芽期光啟動OsHsp101降解機制之探討
+              - generic [ref=e1547]: 就緒
+          - generic [ref=e1548]:
+            - checkbox [ref=e1549] [cursor=pointer]
+            - generic [ref=e1550] [cursor=pointer]:
+              - generic "110-2813-C-008-038-B_林姿吟_OsHsp101降解機制與水稻種子及幼苗耐熱性分析.pdf" [ref=e1551]: OsHsp101降解機制與水稻種子及幼苗耐熱性分析
+              - generic [ref=e1552]: 就緒
+          - generic [ref=e1553]:
+            - checkbox [ref=e1554] [cursor=pointer]
+            - generic [ref=e1555] [cursor=pointer]:
+              - generic "110-2813-C-008-035-B_陳玟卉_探討台茶18號-綠茶對棕色脂肪細胞DLK-1基因表現與細胞生長之關聯.pdf" [ref=e1556]: 探討台茶18號-綠茶對棕色脂肪細胞DLK-1基因表現與細胞生長之關聯
+              - generic [ref=e1557]: 就緒
+          - generic [ref=e1558]:
+            - checkbox [ref=e1559] [cursor=pointer]
+            - generic [ref=e1560] [cursor=pointer]:
+              - generic "109-2813-C-008-030-B_凌郁婷_Functional analysis of OsCAF1A in rice by CRISPR_Cas9 system 利用CRISPR_Cas9系統進行 OsCAF1A基因的功能性分析.pdf" [ref=e1561]: Functional analysis of OsCAF1A in rice by CRISPR_Cas9 system 利用CRISPR_Cas9系統進行 OsCAF1A基因的功能性分析
+              - generic [ref=e1562]: 就緒
+          - generic [ref=e1563]:
+            - checkbox [ref=e1564] [cursor=pointer]
+            - generic [ref=e1565] [cursor=pointer]:
+              - generic "109-2813-C-008-028-B_吳傳喆_過氧化氫體生合成因子於肌肉形成過程的調控 The Regulation of Peroxisome biogenesis factors during Myogenesis.pdf" [ref=e1566]: 過氧化氫體生合成因子於肌肉形成過程的調控 The Regulation of Peroxisome biogenesis factors during Myogenesis
+              - generic [ref=e1567]: 就緒
+          - generic [ref=e1568]:
+            - checkbox [ref=e1569] [cursor=pointer]
+            - generic [ref=e1570] [cursor=pointer]:
+              - generic "108-2813-C-008-055-B_丁景澤_古生菌同源鐵硫簇修復蛋白YtfE的純化與分析.pdf" [ref=e1571]: 古生菌同源鐵硫簇修復蛋白YtfE的純化與分析
+              - generic [ref=e1572]: 就緒
+          - generic [ref=e1573]:
+            - checkbox [ref=e1574] [cursor=pointer]
+            - generic [ref=e1575] [cursor=pointer]:
+              - generic "108-2813-C-008-054-B_林詠瑞_探討轉錄因子於不同時期在M-cadherin啟動子上的交互作用.pdf" [ref=e1576]: 探討轉錄因子於不同時期在M-cadherin啟動子上的交互作用
+              - generic [ref=e1577]: 就緒
+          - generic [ref=e1578]:
+            - checkbox [ref=e1579] [cursor=pointer]
+            - generic [ref=e1580] [cursor=pointer]:
+              - generic "108-2813-C-008-046-M_陳郁人_Crystal structure and function analysis of ketol-acid reductoisomerase from Sulfolobus acidocaldariu.pdf" [ref=e1581]: Crystal structure and function analysis of ketol-acid reductoisomerase from Sulfolobus acidocaldariu
+              - generic [ref=e1582]: 就緒
+          - generic [ref=e1583]:
+            - checkbox [ref=e1584] [cursor=pointer]
+            - generic [ref=e1585] [cursor=pointer]:
+              - generic "107-2813-C-008-060-B_呂悦豪_TDAG8透過調節神經膠細胞來影響類風濕性關節炎後期的慢性疼痛.pdf" [ref=e1586]: TDAG8透過調節神經膠細胞來影響類風濕性關節炎後期的慢性疼痛
+              - generic [ref=e1587]: 就緒
+          - generic [ref=e1588]:
+            - checkbox [ref=e1589] [cursor=pointer]
+            - generic [ref=e1590] [cursor=pointer]:
+              - generic "107-2813-C-008-050-B_白里揚_利用大腸桿菌建構阿拉伯芥蛋白質法尼酯化系統.pdf" [ref=e1591]: 利用大腸桿菌建構阿拉伯芥蛋白質法尼酯化系統
+              - generic [ref=e1592]: 就緒
+          - generic [ref=e1593]:
+            - checkbox [ref=e1594] [cursor=pointer]
+            - generic [ref=e1595] [cursor=pointer]:
+              - generic "107-2813-C-008-049-B_張文音_探討G2A及OGR1在長期發炎性疼痛的協同作用.pdf" [ref=e1596]: 探討G2A及OGR1在長期發炎性疼痛的協同作用
+              - generic [ref=e1597]: 就緒
+          - generic [ref=e1598]:
+            - checkbox [ref=e1599] [cursor=pointer]
+            - generic [ref=e1600] [cursor=pointer]:
+              - generic "107-2813-C-008-048-B_廖晉頡_探討Bhlhe40對過氧化氫體脂肪酸代謝酵素Acox1表現的調控.pdf" [ref=e1601]: 探討Bhlhe40對過氧化氫體脂肪酸代謝酵素Acox1表現的調控
+              - generic [ref=e1602]: 就緒
+          - generic [ref=e1603]:
+            - checkbox [ref=e1604] [cursor=pointer]
+            - generic [ref=e1605] [cursor=pointer]:
+              - generic "107-2813-C-008-047-B_陳彥如_解開人類粒線體alanyl-tRNA synthetase辨認tRNA的機制.pdf" [ref=e1606]: 解開人類粒線體alanyl-tRNA synthetase辨認tRNA的機制
+              - generic [ref=e1607]: 就緒
+          - generic [ref=e1608]:
+            - checkbox [ref=e1609] [cursor=pointer]
+            - generic [ref=e1610] [cursor=pointer]:
+              - generic "107-2813-C-008-045-B_吳芸茜_OsRZFP34基因與上游調控因子OsHSFB4b及OsHSFB2b的作用關係之分析.pdf" [ref=e1611]: OsRZFP34基因與上游調控因子OsHSFB4b及OsHSFB2b的作用關係之分析
+              - generic [ref=e1612]: 就緒
+          - generic [ref=e1613]:
+            - checkbox [ref=e1614] [cursor=pointer]
+            - generic [ref=e1615] [cursor=pointer]:
+              - generic "106-2813-C-008-032-B_葉芷瑄_探討Phosphodiesterase 4B對於樹突細胞分化與功能的調控作用.pdf" [ref=e1616]: 探討Phosphodiesterase 4B對於樹突細胞分化與功能的調控作用
+              - generic [ref=e1617]: 就緒
+          - generic [ref=e1618]:
+            - checkbox [ref=e1619] [cursor=pointer]
+            - generic [ref=e1620] [cursor=pointer]:
+              - generic "106-2813-C-008-031-B_郭圓圓_探討生物素化對蛋白質結構及功能的影響.pdf" [ref=e1621]: 探討生物素化對蛋白質結構及功能的影響
+              - generic [ref=e1622]: 就緒
+          - generic [ref=e1623]:
+            - checkbox [ref=e1624] [cursor=pointer]
+            - generic [ref=e1625] [cursor=pointer]:
+              - generic "104-2815-C-008-006-B_謝宗佑_Gln-tRNAGln in mitochondria of Schizosaccharomyces pombe.pdf" [ref=e1626]: Gln-tRNAGln in mitochondria of Schizosaccharomyces pombe
+              - generic [ref=e1627]: 就緒
+          - generic [ref=e1628]:
+            - checkbox [ref=e1629] [cursor=pointer]
+            - generic [ref=e1630] [cursor=pointer]:
+              - generic "113-2813-C-008-087-E_璩志家_中等溫度CO2捕獲的鎂基碳化煅燒循環技術開發研究.pdf" [ref=e1631]: 中等溫度CO2捕獲的鎂基碳化煅燒循環技術開發研究
+              - generic [ref=e1632]: 就緒
+          - generic [ref=e1633]:
+            - checkbox [ref=e1634] [cursor=pointer]
+            - generic [ref=e1635] [cursor=pointer]:
+              - generic "113-2813-C-008-007-M_邱媛婕_外加磁場對FeBO_3晶體晶格震動影響的Raman光譜 研究.pdf" [ref=e1636]: 外加磁場對FeBO_3晶體晶格震動影響的Raman光譜 研究
+              - generic [ref=e1637]: 就緒
+          - generic [ref=e1638]:
+            - checkbox [ref=e1639] [cursor=pointer]
+            - generic [ref=e1640] [cursor=pointer]:
+              - generic "113-2813-C-008-006-M_林東誼_Search for Higgs pair production in final states with two bottom quarks, a Z boson and a photon.pdf" [ref=e1641]: Search for Higgs pair production in final states with two bottom quarks, a Z boson and a photon
+              - generic [ref=e1642]: 就緒
+          - generic [ref=e1643]:
+            - checkbox [ref=e1644] [cursor=pointer]
+            - generic [ref=e1645] [cursor=pointer]:
+              - generic "112-2813-C-008-043-E_施凱文_在EIT共振腔中導入泵浦雷射形成光放大器之數值模擬.pdf" [ref=e1646]: 在EIT共振腔中導入泵浦雷射形成光放大器之數值模擬
+              - generic [ref=e1647]: 就緒
+          - generic [ref=e1648]:
+            - checkbox [ref=e1649] [cursor=pointer]
+            - generic [ref=e1650] [cursor=pointer]:
+              - generic "112-2813-C-008-031-M_曾舜琳_The formation of complex organic molecules via energetic electrons irradiation of astrophysical ices.pdf" [ref=e1651]: The formation of complex organic molecules via energetic electrons irradiation of astrophysical ices
+              - generic [ref=e1652]: 就緒
+          - generic [ref=e1653]:
+            - checkbox [ref=e1654] [cursor=pointer]
+            - generic [ref=e1655] [cursor=pointer]:
+              - generic "112-2813-C-008-028-M_張寶容_Measurement of the electroweak-induced γγ VBS production in pp collisions at CMS.pdf" [ref=e1656]: Measurement of the electroweak-induced γγ VBS production in pp collisions at CMS
+              - generic [ref=e1657]: 就緒
+          - generic [ref=e1658]:
+            - checkbox [ref=e1659] [cursor=pointer]
+            - generic [ref=e1660] [cursor=pointer]:
+              - generic "112-2813-C-008-027-M_林于軒_探討一維與二維情況下不同溫度分佈與位能改變對粒子流與機率分佈的影響.pdf" [ref=e1661]: 探討一維與二維情況下不同溫度分佈與位能改變對粒子流與機率分佈的影響
+              - generic [ref=e1662]: 就緒
+          - generic [ref=e1663]:
+            - checkbox [ref=e1664] [cursor=pointer]
+            - generic [ref=e1665] [cursor=pointer]:
+              - generic "112-2813-C-008-006-M_彭柏瑋_摻雜 Mn 、Cr、Fe之鈉電池材料MoS2於磁場下之性能研究.pdf" [ref=e1666]: 摻雜 Mn 、Cr、Fe之鈉電池材料MoS2於磁場下之性能研究
+              - generic [ref=e1667]: 就緒
+          - generic [ref=e1668]:
+            - checkbox [ref=e1669] [cursor=pointer]
+            - generic [ref=e1670] [cursor=pointer]:
+              - generic "111-2813-C-008-002-M_吳冠禛_The Role of Alkali Metal in the Growth of Tungsten Disulfide through Chemical Vapor Deposition.pdf" [ref=e1671]: The Role of Alkali Metal in the Growth of Tungsten Disulfide through Chemical Vapor Deposition
+              - generic [ref=e1672]: 就緒
+          - generic [ref=e1673]:
+            - checkbox [ref=e1674] [cursor=pointer]
+            - generic [ref=e1675] [cursor=pointer]:
+              - generic "110-2813-C-008-040-M_葉唐喬_以石墨烯為基底之二維材料的成長與檢測.pdf" [ref=e1676]: 以石墨烯為基底之二維材料的成長與檢測
+              - generic [ref=e1677]: 就緒
+          - generic [ref=e1678]:
+            - checkbox [ref=e1679] [cursor=pointer]
+            - generic [ref=e1680] [cursor=pointer]:
+              - generic "110-2813-C-008-021-M_陳冠宇_Optimization of JPA instantaneous bandwidth via printed circuit board impedance transformer.pdf" [ref=e1681]: Optimization of JPA instantaneous bandwidth via printed circuit board impedance transformer
+              - generic [ref=e1682]: 就緒
+          - generic [ref=e1683]:
+            - checkbox [ref=e1684] [cursor=pointer]
+            - generic [ref=e1685] [cursor=pointer]:
+              - generic "110-2813-C-008-020-M_周禹璇_The search of Higgs boson decaying into a Z boson and one photon at CMS for LHC Run-3.pdf" [ref=e1686]: The search of Higgs boson decaying into a Z boson and one photon at CMS for LHC Run-3
+              - generic [ref=e1687]: 就緒
+          - generic [ref=e1688]:
+            - checkbox [ref=e1689] [cursor=pointer]
+            - generic [ref=e1690] [cursor=pointer]:
+              - generic "110-2813-C-008-019-M_黃信雯_Control the kinesin-1 step with electrophoretic force.pdf" [ref=e1691]: Control the kinesin-1 step with electrophoretic force
+              - generic [ref=e1692]: 就緒
+          - generic [ref=e1693]:
+            - checkbox [ref=e1694] [cursor=pointer]
+            - generic [ref=e1695] [cursor=pointer]:
+              - generic "110-2813-C-008-018-M_徐嘉駿_Realization of the microscopic heat engine governed by the oscillatory noise.pdf" [ref=e1696]: Realization of the microscopic heat engine governed by the oscillatory noise
+              - generic [ref=e1697]: 就緒
+          - generic [ref=e1698]:
+            - checkbox [ref=e1699] [cursor=pointer]
+            - generic [ref=e1700] [cursor=pointer]:
+              - generic "109-2813-C-008-042-M_周禹璇_不同入射角度的渺子通量與天氣變化之關係.pdf" [ref=e1701]: 不同入射角度的渺子通量與天氣變化之關係
+              - generic [ref=e1702]: 就緒
+          - generic [ref=e1703]:
+            - checkbox [ref=e1704] [cursor=pointer]
+            - generic [ref=e1705] [cursor=pointer]:
+              - generic "108-2813-C-008-015-M_施承瑋_The luminosity calorimeter at CEPC.pdf" [ref=e1706]: The luminosity calorimeter at CEPC
+              - generic [ref=e1707]: 就緒
+          - generic [ref=e1708]:
+            - checkbox [ref=e1709] [cursor=pointer]
+            - generic [ref=e1710] [cursor=pointer]:
+              - generic "108-2813-C-008-014-M_廖育資_大面積懸浮石墨烯作為雷射之靶材使離子加速.pdf" [ref=e1711]: 大面積懸浮石墨烯作為雷射之靶材使離子加速
+              - generic [ref=e1712]: 就緒
+          - generic [ref=e1713]:
+            - checkbox [ref=e1714] [cursor=pointer]
+            - generic [ref=e1715] [cursor=pointer]:
+              - generic "108-2813-C-008-013-M_何昕玫_Strain effect on the edge states of HfSe2 nanoribbons.pdf" [ref=e1716]: Strain effect on the edge states of HfSe2 nanoribbons
+              - generic [ref=e1717]: 就緒
+          - generic [ref=e1718]:
+            - checkbox [ref=e1719] [cursor=pointer]
+            - generic [ref=e1720] [cursor=pointer]:
+              - generic "107-2813-C-008-054-M_林冠男_Unruh Effects for Kerr-Newman Black Holes.pdf" [ref=e1721]: Unruh Effects for Kerr-Newman Black Holes
+              - generic [ref=e1722]: 就緒
+          - generic [ref=e1723]:
+            - checkbox [ref=e1724] [cursor=pointer]
+            - generic [ref=e1725] [cursor=pointer]:
+              - generic "107-2813-C-008-053-M_葉智翔_Study of the Calorimeter Performance for Future Colliders.pdf" [ref=e1726]: Study of the Calorimeter Performance for Future Colliders
+              - generic [ref=e1727]: 就緒
+          - generic [ref=e1728]:
+            - checkbox [ref=e1729] [cursor=pointer]
+            - generic [ref=e1730] [cursor=pointer]:
+              - generic "107-2813-C-008-007-M_連士權_Spin transport calculation in spin filter tunnel junction- Tight-binding model with magnetic field.pdf" [ref=e1731]: Spin transport calculation in spin filter tunnel junction- Tight-binding model with magnetic field
+              - generic [ref=e1732]: 就緒
+          - generic [ref=e1733]:
+            - checkbox [ref=e1734] [cursor=pointer]
+            - generic [ref=e1735] [cursor=pointer]:
+              - generic "104-2815-C-008-033-M_汪本璿_Search for excited electrons in an electron and a photon final state in pp collisions at √s = 13 TeV.pdf" [ref=e1736]: Search for excited electrons in an electron and a photon final state in pp collisions at √s = 13 TeV
+              - generic [ref=e1737]: 就緒
+          - generic [ref=e1738]:
+            - checkbox [ref=e1739] [cursor=pointer]
+            - generic [ref=e1740] [cursor=pointer]:
+              - generic "104-2815-C-008-031-M_劉為尹_Search for a Higgs boson decaying into a Z and a photon in pp collisions at √s=13 TeV.pdf" [ref=e1741]: Search for a Higgs boson decaying into a Z and a photon in pp collisions at √s=13 TeV
+              - generic [ref=e1742]: 就緒
+          - generic [ref=e1743]:
+            - checkbox [ref=e1744] [cursor=pointer]
+            - generic [ref=e1745] [cursor=pointer]:
+              - generic "104-2815-C-008-012-M_夏于耀_在氮化鎵GaN表面上白金奈米粒子之水的分解反應.pdf" [ref=e1746]: 在氮化鎵GaN表面上白金奈米粒子之水的分解反應
+              - generic [ref=e1747]: 就緒
+          - generic [ref=e1748]:
+            - checkbox [ref=e1749] [cursor=pointer]
+            - generic [ref=e1750] [cursor=pointer]:
+              - generic "105-2815-C-008-028-M_王慧瑀_Capitalism and Sustainability_ The Case of Air Pollution in Taiwan.pdf" [ref=e1751]: Capitalism and Sustainability_ The Case of Air Pollution in Taiwan
+              - generic [ref=e1752]: 就緒
+          - generic [ref=e1753]:
+            - checkbox [ref=e1754] [cursor=pointer]
+            - generic [ref=e1755] [cursor=pointer]:
+              - generic "112-2813-C-008-008-H_蘇柏誠_焦慮與資本：塞托（Michel de Certeau）對於六八運動的看法.pdf" [ref=e1756]: 焦慮與資本：塞托（Michel de Certeau）對於六八運動的看法
+              - generic [ref=e1757]: 就緒
+          - generic [ref=e1758]:
+            - checkbox [ref=e1759] [cursor=pointer]
+            - generic [ref=e1760] [cursor=pointer]:
+              - generic "113-2813-C-008-033-M_許呈茂_利用SWMM模式評估低衝擊開發的減洪效益-以台中市沙鹿區為例.pdf" [ref=e1761]: 利用SWMM模式評估低衝擊開發的減洪效益-以台中市沙鹿區為例
+              - generic [ref=e1762]: 就緒
+          - generic [ref=e1763]:
+            - checkbox [ref=e1764] [cursor=pointer]
+            - generic [ref=e1765] [cursor=pointer]:
+              - generic "109-2813-C-008-039-M_邱文昱_乾旱事件對森林水文循環與能量收支之影響.pdf" [ref=e1766]: 乾旱事件對森林水文循環與能量收支之影響
+              - generic [ref=e1767]: 就緒
+          - generic [ref=e1768]:
+            - checkbox [ref=e1769] [cursor=pointer]
+            - generic [ref=e1770] [cursor=pointer]:
+              - generic "108-2813-C-008-057-M_林昱廷_建立大氣水文因子對於空氣污染影響之貝氏機器學習模式.pdf" [ref=e1771]: 建立大氣水文因子對於空氣污染影響之貝氏機器學習模式
+              - generic [ref=e1772]: 就緒
+          - generic [ref=e1773]:
+            - checkbox [ref=e1774] [cursor=pointer]
+            - generic [ref=e1775] [cursor=pointer]:
+              - generic "113-2813-C-008-079-E_郭兆明_骨整合檢測子系統傳遞函數等效電路探討.pdf" [ref=e1776]: 骨整合檢測子系統傳遞函數等效電路探討
+              - generic [ref=e1777]: 就緒
+          - generic [ref=e1778]:
+            - checkbox [ref=e1779] [cursor=pointer]
+            - generic [ref=e1780] [cursor=pointer]:
+              - generic "113-2813-C-008-051-E_陳泓任_以無人機偵測校園違規停放車輛之研究.pdf" [ref=e1781]: 以無人機偵測校園違規停放車輛之研究
+              - generic [ref=e1782]: 就緒
+          - generic [ref=e1783]:
+            - checkbox [ref=e1784] [cursor=pointer]
+            - generic [ref=e1785] [cursor=pointer]:
+              - generic "113-2813-C-008-042-E_蘇姵瑄_超低氧矽單晶之柴氏長晶生長法.pdf" [ref=e1786]: 超低氧矽單晶之柴氏長晶生長法
+              - generic [ref=e1787]: 就緒
+          - generic [ref=e1788]:
+            - checkbox [ref=e1789] [cursor=pointer]
+            - generic [ref=e1790] [cursor=pointer]:
+              - generic "113-2813-C-008-009-H_鄭凱倫_智慧工廠模組化教具整合製造執行系統之開發與應用.pdf" [ref=e1791]: 智慧工廠模組化教具整合製造執行系統之開發與應用
+              - generic [ref=e1792]: 就緒
+          - generic [ref=e1793]:
+            - checkbox [ref=e1794] [cursor=pointer]
+            - generic [ref=e1795] [cursor=pointer]:
+              - generic "112-2813-C-008-034-E_許雅惠_改良並優化電_拉伸複合式刺激生物反應器 Improvement and Opti.pdf" [ref=e1796]: 改良並優化電_拉伸複合式刺激生物反應器 Improvement and Opti
+              - generic [ref=e1797]: 就緒
+          - generic [ref=e1798]:
+            - checkbox [ref=e1799] [cursor=pointer]
+            - generic [ref=e1800] [cursor=pointer]:
+              - generic "111-2813-C-008-001-E_顏靖家_骨整合檢測裝置系統傳遞函數探討與驗證.pdf" [ref=e1801]: 骨整合檢測裝置系統傳遞函數探討與驗證
+              - generic [ref=e1802]: 就緒
+          - generic [ref=e1803]:
+            - checkbox [ref=e1804] [cursor=pointer]
+            - generic [ref=e1805] [cursor=pointer]:
+              - generic "110-2813-C-008-071-E_李玟昀_薄玻璃之雷射強化技術研究 (Research on Laser Strength.pdf" [ref=e1806]: 薄玻璃之雷射強化技術研究 (Research on Laser Strength
+              - generic [ref=e1807]: 就緒
+          - generic [ref=e1808]:
+            - checkbox [ref=e1809] [cursor=pointer]
+            - generic [ref=e1810] [cursor=pointer]:
+              - generic "110-2813-C-008-058-E_徐郁真_建築物周圍熱流場模擬及其室外人體舒適度分析-以中大國民運動中心為例.pdf" [ref=e1811]: 建築物周圍熱流場模擬及其室外人體舒適度分析-以中大國民運動中心為例
+              - generic [ref=e1812]: 就緒
+          - generic [ref=e1813]:
+            - checkbox [ref=e1814] [cursor=pointer]
+            - generic [ref=e1815] [cursor=pointer]:
+              - generic "109-2813-C-008-016-E_陳姵如_多孔性介質燃燒器實作量測與回饋控制.pdf" [ref=e1816]: 多孔性介質燃燒器實作量測與回饋控制
+              - generic [ref=e1817]: 就緒
+          - generic [ref=e1818]:
+            - checkbox [ref=e1819] [cursor=pointer]
+            - generic [ref=e1820] [cursor=pointer]:
+              - generic "109-2813-C-008-015-E_程朝略_慣性感測單元動態校正問題探討.pdf" [ref=e1821]: 慣性感測單元動態校正問題探討
+              - generic [ref=e1822]: 就緒
+          - generic [ref=e1823]:
+            - checkbox [ref=e1824] [cursor=pointer]
+            - generic [ref=e1825] [cursor=pointer]:
+              - generic "109-2813-C-008-014-E_曾柏翔_應用多體動力學及離散元法進行轉子動平衡及抑振模擬及分析.pdf" [ref=e1826]: 應用多體動力學及離散元法進行轉子動平衡及抑振模擬及分析
+              - generic [ref=e1827]: 就緒
+          - generic [ref=e1828]:
+            - checkbox [ref=e1829] [cursor=pointer]
+            - generic [ref=e1830] [cursor=pointer]:
+              - generic "109-2813-C-008-013-E_徐暐傑_鎖附扭力對於植體穩固度影響探討.pdf" [ref=e1831]: 鎖附扭力對於植體穩固度影響探討
+              - generic [ref=e1832]: 就緒
+          - generic [ref=e1833]:
+            - checkbox [ref=e1834] [cursor=pointer]
+            - generic [ref=e1835] [cursor=pointer]:
+              - generic "108-2813-C-008-028-E_陳冠睿_儲槽中粉體流動與排放行為之研究.pdf" [ref=e1836]: 儲槽中粉體流動與排放行為之研究
+              - generic [ref=e1837]: 就緒
+          - generic [ref=e1838]:
+            - checkbox [ref=e1839] [cursor=pointer]
+            - generic [ref=e1840] [cursor=pointer]:
+              - generic "108-2813-C-008-023-E_范育銘_半主動式避震器之設計與實作.pdf" [ref=e1841]: 半主動式避震器之設計與實作
+              - generic [ref=e1842]: 就緒
+          - generic [ref=e1843]:
+            - checkbox [ref=e1844] [cursor=pointer]
+            - generic [ref=e1845] [cursor=pointer]:
+              - generic "108-2813-C-008-022-E_楊博淋_雙慣性感測器之運動距離量測與軌跡追蹤研究.pdf" [ref=e1846]: 雙慣性感測器之運動距離量測與軌跡追蹤研究
+              - generic [ref=e1847]: 就緒
+          - generic [ref=e1848]:
+            - checkbox [ref=e1849] [cursor=pointer]
+            - generic [ref=e1850] [cursor=pointer]:
+              - generic "107-2813-C-008-029-E_陳瑋潔_貧油預混甲烷燃氣於模擬高空低壓環境之最小引燃能量實作量測.pdf" [ref=e1851]: 貧油預混甲烷燃氣於模擬高空低壓環境之最小引燃能量實作量測
+              - generic [ref=e1852]: 就緒
+          - generic [ref=e1853]:
+            - checkbox [ref=e1854] [cursor=pointer]
+            - generic [ref=e1855] [cursor=pointer]:
+              - generic "107-2813-C-008-010-E_黃志源_使用三氯矽甲烷於電漿輔助化學氣相沉積系統(PECVD)本質矽薄膜品質(電性與結晶率量測)與電漿放射光譜診斷.pdf" [ref=e1856]: 使用三氯矽甲烷於電漿輔助化學氣相沉積系統(PECVD)本質矽薄膜品質(電性與結晶率量測)與電漿放射光譜診斷
+              - generic [ref=e1857]: 就緒
+          - generic [ref=e1858]:
+            - checkbox [ref=e1859] [cursor=pointer]
+            - generic [ref=e1860] [cursor=pointer]:
+              - generic "106-2813-C-008-003-E_楊培弘_電磁式激振暨響應量測系統特性確認研究.pdf" [ref=e1861]: 電磁式激振暨響應量測系統特性確認研究
+              - generic [ref=e1862]: 就緒
+          - generic [ref=e1863]:
+            - checkbox [ref=e1864] [cursor=pointer]
+            - generic [ref=e1865] [cursor=pointer]:
+              - generic "104-2815-C-008-027-E_姜彥丞_主動式動態輔助機械手臂之研究.pdf" [ref=e1866]: 主動式動態輔助機械手臂之研究
+              - generic [ref=e1867]: 就緒
+          - generic [ref=e1868]:
+            - checkbox [ref=e1869] [cursor=pointer]
+            - generic [ref=e1870] [cursor=pointer]:
+              - generic "104-2815-C-008-015-E_林柏宏_汽油主要參考燃氣燃燒速率實作學習與量測分析.pdf" [ref=e1871]: 汽油主要參考燃氣燃燒速率實作學習與量測分析
+              - generic [ref=e1872]: 就緒
+          - generic [ref=e1873]:
+            - checkbox [ref=e1874] [cursor=pointer]
+            - generic [ref=e1875] [cursor=pointer]:
+              - generic "110-2813-C-008-074-E_吳明柔_雷射輔助製作微型多孔發泡鎳固態超級電容器.pdf" [ref=e1876]: 雷射輔助製作微型多孔發泡鎳固態超級電容器
+              - generic [ref=e1877]: 就緒
+          - generic [ref=e1878]:
+            - checkbox [ref=e1879] [cursor=pointer]
+            - generic [ref=e1880] [cursor=pointer]:
+              - generic "110-2813-C-008-009-E_陳啟銘_銅鋅奈米觸媒應用於電化學二氧化碳還原反應之研究.pdf" [ref=e1881]: 銅鋅奈米觸媒應用於電化學二氧化碳還原反應之研究
+              - generic [ref=e1882]: 就緒
+          - generic [ref=e1883]:
+            - checkbox [ref=e1884] [cursor=pointer]
+            - generic [ref=e1885] [cursor=pointer]:
+              - generic "104-2815-C-008-016-E_王怡雯_活性碳的表面積與官能基對其超高電容性質的影響.pdf" [ref=e1886]: 活性碳的表面積與官能基對其超高電容性質的影響
+              - generic [ref=e1887]: 就緒
+          - generic [ref=e1888]:
+            - checkbox [ref=e1889] [cursor=pointer]
+            - generic [ref=e1890] [cursor=pointer]:
+              - generic "108-2813-C-008-011-E_梁中瀚_虛擬超市結合多重生理感測器訊號使用機器學習分析之認知功能障礙與阿茲海默症評估與訓練系統設計.pdf" [ref=e1891]: 虛擬超市結合多重生理感測器訊號使用機器學習分析之認知功能障礙與阿茲海默症評估與訓練系統設計
+              - generic [ref=e1892]: 就緒
+          - generic [ref=e1893]:
+            - checkbox [ref=e1894] [cursor=pointer]
+            - generic [ref=e1895] [cursor=pointer]:
+              - generic "113-2813-C-008-035-H_陳姿穎_衝突與情感的交織：深究鍾孟宏電影中的暴力與親情——以《停車》、《一路順風》、《陽光普照》為例.pdf" [ref=e1896]: 衝突與情感的交織：深究鍾孟宏電影中的暴力與親情——以《停車》、《一路順風》、《陽光普照》為例
+              - generic [ref=e1897]: 就緒
+          - generic [ref=e1898]:
+            - checkbox [ref=e1899] [cursor=pointer]
+            - generic [ref=e1900] [cursor=pointer]:
+              - generic "111-2813-C-008-065-M_賴泓瑜_員工股票選擇權之數學建模與評價研究.pdf" [ref=e1901]: 員工股票選擇權之數學建模與評價研究
+              - generic [ref=e1902]: 就緒
+          - generic [ref=e1903]:
+            - checkbox [ref=e1904] [cursor=pointer]
+            - generic [ref=e1905] [cursor=pointer]:
+              - generic "109-2813-C-008-031-B_徐若瑄_白內障手術水晶體規格選用與術後度數預測.pdf" [ref=e1906]: 白內障手術水晶體規格選用與術後度數預測
+              - generic [ref=e1907]: 就緒
+          - generic [ref=e1908]:
+            - checkbox [ref=e1909] [cursor=pointer]
+            - generic [ref=e1910] [cursor=pointer]:
+              - generic "108-2813-C-008-051-M_林育愷_基於頻譜與機器學習之聲紋分析及音訊強化.pdf" [ref=e1911]: 基於頻譜與機器學習之聲紋分析及音訊強化
+              - generic [ref=e1912]: 就緒
+          - generic [ref=e1913]:
+            - checkbox [ref=e1914] [cursor=pointer]
+            - generic [ref=e1915] [cursor=pointer]:
+              - generic "113-2813-C-008-080-M_余柏翰_含水層壓縮力學機制分析-以雲林土庫地層為例.pdf" [ref=e1916]: 含水層壓縮力學機制分析-以雲林土庫地層為例
+              - generic [ref=e1917]: 就緒
+          - generic [ref=e1918]:
+            - checkbox [ref=e1919] [cursor=pointer]
+            - generic [ref=e1920] [cursor=pointer]:
+              - generic "112-2813-C-008-067-M_薛里杉_如何以現有的地質條件估算台灣沿岸地下水補注量.pdf" [ref=e1921]: 如何以現有的地質條件估算台灣沿岸地下水補注量
+              - generic [ref=e1922]: 就緒
+          - generic [ref=e1923]:
+            - checkbox [ref=e1924] [cursor=pointer]
+            - generic [ref=e1925] [cursor=pointer]:
+              - generic "112-2813-C-008-063-M_吳昀容_臺灣花東地震對於彰雲地區地層沉陷變化影響之初探.pdf" [ref=e1926]: 臺灣花東地震對於彰雲地區地層沉陷變化影響之初探
+              - generic [ref=e1927]: 就緒
+          - generic [ref=e1928]:
+            - checkbox [ref=e1929] [cursor=pointer]
+            - generic [ref=e1930] [cursor=pointer]:
+              - generic "109-2813-C-008-041-M_陳映涵_地震波與水文地質特性對地下水文影響之研究-以2016美濃地震為例.pdf" [ref=e1931]: 地震波與水文地質特性對地下水文影響之研究-以2016美濃地震為例
+              - generic [ref=e1932]: 就緒
+          - generic [ref=e1933]:
+            - checkbox [ref=e1934] [cursor=pointer]
+            - generic [ref=e1935] [cursor=pointer]:
+              - generic "108-2813-C-008-017-M_陳汶柔_以健康風險評估為基礎劃定蘭陽平原地下水作為飲用水的水質安全區.pdf" [ref=e1936]: 以健康風險評估為基礎劃定蘭陽平原地下水作為飲用水的水質安全區
+              - generic [ref=e1937]: 就緒
+          - generic [ref=e1938]:
+            - checkbox [ref=e1939] [cursor=pointer]
+            - generic [ref=e1940] [cursor=pointer]:
+              - generic "107-2813-C-008-041-M_邱正鈞_深度學習模型在地下水位預測的應用.pdf" [ref=e1941]: 深度學習模型在地下水位預測的應用
+              - generic [ref=e1942]: 就緒
+          - generic [ref=e1943]:
+            - checkbox [ref=e1944] [cursor=pointer]
+            - generic [ref=e1945] [cursor=pointer]:
+              - generic "106-2813-C-008-004-M_彭睿平_利用數值模式進行滲透性反應牆-含水層系統的功能評估.pdf" [ref=e1946]: 利用數值模式進行滲透性反應牆-含水層系統的功能評估
+              - generic [ref=e1947]: 就緒
+          - generic [ref=e1948]:
+            - checkbox [ref=e1949] [cursor=pointer]
+            - generic [ref=e1950] [cursor=pointer]:
+              - generic "113-2813-C-008-054-H_張立甫_華人族裔經濟之研究：以美國加州為例.pdf" [ref=e1951]: 華人族裔經濟之研究：以美國加州為例
+              - generic [ref=e1952]: 就緒
+          - generic [ref=e1953]:
+            - checkbox [ref=e1954] [cursor=pointer]
+            - generic [ref=e1955] [cursor=pointer]:
+              - generic "110-2813-C-008-067-H_匡晉廷_硬頸細倈人：客家男同志的族群交織經驗.pdf" [ref=e1956]: 硬頸細倈人：客家男同志的族群交織經驗
+              - generic [ref=e1957]: 就緒
+          - generic [ref=e1958]:
+            - checkbox [ref=e1959] [cursor=pointer]
+            - generic [ref=e1960] [cursor=pointer]:
+              - generic "110-2813-C-008-062-H_江卓安_臺灣桃園楊梅客家話與民間故事研究調查.pdf" [ref=e1961]: 臺灣桃園楊梅客家話與民間故事研究調查
+              - generic [ref=e1962]: 就緒
+          - generic [ref=e1963]:
+            - checkbox [ref=e1964] [cursor=pointer]
+            - generic [ref=e1965] [cursor=pointer]:
+              - generic "106-2813-C-008-017-H_羅程詠_兩岸海陸客語受當地強勢方言影響層面之研究.pdf" [ref=e1966]: 兩岸海陸客語受當地強勢方言影響層面之研究
+              - generic [ref=e1967]: 就緒
+          - generic [ref=e1968]:
+            - checkbox [ref=e1969] [cursor=pointer]
+            - generic [ref=e1970] [cursor=pointer]:
+              - generic "106-2813-C-008-008-H_林怡欣_眷村空間中的女性社會權力──以桃園市中壢區馬祖新村為例.pdf" [ref=e1971]: 眷村空間中的女性社會權力──以桃園市中壢區馬祖新村為例
+              - generic [ref=e1972]: 就緒
+          - generic [ref=e1973]:
+            - checkbox [ref=e1974] [cursor=pointer]
+            - generic [ref=e1975] [cursor=pointer]:
+              - generic "110-2813-C-008-022-M_廖柏翰_火山噴發之大氣層與電離層效應.pdf" [ref=e1976]: 火山噴發之大氣層與電離層效應
+              - generic [ref=e1977]: 就緒
+          - generic [ref=e1978]:
+            - checkbox [ref=e1979] [cursor=pointer]
+            - generic [ref=e1980] [cursor=pointer]:
+              - generic "109-2813-C-008-043-M_柯景元_福爾摩沙衛星三號與七號以及Swarm磁衛星研究地磁軸移動與電離層電磁變化.pdf" [ref=e1981]: 福爾摩沙衛星三號與七號以及Swarm磁衛星研究地磁軸移動與電離層電磁變化
+              - generic [ref=e1982]: 就緒
+          - generic [ref=e1983]:
+            - checkbox [ref=e1984] [cursor=pointer]
+            - generic [ref=e1985] [cursor=pointer]:
+              - generic "108-2813-C-008-034-M_甘凱文_利用福爾摩沙衛星五號先進電離層探測儀觀測太空天氣.pdf" [ref=e1986]: 利用福爾摩沙衛星五號先進電離層探測儀觀測太空天氣
+              - generic [ref=e1987]: 就緒
+          - generic [ref=e1988]:
+            - checkbox [ref=e1989] [cursor=pointer]
+            - generic [ref=e1990] [cursor=pointer]:
+              - generic "113-2813-C-008-057-M_黃語婕_The Lung Cancer Incidence under PM2.5 Exposures from Machine Learning Approach in Taiwan.pdf" [ref=e1991]: The Lung Cancer Incidence under PM2.5 Exposures from Machine Learning Approach in Taiwan
+              - generic [ref=e1992]: 就緒
+          - generic [ref=e1993]:
+            - checkbox [ref=e1994] [cursor=pointer]
+            - generic [ref=e1995] [cursor=pointer]:
+              - generic "113-2813-C-008-008-M_王一森_觸感回饋手套之材料表面紋理訊號蒐集、分析與重現.pdf" [ref=e1996]: 觸感回饋手套之材料表面紋理訊號蒐集、分析與重現
+              - generic [ref=e1997]: 就緒
+          - generic [ref=e1998]:
+            - checkbox [ref=e1999] [cursor=pointer]
+            - generic [ref=e2000] [cursor=pointer]:
+              - generic "111-2813-C-008-003-M_張睿軒_利用霧運算及影像辨識進行十字路口交通狀況偵測及應用.pdf" [ref=e2001]: 利用霧運算及影像辨識進行十字路口交通狀況偵測及應用
+              - generic [ref=e2002]: 就緒
+          - generic [ref=e2003]:
+            - checkbox [ref=e2004] [cursor=pointer]
+            - generic [ref=e2005] [cursor=pointer]:
+              - generic "110-2813-C-008-017-M_潘品潔_利用衛載光達快篩數值高程模型已變異圖幅.pdf" [ref=e2006]: 利用衛載光達快篩數值高程模型已變異圖幅
+              - generic [ref=e2007]: 就緒
+          - generic [ref=e2008]:
+            - checkbox [ref=e2009] [cursor=pointer]
+            - generic [ref=e2010] [cursor=pointer]:
+              - generic "109-2813-C-008-010-E_呂振永_以超高解析衛星影像建置三維房屋模型.pdf" [ref=e2011]: 以超高解析衛星影像建置三維房屋模型
+              - generic [ref=e2012]: 就緒
+          - generic [ref=e2013]:
+            - checkbox [ref=e2014] [cursor=pointer]
+            - generic [ref=e2015] [cursor=pointer]:
+              - generic "107-2813-C-008-044-M_許又升_整合物聯網及語意網技術應用於CCTV攝影機跨影像移動物件追蹤.pdf" [ref=e2016]: 整合物聯網及語意網技術應用於CCTV攝影機跨影像移動物件追蹤
+              - generic [ref=e2017]: 就緒
+          - generic [ref=e2018]:
+            - checkbox [ref=e2019] [cursor=pointer]
+            - generic [ref=e2020] [cursor=pointer]:
+              - generic "107-2813-C-008-025-E_馬薇涵_自動化讀取處理Sentinel-3資料於近岸海洋測高.pdf" [ref=e2021]: 自動化讀取處理Sentinel-3資料於近岸海洋測高
+              - generic [ref=e2022]: 就緒
+          - generic [ref=e2023]:
+            - checkbox [ref=e2024] [cursor=pointer]
+            - generic [ref=e2025] [cursor=pointer]:
+              - generic "107-2813-C-008-023-E_李宣儀_運用無人機及影像套合法進行混凝土橋梁裂縫檢測.pdf" [ref=e2026]: 運用無人機及影像套合法進行混凝土橋梁裂縫檢測
+              - generic [ref=e2027]: 就緒
+          - generic [ref=e2028]:
+            - checkbox [ref=e2029] [cursor=pointer]
+            - generic [ref=e2030] [cursor=pointer]:
+              - generic "106-2813-C-008-014-E_陳子盈_巨量物聯網感測資源之即時處理架構.pdf" [ref=e2031]: 巨量物聯網感測資源之即時處理架構
+              - generic [ref=e2032]: 就緒
+          - generic [ref=e2033]:
+            - checkbox [ref=e2034] [cursor=pointer]
+            - generic [ref=e2035] [cursor=pointer]:
+              - generic "106-2813-C-008-011-M_洪晨語_使用衛星資料估算大氣深對流之垂直運動速度.pdf" [ref=e2036]: 使用衛星資料估算大氣深對流之垂直運動速度
+              - generic [ref=e2037]: 就緒
+          - generic [ref=e2038]:
+            - checkbox [ref=e2039] [cursor=pointer]
+            - generic [ref=e2040] [cursor=pointer]:
+              - generic "104-2815-C-008-035-E_施帛宏_利用GRACE衛星觀測孟加拉地下水變化.pdf" [ref=e2041]: 利用GRACE衛星觀測孟加拉地下水變化
+              - generic [ref=e2042]: 就緒
+          - generic [ref=e2043]:
+            - checkbox [ref=e2044] [cursor=pointer]
+            - generic [ref=e2045] [cursor=pointer]:
+              - generic "105-2815-C-008-026-M_李睿綺_羅賽塔彗星探測計畫-67P彗星地形研究.pdf" [ref=e2046]: 羅賽塔彗星探測計畫-67P彗星地形研究
+              - generic [ref=e2047]: 就緒
+          - generic [ref=e2048]:
+            - checkbox [ref=e2049] [cursor=pointer]
+            - generic [ref=e2050] [cursor=pointer]:
+              - generic "113-2813-C-008-058-M_江子揚_閃電頻率與可降水冰通量之相關性研究：TAHOPE午後對流降水個案分析.pdf" [ref=e2051]: 閃電頻率與可降水冰通量之相關性研究：TAHOPE午後對流降水個案分析
+              - generic [ref=e2052]: 就緒
+          - generic [ref=e2053]:
+            - checkbox [ref=e2054] [cursor=pointer]
+            - generic [ref=e2055] [cursor=pointer]:
+              - generic "109-2813-C-008-037-M_劉景岳_在多重尺度系統下如何利用雷達同化改善北台灣降雨預報.pdf" [ref=e2056]: 在多重尺度系統下如何利用雷達同化改善北台灣降雨預報
+              - generic [ref=e2057]: 就緒
+          - generic [ref=e2058]:
+            - checkbox [ref=e2059] [cursor=pointer]
+            - generic [ref=e2060] [cursor=pointer]:
+              - generic "107-2813-C-008-027-M_林凱翊_中壢地區空氣污染與霧微物理變化之觀測分析.pdf" [ref=e2061]: 中壢地區空氣污染與霧微物理變化之觀測分析
+              - generic [ref=e2062]: 就緒
+          - generic [ref=e2063]:
+            - checkbox [ref=e2064] [cursor=pointer]
+            - generic [ref=e2065] [cursor=pointer]:
+              - generic "107-2813-C-008-026-M_陳誼_利用群集分析討論高屏地區空氣汙染與天氣型態間的關聯.pdf" [ref=e2066]: 利用群集分析討論高屏地區空氣汙染與天氣型態間的關聯
+              - generic [ref=e2067]: 就緒
+          - generic [ref=e2068]:
+            - checkbox [ref=e2069] [cursor=pointer]
+            - generic [ref=e2070] [cursor=pointer]:
+              - generic "113-2813-C-008-083-M_柯亮羽_台南七股潟湖濕地沉積物甲烷與碳循環在藍碳系統的重要性.pdf" [ref=e2071]: 台南七股潟湖濕地沉積物甲烷與碳循環在藍碳系統的重要性
+              - generic [ref=e2072]: 就緒
+          - generic [ref=e2073]:
+            - checkbox [ref=e2074] [cursor=pointer]
+            - generic [ref=e2075] [cursor=pointer]:
+              - generic "113-2813-C-008-081-M_黃韋慈_過去40萬年以來造山運動及風化作用對海洋二氧化碳循環和全球氣候變遷的影響.pdf" [ref=e2076]: 過去40萬年以來造山運動及風化作用對海洋二氧化碳循環和全球氣候變遷的影響
+              - generic [ref=e2077]: 就緒
+          - generic [ref=e2078]:
+            - checkbox [ref=e2079] [cursor=pointer]
+            - generic [ref=e2080] [cursor=pointer]:
+              - generic "112-2813-C-008-062-M_張源澤_結合地電阻法探討鯉魚潭淺層地表的水文特性.pdf" [ref=e2081]: 結合地電阻法探討鯉魚潭淺層地表的水文特性
+              - generic [ref=e2082]: 就緒
+          - generic [ref=e2083]:
+            - checkbox [ref=e2084] [cursor=pointer]
+            - generic [ref=e2085] [cursor=pointer]:
+              - generic "110-2813-C-008-048-M_謝舒雲_由Formosa Array觀測ScS轉換波相(ScSp)探討琉球隱沒板塊形貌.pdf" [ref=e2086]: 由Formosa Array觀測ScS轉換波相(ScSp)探討琉球隱沒板塊形貌
+              - generic [ref=e2087]: 就緒
+          - generic [ref=e2088]:
+            - checkbox [ref=e2089] [cursor=pointer]
+            - generic [ref=e2090] [cursor=pointer]:
+              - generic "109-2813-C-008-040-M_許家寅_緲子影像成像術應用於分辨構造體的細部密度構造.pdf" [ref=e2091]: 緲子影像成像術應用於分辨構造體的細部密度構造
+              - generic [ref=e2092]: 就緒
+          - generic [ref=e2093]:
+            - checkbox [ref=e2094] [cursor=pointer]
+            - generic [ref=e2095] [cursor=pointer]:
+              - generic "104-2815-C-008-038-M_甘禮有_利用地震波交相關分析與雙差分定位方法研究梨山斷層地震構造特性.pdf" [ref=e2096]: 利用地震波交相關分析與雙差分定位方法研究梨山斷層地震構造特性
+              - generic [ref=e2097]: 就緒
+          - generic [ref=e2098]:
+            - checkbox [ref=e2099] [cursor=pointer]
+            - generic [ref=e2100] [cursor=pointer]:
+              - generic "113-2813-C-008-053-E_鄭雅云_多機器人協同合作應用於土木工程結構侷限空間內檢測之研究.pdf" [ref=e2101]: 多機器人協同合作應用於土木工程結構侷限空間內檢測之研究
+              - generic [ref=e2102]: 就緒
+          - generic [ref=e2103]:
+            - checkbox [ref=e2104] [cursor=pointer]
+            - generic [ref=e2105] [cursor=pointer]:
+              - generic "113-2813-C-008-052-E_林暉祐_整合EnergyPlus和Unity的建築視覺化能耗監測系統.pdf" [ref=e2106]: 整合EnergyPlus和Unity的建築視覺化能耗監測系統
+              - generic [ref=e2107]: 就緒
+          - generic [ref=e2108]:
+            - checkbox [ref=e2109] [cursor=pointer]
+            - generic [ref=e2110] [cursor=pointer]:
+              - generic "113-2813-C-008-050-E_陳祈軒_輪椅族通行於不同人行道鋪面振動暴露危害之初步研究.pdf" [ref=e2111]: 輪椅族通行於不同人行道鋪面振動暴露危害之初步研究
+              - generic [ref=e2112]: 就緒
+          - generic [ref=e2113]:
+            - checkbox [ref=e2114] [cursor=pointer]
+            - generic [ref=e2115] [cursor=pointer]:
+              - generic "113-2813-C-008-049-E_范芳瑜_冰塊在水流中會融化比較快嗎？.pdf" [ref=e2116]: 冰塊在水流中會融化比較快嗎？
+              - generic [ref=e2117]: 就緒
+          - generic [ref=e2118]:
+            - checkbox [ref=e2119] [cursor=pointer]
+            - generic [ref=e2120] [cursor=pointer]:
+              - generic "113-2813-C-008-048-E_景柏睿_以機器學習方法建立GNSS-R土壤含水量推估模式.pdf" [ref=e2121]: 以機器學習方法建立GNSS-R土壤含水量推估模式
+              - generic [ref=e2122]: 就緒
+          - generic [ref=e2123]:
+            - checkbox [ref=e2124] [cursor=pointer]
+            - generic [ref=e2125] [cursor=pointer]:
+              - generic "113-2813-C-008-047-E_沈頌凱_纜繩驅動3D列印平台與噴頭之振動分析與改善.pdf" [ref=e2126]: 纜繩驅動3D列印平台與噴頭之振動分析與改善
+              - generic [ref=e2127]: 就緒
+          - generic [ref=e2128]:
+            - checkbox [ref=e2129] [cursor=pointer]
+            - generic [ref=e2130] [cursor=pointer]:
+              - generic "113-2813-C-008-046-E_劉宇宸_利用物質點法探討混凝土裂縫生成機制.pdf" [ref=e2131]: 利用物質點法探討混凝土裂縫生成機制
+              - generic [ref=e2132]: 就緒
+          - generic [ref=e2133]:
+            - checkbox [ref=e2134] [cursor=pointer]
+            - generic [ref=e2135] [cursor=pointer]:
+              - generic "113-2813-C-008-045-E_陳延融_離岸風機檢測攀爬機器人之先期研究.pdf" [ref=e2136]: 離岸風機檢測攀爬機器人之先期研究
+              - generic [ref=e2137]: 就緒
+          - generic [ref=e2138]:
+            - checkbox [ref=e2139] [cursor=pointer]
+            - generic [ref=e2140] [cursor=pointer]:
+              - generic "113-2813-C-008-034-M_侯采彤_利用全球氣象再分析資料結合現地試驗進行海底地下水滲流研究以利永續水資源.pdf" [ref=e2141]: 利用全球氣象再分析資料結合現地試驗進行海底地下水滲流研究以利永續水資源
+              - generic [ref=e2142]: 就緒
+          - generic [ref=e2143]:
+            - checkbox [ref=e2144] [cursor=pointer]
+            - generic [ref=e2145] [cursor=pointer]:
+              - generic "112-2813-C-008-051-E_陳泰安_纜繩驅動懸吊式3D列印噴頭之分析與自動化控制.pdf" [ref=e2146]: 纜繩驅動懸吊式3D列印噴頭之分析與自動化控制
+              - generic [ref=e2147]: 就緒
+          - generic [ref=e2148]:
+            - checkbox [ref=e2149] [cursor=pointer]
+            - generic [ref=e2150] [cursor=pointer]:
+              - generic "112-2813-C-008-050-E_陳采柔_利用音波測量擋土牆內深層土壤含水量.pdf" [ref=e2151]: 利用音波測量擋土牆內深層土壤含水量
+              - generic [ref=e2152]: 就緒
+          - generic [ref=e2153]:
+            - checkbox [ref=e2154] [cursor=pointer]
+            - generic [ref=e2155] [cursor=pointer]:
+              - generic "112-2813-C-008-049-E_劉晏彤_以實驗方法探討材料內部結構組成與承載能力之關係.pdf" [ref=e2156]: 以實驗方法探討材料內部結構組成與承載能力之關係
+              - generic [ref=e2157]: 就緒
+          - generic [ref=e2158]:
+            - checkbox [ref=e2159] [cursor=pointer]
+            - generic [ref=e2160] [cursor=pointer]:
+              - generic "112-2813-C-008-048-E_廖國宏_聊天式建築節能建議系統.pdf" [ref=e2161]: 聊天式建築節能建議系統
+              - generic [ref=e2162]: 就緒
+          - generic [ref=e2163]:
+            - checkbox [ref=e2164] [cursor=pointer]
+            - generic [ref=e2165] [cursor=pointer]:
+              - generic "112-2813-C-008-047-E_祝子甯_結合微型紅外線熱像儀與微型機器學習技術於建築物外牆磁磚檢測之應用.pdf" [ref=e2166]: 結合微型紅外線熱像儀與微型機器學習技術於建築物外牆磁磚檢測之應用
+              - generic [ref=e2167]: 就緒
+          - generic [ref=e2168]:
+            - checkbox [ref=e2169] [cursor=pointer]
+            - generic [ref=e2170] [cursor=pointer]:
+              - generic "112-2813-C-008-046-E_葉子菱_使用輕量化卷積神經網路於螺栓鬆脫影像辨識之研究.pdf" [ref=e2171]: 使用輕量化卷積神經網路於螺栓鬆脫影像辨識之研究
+              - generic [ref=e2172]: 就緒
+          - generic [ref=e2173]:
+            - checkbox [ref=e2174] [cursor=pointer]
+            - generic [ref=e2175] [cursor=pointer]:
+              - generic "111-2813-C-008-066-E_賴宥蓉_以物質點法及分子動力學探討氣體擴散之尺寸效應.pdf" [ref=e2176]: 以物質點法及分子動力學探討氣體擴散之尺寸效應
+              - generic [ref=e2177]: 就緒
+          - generic [ref=e2178]:
+            - checkbox [ref=e2179] [cursor=pointer]
+            - generic [ref=e2180] [cursor=pointer]:
+              - generic "111-2813-C-008-049-E_陳資璇_電弧爐碴作為混凝土材料對結構工程性質影響及劣化預測模式研究.pdf" [ref=e2181]: 電弧爐碴作為混凝土材料對結構工程性質影響及劣化預測模式研究
+              - generic [ref=e2182]: 就緒
+          - generic [ref=e2183]:
+            - checkbox [ref=e2184] [cursor=pointer]
+            - generic [ref=e2185] [cursor=pointer]:
+              - generic "111-2813-C-008-048-E_洪憲証_纜繩驅動3D列印平台之分析模擬與控制技術探討.pdf" [ref=e2186]: 纜繩驅動3D列印平台之分析模擬與控制技術探討
+              - generic [ref=e2187]: 就緒
+          - generic [ref=e2188]:
+            - checkbox [ref=e2189] [cursor=pointer]
+            - generic [ref=e2190] [cursor=pointer]:
+              - generic "111-2813-C-008-047-E_黄怡樺_新冠肺炎疫情基礎式之觀光型全球交通行動服務(MaaS)之研究.pdf" [ref=e2191]: 新冠肺炎疫情基礎式之觀光型全球交通行動服務(MaaS)之研究
+              - generic [ref=e2192]: 就緒
+          - generic [ref=e2193]:
+            - checkbox [ref=e2194] [cursor=pointer]
+            - generic [ref=e2195] [cursor=pointer]:
+              - generic "111-2813-C-008-012-M_王昱升_震後引致邊坡滑動後形成堰塞湖壩體受滲流破壞模擬.pdf" [ref=e2196]: 震後引致邊坡滑動後形成堰塞湖壩體受滲流破壞模擬
+              - generic [ref=e2197]: 就緒
+          - generic [ref=e2198]:
+            - checkbox [ref=e2199] [cursor=pointer]
+            - generic [ref=e2200] [cursor=pointer]:
+              - generic "111-2813-C-008-011-M_賴睬淳_以貝氏網路模型建立地表與地下水資源聯合運用最佳化管理策略.pdf" [ref=e2201]: 以貝氏網路模型建立地表與地下水資源聯合運用最佳化管理策略
+              - generic [ref=e2202]: 就緒
+          - generic [ref=e2203]:
+            - checkbox [ref=e2204] [cursor=pointer]
+            - generic [ref=e2205] [cursor=pointer]:
+              - generic "110-2813-C-008-079-E_曾得瑋_利用機器學習於邊坡光學與熱影像融合之長期穩定性監測評估.pdf" [ref=e2206]: 利用機器學習於邊坡光學與熱影像融合之長期穩定性監測評估
+              - generic [ref=e2207]: 就緒
+          - generic [ref=e2208]:
+            - checkbox [ref=e2209] [cursor=pointer]
+            - generic [ref=e2210] [cursor=pointer]:
+              - generic "110-2813-C-008-078-E_張建達_基於低功耗微處理器機器學習於3D列印混凝土構件的缺陷檢測之研究.pdf" [ref=e2211]: 基於低功耗微處理器機器學習於3D列印混凝土構件的缺陷檢測之研究
+              - generic [ref=e2212]: 就緒
+          - generic [ref=e2213]:
+            - checkbox [ref=e2214] [cursor=pointer]
+            - generic [ref=e2215] [cursor=pointer]:
+              - generic "110-2813-C-008-077-E_林軒宇_鋼筋混凝土梁加設斜向鋼筋之研究.pdf" [ref=e2216]: 鋼筋混凝土梁加設斜向鋼筋之研究
+              - generic [ref=e2217]: 就緒
+          - generic [ref=e2218]:
+            - checkbox [ref=e2219] [cursor=pointer]
+            - generic [ref=e2220] [cursor=pointer]:
+              - generic "110-2813-C-008-076-E_陳約存_以旋轉壓實機模擬冷拌再生乳化瀝青混凝土現地壓實及其再壓密後耐久性之影響.pdf" [ref=e2221]: 以旋轉壓實機模擬冷拌再生乳化瀝青混凝土現地壓實及其再壓密後耐久性之影響
+              - generic [ref=e2222]: 就緒
+          - generic [ref=e2223]:
+            - checkbox [ref=e2224] [cursor=pointer]
+            - generic [ref=e2225] [cursor=pointer]:
+              - generic "109-2813-C-008-059-E_曾佳馨_國道反光標記自動巡查系統之研究.pdf" [ref=e2226]: 國道反光標記自動巡查系統之研究
+              - generic [ref=e2227]: 就緒
+          - generic [ref=e2228]:
+            - checkbox [ref=e2229] [cursor=pointer]
+            - generic [ref=e2230] [cursor=pointer]:
+              - generic "109-2813-C-008-036-M_林俊成_應用InSAR及雙頻GNSS定位校正於邊坡穩定之應用測試.pdf" [ref=e2231]: 應用InSAR及雙頻GNSS定位校正於邊坡穩定之應用測試
+              - generic [ref=e2232]: 就緒
+          - generic [ref=e2233]:
+            - checkbox [ref=e2234] [cursor=pointer]
+            - generic [ref=e2235] [cursor=pointer]:
+              - generic "109-2813-C-008-012-E_顏傑_區塊鏈基礎的危險物品運送之研究.pdf" [ref=e2236]: 區塊鏈基礎的危險物品運送之研究
+              - generic [ref=e2237]: 就緒
+          - generic [ref=e2238]:
+            - checkbox [ref=e2239] [cursor=pointer]
+            - generic [ref=e2240] [cursor=pointer]:
+              - generic "109-2813-C-008-011-E_谷浩誠_橋梁動態載重車輛參數識別之剪應變影響線法.pdf" [ref=e2241]: 橋梁動態載重車輛參數識別之剪應變影響線法
+              - generic [ref=e2242]: 就緒
+          - generic [ref=e2243]:
+            - checkbox [ref=e2244] [cursor=pointer]
+            - generic [ref=e2245] [cursor=pointer]:
+              - generic "108-2813-C-008-033-M_姜昱任_應用自走機器人於倒塌建築內受困人員資源補給之研究.pdf" [ref=e2246]: 應用自走機器人於倒塌建築內受困人員資源補給之研究
+              - generic [ref=e2247]: 就緒
+          - generic [ref=e2248]:
+            - checkbox [ref=e2249] [cursor=pointer]
+            - generic [ref=e2250] [cursor=pointer]:
+              - generic "108-2813-C-008-026-E_莊嬿齡_鋼筋混凝土結構耐震設計參數之研究.pdf" [ref=e2251]: 鋼筋混凝土結構耐震設計參數之研究
+              - generic [ref=e2252]: 就緒
+          - generic [ref=e2253]:
+            - checkbox [ref=e2254] [cursor=pointer]
+            - generic [ref=e2255] [cursor=pointer]:
+              - generic "108-2813-C-008-025-E_簡宛瑩_液化引致地表變形案例資料庫編制.pdf" [ref=e2256]: 液化引致地表變形案例資料庫編制
+              - generic [ref=e2257]: 就緒
+          - generic [ref=e2258]:
+            - checkbox [ref=e2259] [cursor=pointer]
+            - generic [ref=e2260] [cursor=pointer]:
+              - generic "108-2813-C-008-024-E_林彥輝_土石流發生機率與預警系統準確性之研究.pdf" [ref=e2261]: 土石流發生機率與預警系統準確性之研究
+              - generic [ref=e2262]: 就緒
+          - generic [ref=e2263]:
+            - checkbox [ref=e2264] [cursor=pointer]
+            - generic [ref=e2265] [cursor=pointer]:
+              - generic "107-2813-C-008-024-E_黃奕語_不同時空降雨型態之地下水補注量變化影響評估-以屏東平原為例.pdf" [ref=e2266]: 不同時空降雨型態之地下水補注量變化影響評估-以屏東平原為例
+              - generic [ref=e2267]: 就緒
+          - generic [ref=e2268]:
+            - checkbox [ref=e2269] [cursor=pointer]
+            - generic [ref=e2270] [cursor=pointer]:
+              - generic "105-2815-C-008-027-M_詹詠彰_重力與地震力引致之邊坡破壞行為模擬研究.pdf" [ref=e2271]: 重力與地震力引致之邊坡破壞行為模擬研究
+              - generic [ref=e2272]: 就緒
+          - generic [ref=e2273]:
+            - checkbox [ref=e2274] [cursor=pointer]
+            - generic [ref=e2275] [cursor=pointer]:
+              - generic "105-2815-C-008-009-E_邱繼正_吊橋背拉索索力監測計開發.pdf" [ref=e2276]: 吊橋背拉索索力監測計開發
+              - generic [ref=e2277]: 就緒
+          - generic [ref=e2278]:
+            - checkbox [ref=e2279] [cursor=pointer]
+            - generic [ref=e2280] [cursor=pointer]:
+              - generic "105-2815-C-008-008-E_洪文孝_不等高橋墩橋梁考慮直接基礎搖擺之位移被動控制.pdf" [ref=e2281]: 不等高橋墩橋梁考慮直接基礎搖擺之位移被動控制
+              - generic [ref=e2282]: 就緒
+          - generic [ref=e2283]:
+            - checkbox [ref=e2284] [cursor=pointer]
+            - generic [ref=e2285] [cursor=pointer]:
+              - generic "105-2815-C-008-007-E_郭珈均_鋼筋握裹能力不足之RC結構行為模擬研究.pdf" [ref=e2286]: 鋼筋握裹能力不足之RC結構行為模擬研究
+              - generic [ref=e2287]: 就緒
+          - generic [ref=e2288]:
+            - checkbox [ref=e2289] [cursor=pointer]
+            - generic [ref=e2290] [cursor=pointer]:
+              - generic "104-2815-C-008-037-E_陳虹君_利用PFC2D模擬岩石材料在單壓下力學行為的變異性.pdf" [ref=e2291]: 利用PFC2D模擬岩石材料在單壓下力學行為的變異性
+              - generic [ref=e2292]: 就緒
+          - generic [ref=e2293]:
+            - checkbox [ref=e2294] [cursor=pointer]
+            - generic [ref=e2295] [cursor=pointer]:
+              - generic "104-2815-C-008-024-M_翁崇期_黏性背填土雙階式加勁擋土牆的破壞行為研究.pdf" [ref=e2296]: 黏性背填土雙階式加勁擋土牆的破壞行為研究
+              - generic [ref=e2297]: 就緒
+          - generic [ref=e2298]:
+            - checkbox [ref=e2299] [cursor=pointer]
+            - generic [ref=e2300] [cursor=pointer]:
+              - generic "104-2815-C-008-023-M_張展嘉_不等高橋墩橋梁考量直接基礎搖擺隔震之研究.pdf" [ref=e2301]: 不等高橋墩橋梁考量直接基礎搖擺隔震之研究
+              - generic [ref=e2302]: 就緒
+          - generic [ref=e2303]:
+            - checkbox [ref=e2304] [cursor=pointer]
+            - generic [ref=e2305] [cursor=pointer]:
+              - generic "113-2813-C-008-003-E_趙方慈_Designing Mo_Cr based MXenes for thermoelectric applications.pdf" [ref=e2306]: Designing Mo_Cr based MXenes for thermoelectric applications
+              - generic [ref=e2307]: 就緒
+          - generic [ref=e2308]:
+            - checkbox [ref=e2309] [cursor=pointer]
+            - generic [ref=e2310] [cursor=pointer]:
+              - generic "113-2813-C-008-001-E_王偉禎_利用聚(乙烯-co-甲基丙烯酸)共聚物探討離子濃度對於奈米自修復行為之影響.pdf" [ref=e2311]: 利用聚(乙烯-co-甲基丙烯酸)共聚物探討離子濃度對於奈米自修復行為之影響
+              - generic [ref=e2312]: 就緒
+          - generic [ref=e2313]:
+            - checkbox [ref=e2314] [cursor=pointer]
+            - generic [ref=e2315] [cursor=pointer]:
+              - generic "112-2813-C-008-033-E_黃佳燕_Evaluation of Different Azeotropic Cosolvent Classes by Phase Diagrams Case of Ibuprofen Resolution.pdf" [ref=e2316]: Evaluation of Different Azeotropic Cosolvent Classes by Phase Diagrams Case of Ibuprofen Resolution
+              - generic [ref=e2317]: 就緒
+          - generic [ref=e2318]:
+            - checkbox [ref=e2319] [cursor=pointer]
+            - generic [ref=e2320] [cursor=pointer]:
+              - generic "112-2813-C-008-032-E_傅琳真_NH2-MIL-125@ZnIn2S4核殼結構應用於光催化產氫與HMF選擇性氧化為FDCA之研究.pdf" [ref=e2321]: NH2-MIL-125@ZnIn2S4核殼結構應用於光催化產氫與HMF選擇性氧化為FDCA之研究
+              - generic [ref=e2322]: 就緒
+          - generic [ref=e2323]:
+            - checkbox [ref=e2324] [cursor=pointer]
+            - generic [ref=e2325] [cursor=pointer]:
+              - generic "111-2813-C-008-054-E_高凡哲_利用生物反應器探討物理刺激促進肌肉前驅細胞的肌分化.pdf" [ref=e2326]: 利用生物反應器探討物理刺激促進肌肉前驅細胞的肌分化
+              - generic [ref=e2327]: 就緒
+          - generic [ref=e2328]:
+            - checkbox [ref=e2329] [cursor=pointer]
+            - generic [ref=e2330] [cursor=pointer]:
+              - generic "111-2813-C-008-051-E_紀宏宜_Six Elements High Entropy Ceramics For Oxygen Evolution Reaction With DFT Calculation.pdf" [ref=e2331]: Six Elements High Entropy Ceramics For Oxygen Evolution Reaction With DFT Calculation
+              - generic [ref=e2332]: 就緒
+          - generic [ref=e2333]:
+            - checkbox [ref=e2334] [cursor=pointer]
+            - generic [ref=e2335] [cursor=pointer]:
+              - generic "110-2813-C-008-075-E_趙怡雯_從聚對苯二甲酸乙二酯(PET)和聚呋喃二甲酸乙二酯(PEF)的回收製備有機金屬架構材料.pdf" [ref=e2336]: 從聚對苯二甲酸乙二酯(PET)和聚呋喃二甲酸乙二酯(PEF)的回收製備有機金屬架構材料
+              - generic [ref=e2337]: 就緒
+          - generic [ref=e2338]:
+            - checkbox [ref=e2339] [cursor=pointer]
+            - generic [ref=e2340] [cursor=pointer]:
+              - generic "109-2813-C-008-058-E_蘇庭瑜_HCT116癌細胞在不同環境下分泌外泌體含量變化.pdf" [ref=e2341]: HCT116癌細胞在不同環境下分泌外泌體含量變化
+              - generic [ref=e2342]: 就緒
+          - generic [ref=e2343]:
+            - checkbox [ref=e2344] [cursor=pointer]
+            - generic [ref=e2345] [cursor=pointer]:
+              - generic "109-2813-C-008-003-E_謝秉澤_Optimal Culture Conditions Of Colon Cancer Cell Line To Increase The Cancer Stem Cell Population.pdf" [ref=e2346]: Optimal Culture Conditions Of Colon Cancer Cell Line To Increase The Cancer Stem Cell Population
+              - generic [ref=e2347]: 就緒
+          - generic [ref=e2348]:
+            - checkbox [ref=e2349] [cursor=pointer]
+            - generic [ref=e2350] [cursor=pointer]:
+              - generic "109-2813-C-008-002-E_蘇良益_碳纖維之硝酸前處理及碳纖維_鎳鈷氫氧化物複合電極在尿素電解產氫之研究.pdf" [ref=e2351]: 碳纖維之硝酸前處理及碳纖維_鎳鈷氫氧化物複合電極在尿素電解產氫之研究
+              - generic [ref=e2352]: 就緒
+          - generic [ref=e2353]:
+            - checkbox [ref=e2354] [cursor=pointer]
+            - generic [ref=e2355] [cursor=pointer]:
+              - generic "108-2813-C-008-031-E_李欣庭_Isolation of colon cancer stem cells by thermoresponsive polymer coating dishes.pdf" [ref=e2356]: Isolation of colon cancer stem cells by thermoresponsive polymer coating dishes
+              - generic [ref=e2357]: 就緒
+          - generic [ref=e2358]:
+            - checkbox [ref=e2359] [cursor=pointer]
+            - generic [ref=e2360] [cursor=pointer]:
+              - generic "108-2813-C-008-027-E_楊詠琪_以剪切力塗佈法製作混摻有機電晶體及有機光電晶體元件.pdf" [ref=e2361]: 以剪切力塗佈法製作混摻有機電晶體及有機光電晶體元件
+              - generic [ref=e2362]: 就緒
+          - generic [ref=e2363]:
+            - checkbox [ref=e2364] [cursor=pointer]
+            - generic [ref=e2365] [cursor=pointer]:
+              - generic "107-2813-C-008-028-E_張嘉軒_抑制與增量大腸直腸癌症幹細胞藉由培養於固定細胞外間質衍生奈米片段之培養盤.pdf" [ref=e2366]: 抑制與增量大腸直腸癌症幹細胞藉由培養於固定細胞外間質衍生奈米片段之培養盤
+              - generic [ref=e2367]: 就緒
+          - generic [ref=e2368]:
+            - checkbox [ref=e2369] [cursor=pointer]
+            - generic [ref=e2370] [cursor=pointer]:
+              - generic "106-2813-C-008-001-E_張庭_利用溶膠-凝膠法製備高分子_金屬氧化物混摻駐極體層及其於電晶體式記憶體元件之應用.pdf" [ref=e2371]: 利用溶膠-凝膠法製備高分子_金屬氧化物混摻駐極體層及其於電晶體式記憶體元件之應用
+              - generic [ref=e2372]: 就緒
+          - generic [ref=e2373]:
+            - checkbox [ref=e2374] [cursor=pointer]
+            - generic [ref=e2375] [cursor=pointer]:
+              - generic "105-2815-C-008-018-E_李佳蓁_鈣鈦礦太陽能電池介面改質對元件性能之影響.pdf" [ref=e2376]: 鈣鈦礦太陽能電池介面改質對元件性能之影響
+              - generic [ref=e2377]: 就緒
+          - generic [ref=e2378]:
+            - checkbox [ref=e2379] [cursor=pointer]
+            - generic [ref=e2380] [cursor=pointer]:
+              - generic "105-2815-C-008-017-E_李柏毅_以噴霧噴塗法噴塗不同濃度的CZAS在ITO上並分析其電化學性質.pdf" [ref=e2381]: 以噴霧噴塗法噴塗不同濃度的CZAS在ITO上並分析其電化學性質
+              - generic [ref=e2382]: 就緒
+          - generic [ref=e2383]:
+            - checkbox [ref=e2384] [cursor=pointer]
+            - generic [ref=e2385] [cursor=pointer]:
+              - generic "104-2815-C-008-029-E_江媛容_利用金屬有機框架與活性碳製作氣體儲存的複合材料.pdf" [ref=e2386]: 利用金屬有機框架與活性碳製作氣體儲存的複合材料
+              - generic [ref=e2387]: 就緒
+          - generic [ref=e2388]:
+            - checkbox [ref=e2389] [cursor=pointer]
+            - generic [ref=e2390] [cursor=pointer]:
+              - generic "104-2815-C-008-028-E_陳彥嘉_利用剪切力法塗佈電子施體_受體型有機小分子半導體材料及其於有機薄膜電晶體元件應用.pdf" [ref=e2391]: 利用剪切力法塗佈電子施體_受體型有機小分子半導體材料及其於有機薄膜電晶體元件應用
+              - generic [ref=e2392]: 就緒
+          - generic [ref=e2393]:
+            - checkbox [ref=e2394] [cursor=pointer]
+            - generic [ref=e2395] [cursor=pointer]:
+              - generic "104-2815-C-008-019-M_潘軒庭_以thieno[3,4-c]pyrrole-4,6-dione(TPD)為重覆單元之四聚體小分子-分子設計、直接碳氫鍵芳香環化合成法、與其場效應電晶體效能評估之研究.pdf" [ref=e2396]: 以thieno[3,4-c]pyrrole-4,6-dione(TPD)為重覆單元之四聚體小分子-分子設計、直接碳氫鍵芳香環化合成法、與其場效應電晶體效能評估之研究
+              - generic [ref=e2397]: 就緒
+          - generic [ref=e2398]:
+            - checkbox [ref=e2399] [cursor=pointer]
+            - generic [ref=e2400] [cursor=pointer]:
+              - generic "113-2813-C-008-086-M_莊承霖_噻吩並吡咯酮二聚體之自組裝電子傳輸層材料開發.pdf" [ref=e2401]: 噻吩並吡咯酮二聚體之自組裝電子傳輸層材料開發
+              - generic [ref=e2402]: 就緒
+          - generic [ref=e2403]:
+            - checkbox [ref=e2404] [cursor=pointer]
+            - generic [ref=e2405] [cursor=pointer]:
+              - generic "112-2813-C-008-064-M_李妍蓁_以溫和水相法合成鋁金屬有機骨架材料NH2-MIL-53.pdf" [ref=e2406]: 以溫和水相法合成鋁金屬有機骨架材料NH2-MIL-53
+              - generic [ref=e2407]: 就緒
+          - generic [ref=e2408]:
+            - checkbox [ref=e2409] [cursor=pointer]
+            - generic [ref=e2410] [cursor=pointer]:
+              - generic "111-2813-C-008-005-M_劉子瑄_以苯環及吡啶為中心之雜環配位基與其硼錯合物引入氫氧基團液晶性質之探討.pdf" [ref=e2411]: 以苯環及吡啶為中心之雜環配位基與其硼錯合物引入氫氧基團液晶性質之探討
+              - generic [ref=e2412]: 就緒
+          - generic [ref=e2413]:
+            - checkbox [ref=e2414] [cursor=pointer]
+            - generic [ref=e2415] [cursor=pointer]:
+              - generic "111-2813-C-008-004-M_張家瑋_第二種元素修飾Pt(110)對甲醇催化活性的研究.pdf" [ref=e2416]: 第二種元素修飾Pt(110)對甲醇催化活性的研究
+              - generic [ref=e2417]: 就緒
+          - generic [ref=e2418]:
+            - checkbox [ref=e2419] [cursor=pointer]
+            - generic [ref=e2420] [cursor=pointer]:
+              - generic "110-2813-C-008-024-M_盧姿妤_手性肌醇衍生物4,5-di-O-5-hydroxytigloyl-3,6-di-O-tigloy-chiro-inositol之合成研究.pdf" [ref=e2421]: 手性肌醇衍生物4,5-di-O-5-hydroxytigloyl-3,6-di-O-tigloy-chiro-inositol之合成研究
+              - generic [ref=e2422]: 就緒
+          - generic [ref=e2423]:
+            - checkbox [ref=e2424] [cursor=pointer]
+            - generic [ref=e2425] [cursor=pointer]:
+              - generic "110-2813-C-008-023-M_許智傑_二維(2-D)可溶性噻吩有機薄膜電晶體材料之開發.pdf" [ref=e2426]: 二維(2-D)可溶性噻吩有機薄膜電晶體材料之開發
+              - generic [ref=e2427]: 就緒
+          - generic [ref=e2428]:
+            - checkbox [ref=e2429] [cursor=pointer]
+            - generic [ref=e2430] [cursor=pointer]:
+              - generic "109-2813-C-008-055-M_蔡承樺_利用氫鍵有機骨架材料包覆血紅蛋白及其延伸應用.pdf" [ref=e2431]: 利用氫鍵有機骨架材料包覆血紅蛋白及其延伸應用
+              - generic [ref=e2432]: 就緒
+          - generic [ref=e2433]:
+            - checkbox [ref=e2434] [cursor=pointer]
+            - generic [ref=e2435] [cursor=pointer]:
+              - generic "108-2813-C-008-044-M_陳忠佑_多併環噻吩衍生物於有機光伏太陽能電池材料之開發.pdf" [ref=e2436]: 多併環噻吩衍生物於有機光伏太陽能電池材料之開發
+              - generic [ref=e2437]: 就緒
+          - generic [ref=e2438]:
+            - checkbox [ref=e2439] [cursor=pointer]
+            - generic [ref=e2440] [cursor=pointer]:
+              - generic "108-2813-C-008-043-M_黃心圓_天然物7-O-methylnigrosporolide的全合成.pdf" [ref=e2441]: 天然物7-O-methylnigrosporolide的全合成
+              - generic [ref=e2442]: 就緒
+          - generic [ref=e2443]:
+            - checkbox [ref=e2444] [cursor=pointer]
+            - generic [ref=e2445] [cursor=pointer]:
+              - generic "108-2813-C-008-042-M_葉芷瑄_含氮氧之硼錯合物其液晶性質探討.pdf" [ref=e2446]: 含氮氧之硼錯合物其液晶性質探討
+              - generic [ref=e2447]: 就緒
+          - generic [ref=e2448]:
+            - checkbox [ref=e2449] [cursor=pointer]
+            - generic [ref=e2450] [cursor=pointer]:
+              - generic "108-2813-C-008-041-M_張玲瑋_合成硼矽酸鹽以開發非線性光學材料.pdf" [ref=e2451]: 合成硼矽酸鹽以開發非線性光學材料
+              - generic [ref=e2452]: 就緒
+          - generic [ref=e2453]:
+            - checkbox [ref=e2454] [cursor=pointer]
+            - generic [ref=e2455] [cursor=pointer]:
+              - generic "107-2813-C-008-043-M_林家誠_以有機金屬框架ZIF-67為模板之氮參雜多孔性碳材製備鎳奈米顆粒及其催化應用.pdf" [ref=e2456]: 以有機金屬框架ZIF-67為模板之氮參雜多孔性碳材製備鎳奈米顆粒及其催化應用
+              - generic [ref=e2457]: 就緒
+          - generic [ref=e2458]:
+            - checkbox [ref=e2459] [cursor=pointer]
+            - generic [ref=e2460] [cursor=pointer]:
+              - generic "107-2813-C-008-042-M_王珮芸_可溶性噻吩衍生物於有機薄膜電晶體材料之開發.pdf" [ref=e2461]: 可溶性噻吩衍生物於有機薄膜電晶體材料之開發
+              - generic [ref=e2462]: 就緒
+          - generic [ref=e2463]:
+            - checkbox [ref=e2464] [cursor=pointer]
+            - generic [ref=e2465] [cursor=pointer]:
+              - generic "106-2813-C-008-030-M_謝秉勳_新型硼酸鹽的合成應用於產生紫外光雷射的非線性光學材料.pdf" [ref=e2466]: 新型硼酸鹽的合成應用於產生紫外光雷射的非線性光學材料
+              - generic [ref=e2467]: 就緒
+          - generic [ref=e2468]:
+            - checkbox [ref=e2469] [cursor=pointer]
+            - generic [ref=e2470] [cursor=pointer]:
+              - generic "106-2813-C-008-029-M_周克駿_金屬有機骨架材料(MOF-74)機械力合成與包覆酵素蛋白進行催化的探討.pdf" [ref=e2471]: 金屬有機骨架材料(MOF-74)機械力合成與包覆酵素蛋白進行催化的探討
+              - generic [ref=e2472]: 就緒
+          - generic [ref=e2473]:
+            - checkbox [ref=e2474] [cursor=pointer]
+            - generic [ref=e2475] [cursor=pointer]:
+              - generic "106-2813-C-008-013-M_曾于玲_合成Sildenafil的類似物並保有抗癌效果.pdf" [ref=e2476]: 合成Sildenafil的類似物並保有抗癌效果
+              - generic [ref=e2477]: 就緒
+          - generic [ref=e2478]:
+            - checkbox [ref=e2479] [cursor=pointer]
+            - generic [ref=e2480] [cursor=pointer]:
+              - generic "106-2813-C-008-012-M_黃千芸_單層鉑在金（ijk）上的覆蓋對電催化的活性及其陰離子效應.pdf" [ref=e2481]: 單層鉑在金（ijk）上的覆蓋對電催化的活性及其陰離子效應
+              - generic [ref=e2482]: 就緒
+          - generic [ref=e2483]:
+            - checkbox [ref=e2484] [cursor=pointer]
+            - generic [ref=e2485] [cursor=pointer]:
+              - generic "105-2815-C-008-006-M_羅進軒_氧化亞錫鋰鈦氧複合材料高能鋰電池負極之應用.pdf" [ref=e2486]: 氧化亞錫鋰鈦氧複合材料高能鋰電池負極之應用
+              - generic [ref=e2487]: 就緒
+          - generic [ref=e2488]:
+            - checkbox [ref=e2489] [cursor=pointer]
+            - generic [ref=e2490] [cursor=pointer]:
+              - generic "105-2815-C-008-005-M_李奇_有機薄膜電晶體材料-具雙硫醚碳鏈之三併環噻吩衍生物之開發.pdf" [ref=e2491]: 有機薄膜電晶體材料-具雙硫醚碳鏈之三併環噻吩衍生物之開發
+              - generic [ref=e2492]: 就緒
+          - generic [ref=e2493]:
+            - checkbox [ref=e2494] [cursor=pointer]
+            - generic [ref=e2495] [cursor=pointer]:
+              - generic "105-2815-C-008-004-M_張溫文_以中孔洞矽材KIT-6為模板的錫鎳複合材料於鋰離子電池負極之應用.pdf" [ref=e2496]: 以中孔洞矽材KIT-6為模板的錫鎳複合材料於鋰離子電池負極之應用
+              - generic [ref=e2497]: 就緒
+          - generic [ref=e2498]:
+            - checkbox [ref=e2499] [cursor=pointer]
+            - generic [ref=e2500] [cursor=pointer]:
+              - generic "104-2815-C-008-021-M_陳亭安_以液-液微萃取法快速檢測人體尿液中人工合成麝香化合物之研究.pdf" [ref=e2501]: 以液-液微萃取法快速檢測人體尿液中人工合成麝香化合物之研究
+              - generic [ref=e2502]: 就緒
+          - generic [ref=e2503]:
+            - checkbox [ref=e2504] [cursor=pointer]
+            - generic [ref=e2505] [cursor=pointer]:
+              - generic "104-2815-C-008-018-M_郭信宏_有機薄膜電晶體材料 - 二聚體硫醚雙噻吩衍生物之開發.pdf" [ref=e2506]: 有機薄膜電晶體材料 - 二聚體硫醚雙噻吩衍生物之開發
+              - generic [ref=e2507]: 就緒
+          - generic [ref=e2508]:
+            - checkbox [ref=e2509] [cursor=pointer]
+            - generic [ref=e2510] [cursor=pointer]:
+              - generic "113-2813-C-008-082-E_江紹華_台灣環境晝光光譜量測系統之建置.pdf" [ref=e2511]: 台灣環境晝光光譜量測系統之建置
+              - generic [ref=e2512]: 就緒
+          - generic [ref=e2513]:
+            - checkbox [ref=e2514] [cursor=pointer]
+            - generic [ref=e2515] [cursor=pointer]:
+              - generic "113-2813-C-008-005-M_邱偉博_利用高分辨率光纖光譜儀測量時間-頻率糾纏光子對的聯合光譜強度.pdf" [ref=e2516]: 利用高分辨率光纖光譜儀測量時間-頻率糾纏光子對的聯合光譜強度
+              - generic [ref=e2517]: 就緒
+          - generic [ref=e2518]:
+            - checkbox [ref=e2519] [cursor=pointer]
+            - generic [ref=e2520] [cursor=pointer]:
+              - generic "112-2813-C-008-030-M_游宗諺_量子通訊協定模擬.pdf" [ref=e2521]: 量子通訊協定模擬
+              - generic [ref=e2522]: 就緒
+          - generic [ref=e2523]:
+            - checkbox [ref=e2524] [cursor=pointer]
+            - generic [ref=e2525] [cursor=pointer]:
+              - generic "112-2813-C-008-029-M_王勝弘_Energy-time entangled photon-pair source for long-distance quantum key distribution.pdf" [ref=e2526]: Energy-time entangled photon-pair source for long-distance quantum key distribution
+              - generic [ref=e2527]: 就緒
+          - generic [ref=e2528]:
+            - checkbox [ref=e2529] [cursor=pointer]
+            - generic [ref=e2530] [cursor=pointer]:
+              - generic "111-2813-C-008-028-E_陳居文_雙折射材料光子晶體偏振旋轉器.pdf" [ref=e2531]: 雙折射材料光子晶體偏振旋轉器
+              - generic [ref=e2532]: 就緒
+          - generic [ref=e2533]:
+            - checkbox [ref=e2534] [cursor=pointer]
+            - generic [ref=e2535] [cursor=pointer]:
+              - generic "111-2813-C-008-027-E_卓孟廷_光學記憶體開發研究.pdf" [ref=e2536]: 光學記憶體開發研究
+              - generic [ref=e2537]: 就緒
+          - generic [ref=e2538]:
+            - checkbox [ref=e2539] [cursor=pointer]
+            - generic [ref=e2540] [cursor=pointer]:
+              - generic "110-2813-C-008-068-E_林承億_基於超穎透鏡色散特性的三維空間掃描技術.pdf" [ref=e2541]: 基於超穎透鏡色散特性的三維空間掃描技術
+              - generic [ref=e2542]: 就緒
+          - generic [ref=e2543]:
+            - checkbox [ref=e2544] [cursor=pointer]
+            - generic [ref=e2545] [cursor=pointer]:
+              - generic "110-2813-C-008-041-M_林芯瑋_透過人臉辨識系統控制低操作電壓之聚合物網絡型液晶AI電子窗.pdf" [ref=e2546]: 透過人臉辨識系統控制低操作電壓之聚合物網絡型液晶AI電子窗
+              - generic [ref=e2547]: 就緒
+          - generic [ref=e2548]:
+            - checkbox [ref=e2549] [cursor=pointer]
+            - generic [ref=e2550] [cursor=pointer]:
+              - generic "107-2813-C-008-009-M_侯宗毅_液晶相位空間光調制器之反射式Fresnel光學聚焦透鏡與聚焦光斑之調制.pdf" [ref=e2551]: 液晶相位空間光調制器之反射式Fresnel光學聚焦透鏡與聚焦光斑之調制
+              - generic [ref=e2552]: 就緒
+          - generic [ref=e2553]:
+            - checkbox [ref=e2554] [cursor=pointer]
+            - generic [ref=e2555] [cursor=pointer]:
+              - generic "104-2815-C-008-026-E_陳冠穎_以三維連續空間光波分佈的電腦全像片結合光鉗系統之柱狀樣品轉動操控系統.pdf" [ref=e2556]: 以三維連續空間光波分佈的電腦全像片結合光鉗系統之柱狀樣品轉動操控系統
+              - generic [ref=e2557]: 就緒
+          - generic [ref=e2558]:
+            - checkbox [ref=e2559] [cursor=pointer]
+            - generic [ref=e2560] [cursor=pointer]:
+              - generic "112-2813-C-008-060-E_劉家丞_AlGaN_GaN HEMT的電子散射機制之探討.pdf" [ref=e2561]: AlGaN_GaN HEMT的電子散射機制之探討
+              - generic [ref=e2562]: 就緒
+          - generic [ref=e2563]:
+            - checkbox [ref=e2564] [cursor=pointer]
+            - generic [ref=e2565] [cursor=pointer]:
+              - generic "112-2813-C-008-044-E_蕭亦勝_可控式氮改質石墨烯於改善二硫化鉬電晶體之接觸阻抗.pdf" [ref=e2566]: 可控式氮改質石墨烯於改善二硫化鉬電晶體之接觸阻抗
+              - generic [ref=e2567]: 就緒
+          - generic [ref=e2568]:
+            - checkbox [ref=e2569] [cursor=pointer]
+            - generic [ref=e2570] [cursor=pointer]:
+              - generic "104-2815-C-008-025-E_項靖茹_以金屬輔助波導共振元件作為同調光完美吸收體之研究.pdf" [ref=e2571]: 以金屬輔助波導共振元件作為同調光完美吸收體之研究
+              - generic [ref=e2572]: 就緒
+          - generic [ref=e2573]:
+            - checkbox [ref=e2574] [cursor=pointer]
+            - generic [ref=e2575] [cursor=pointer]:
+              - generic "113-2813-C-008-014-H_吳昀珊_以文字探勘檢索法說會文檔探究供應商選擇行為與環境面向表現之關聯性.pdf" [ref=e2576]: 以文字探勘檢索法說會文檔探究供應商選擇行為與環境面向表現之關聯性
+              - generic [ref=e2577]: 就緒
+          - generic [ref=e2578]:
+            - checkbox [ref=e2579] [cursor=pointer]
+            - generic [ref=e2580] [cursor=pointer]:
+              - generic "109-2813-C-008-061-H_柯穎吟_新創公司董事會穩定性有助於新創事業成長嗎_ 2011-2019 年Meet Neo Star年度團隊之實證研究.pdf" [ref=e2581]: 新創公司董事會穩定性有助於新創事業成長嗎_ 2011-2019 年Meet Neo Star年度團隊之實證研究
+              - generic [ref=e2582]: 就緒
+          - generic [ref=e2583]:
+            - checkbox [ref=e2584] [cursor=pointer]
+            - generic [ref=e2585] [cursor=pointer]:
+              - generic "113-2813-C-008-055-H_陳俊源_殷墟卜辭軍事類詞目集釋.pdf" [ref=e2586]: 殷墟卜辭軍事類詞目集釋
+              - generic [ref=e2587]: 就緒
+          - generic [ref=e2588]:
+            - checkbox [ref=e2589] [cursor=pointer]
+            - generic [ref=e2590] [cursor=pointer]:
+              - generic "112-2813-C-008-020-H_田惠心_滑稽與真趣：舒夢蘭《遊山日記》探析.pdf" [ref=e2591]: 滑稽與真趣：舒夢蘭《遊山日記》探析
+              - generic [ref=e2592]: 就緒
+          - generic [ref=e2593]:
+            - checkbox [ref=e2594] [cursor=pointer]
+            - generic [ref=e2595] [cursor=pointer]:
+              - generic "112-2813-C-008-019-H_宋俊磊_〈試探散文家簡媜的小說《十種寂寞》〉.pdf" [ref=e2596]: 〈試探散文家簡媜的小說《十種寂寞》〉
+              - generic [ref=e2597]: 就緒
+          - generic [ref=e2598]:
+            - checkbox [ref=e2599] [cursor=pointer]
+            - generic [ref=e2600] [cursor=pointer]:
+              - generic "112-2813-C-008-018-H_施語涵_《釋名》同源詞字族繫聯工作之嘗試.pdf" [ref=e2601]: 《釋名》同源詞字族繫聯工作之嘗試
+              - generic [ref=e2602]: 就緒
+          - generic [ref=e2603]:
+            - checkbox [ref=e2604] [cursor=pointer]
+            - generic [ref=e2605] [cursor=pointer]:
+              - generic "111-2813-C-008-056-H_梁恩維_《左傳》晉國大夫人物形象與敘事研究.pdf" [ref=e2606]: 《左傳》晉國大夫人物形象與敘事研究
+              - generic [ref=e2607]: 就緒
+          - generic [ref=e2608]:
+            - checkbox [ref=e2609] [cursor=pointer]
+            - generic [ref=e2610] [cursor=pointer]:
+              - generic "111-2813-C-008-055-H_黃崴庭_左傳「勇」義研究.pdf" [ref=e2611]: 左傳「勇」義研究
+              - generic [ref=e2612]: 就緒
+          - generic [ref=e2613]:
+            - checkbox [ref=e2614] [cursor=pointer]
+            - generic [ref=e2615] [cursor=pointer]:
+              - generic "109-2813-C-008-044-H_金鴻達_論《詩經》中水意象的脈絡與運用.pdf" [ref=e2616]: 論《詩經》中水意象的脈絡與運用
+              - generic [ref=e2617]: 就緒
+        - button "上傳 PDF" [ref=e2619] [cursor=pointer]:
+          - img [ref=e2620]
+          - text: 上傳 PDF

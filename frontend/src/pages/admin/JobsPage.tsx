@@ -104,8 +104,8 @@ export default function JobsPage() {
                 <td colSpan={8} className="jobs-empty">No jobs found</td>
               </tr>
             )}
-            {jobs.map((job) => (
-              <tr key={`${job.doc_id}-${job.job_type}`} className={`jobs-row jobs-row--${job.status}`}>
+            {jobs.map((job, i) => (
+              <tr key={job.job_id ?? `${job.doc_id}-${job.job_type}-${i}`} className={`jobs-row jobs-row--${job.status}`}>
                 <td className="jobs-td-file" title={job.filename}>
                   {job.filename.length > 36 ? job.filename.slice(0, 36) + '…' : job.filename}
                 </td>

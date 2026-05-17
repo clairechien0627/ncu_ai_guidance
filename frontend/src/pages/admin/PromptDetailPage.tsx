@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getPromptDetail, getPromptVersionContent, type PromptVersion } from '../../api'
 import './PromptDetailPage.css'
@@ -101,6 +101,21 @@ export default function PromptDetailPage() {
             )}
           </div>
         </div>
+        <Link
+          to={`/admin/prompts/${encodeURIComponent(data.name)}/metrics`}
+          style={{
+            marginLeft: 'auto',
+            fontSize: 13,
+            color: '#1d4ed8',
+            textDecoration: 'none',
+            padding: '6px 14px',
+            border: '1px solid #93c5fd',
+            borderRadius: 6,
+            background: '#eff6ff',
+          }}
+        >
+          Metrics →
+        </Link>
       </div>
 
       {/* Tabs */}

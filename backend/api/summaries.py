@@ -16,64 +16,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/api/prompts")
-def list_prompts():
-    """列出所有 prompt 檔案的名稱、版本、字數、最後修改時間。"""
-    import datetime
-    from prompting import registry
-    from prompting.loader import PROMPT_STACKS
-    prompts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts")
-    result = []
-    for name in registry.list_known_names():
-        source = registry.source_name(name)
-        fpath = os.path.join(prompts_dir, f"{source}.txt")
-        try:
-            content = registry.get(name)
-            ver = registry.version(name)
-            size = len(content)
-            if os.path.exists(fpath):
-                mtime = os.path.getmtime(fpath)
-                last_modified = datetime.datetime.fromtimestamp(
-                    mtime, tz=datetime.timezone.utc
-                ).isoformat() + "Z"
-            else:
-                last_modified = None
-        except Exception:
-            ver, size, last_modified = "unknown", 0, None
-        result.append({
-            "name": name,
-            "source_name": source,
-            "version": ver,
-            "size_chars": size,
-            "last_modified": last_modified,
-        })
-    return {"prompts": result, "stacks": PROMPT_STACKS}
-
-
-@router.post("/api/prompts/reload")
-async def reload_prompts():
-    """Hot-reload all prompt files without restarting the backend.
-    Call this after editing any file in backend/prompts/*.txt.
-    """
-    try:
-        from prompting.registry import reload_all
-        from prompting.loader import PROMPT_STACKS, load_stack
-        reload_all()
-        stacks = {
-            name: [
-                {
-                    "name": prompt.name,
-                    "source_name": prompt.source_name,
-                    "version": prompt.version,
-                }
-                for prompt in load_stack(name).prompts
-            ]
-            for name in PROMPT_STACKS
-        }
-        return {"reloaded": True, "stacks": stacks}
-    except Exception as e:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=500, detail=str(e))
 
 _DEFAULT_BATCH_FOLDER = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "各系大專生計畫(104-114)"))
 
@@ -139,8 +81,9 @@ async def extract_summary_step(step: str, doc_id: int, db: Session = Depends(get
 
 
 @router.get("/api/summaries")
-def list_summaries(db: Session = Depends(get_db)):
-    from rag import _pymupdf_cache_path, _azure_di_cache_path, _llamaparse_cache_path
+def list_summaries(slim: bool = False, db: Session = Depends(get_db)):
+    if not slim:
+        from rag import _pymupdf_cache_path, _azure_di_cache_path, _llamaparse_cache_path
     docs = db.query(Document).filter(
         Document.deleted_at.is_(None),
         Document.status.in_(["ready", "processing", "error"])
@@ -162,11 +105,11 @@ def list_summaries(db: Session = Depends(get_db)):
             "quality_issue": d.quality_issue,
             "parser_used": d.parser_used,
             "needs_reindex": d.needs_reindex,
-            "caches": {
+            **({"caches": {
                 "pymupdf4llm": os.path.exists(_pymupdf_cache_path(d.id)),
                 "azure_di": os.path.exists(_azure_di_cache_path(d.id)),
                 "llamaparse": os.path.exists(_llamaparse_cache_path(d.id)),
-            },
+            }} if not slim else {}),
         }
         for d in docs
     ]
