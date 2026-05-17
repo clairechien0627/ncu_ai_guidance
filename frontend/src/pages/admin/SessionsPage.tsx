@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getSessions, type SessionFilters, type SessionItem } from '../../api'
+import { useAdminStore } from '../../stores/adminStore'
 import './SessionsPage.css'
 
 const ROUTE_INTENT_OPTIONS = ['all', 'research', 'retrieval', 'chat', 'question', 'evaluation']
@@ -46,6 +47,7 @@ function TaskTypeBadge({ type }: { type: string | null }) {
 
 export default function SessionsPage() {
   const navigate = useNavigate()
+  const { environment } = useAdminStore()
   const [filters, setFilters] = useState<SessionFilters>({})
   const [routeIntent, setRouteIntent] = useState('all')
   const [page, setPage] = useState(0)
@@ -54,6 +56,7 @@ export default function SessionsPage() {
   const activeFilters: SessionFilters = {
     ...filters,
     route_intent: routeIntent !== 'all' ? routeIntent : undefined,
+    environment: environment ?? undefined,
     offset: page * limit,
   }
 

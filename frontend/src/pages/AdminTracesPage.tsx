@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAdminStore } from '../stores/adminStore'
 import { Activity, AlertTriangle, ArrowLeft, CheckCheck, ChevronDown, ChevronRight, Clock, PanelLeftClose, PanelLeftOpen, RefreshCw, Save, X } from 'lucide-react'
 import {
   batchScoreTraces,
@@ -149,6 +150,7 @@ const EMPTY_TRACES: TraceItem[] = []
 
 export default function AdminTracesPage({ onBack }: Props) {
   const queryClient = useQueryClient()
+  const { environment } = useAdminStore()
 
   const refreshAll = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['trace-stats'] })
@@ -235,8 +237,9 @@ export default function AdminTracesPage({ onBack }: Props) {
       ? 'retrieval_handoff'
       : filterOriginalIntent === 'all' ? undefined : filterOriginalIntent,
     resolved_intent: filterResolvedIntent === 'all' ? undefined : filterResolvedIntent,
+    environment: environment ?? undefined,
   }), [filterPrompt, filterVersion, filterStatus, filterLatency,
-       filterHandoffOnly, filterOriginalIntent, filterResolvedIntent])
+       filterHandoffOnly, filterOriginalIntent, filterResolvedIntent, environment])
 
   const { data: baseTraces = EMPTY_TRACES, isPending: tracesLoading, isError: tracesError } = useQuery({
     queryKey: ['traces', traceFilters],

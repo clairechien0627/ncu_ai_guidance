@@ -310,6 +310,7 @@ export interface TraceFilters {
   min_latency?: string
   original_intent?: string
   resolved_intent?: string
+  environment?: string
   offset?: number
 }
 
@@ -410,6 +411,11 @@ export const getSessions = async (
 
 export const getSessionDetail = async (threadId: string): Promise<SessionItem & { traces: TraceItem[] }> => {
   const { data } = await api.get(`/traces/sessions/${encodeURIComponent(threadId)}`)
+  return data
+}
+
+export const getEnvironments = async (): Promise<string[]> => {
+  const { data } = await api.get<string[]>('/traces/environments')
   return data
 }
 

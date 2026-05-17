@@ -302,6 +302,18 @@ def get_document_traces(doc_id: int, db: Session = Depends(get_db)):
     ]
 
 
+@router.get("/api/traces/environments")
+def list_environments(db: Session = Depends(get_db)):
+    """Return distinct environment values present in root traces."""
+    rows = (
+        db.query(Trace.environment)
+        .filter(_agent_execution_root(), Trace.environment.isnot(None))
+        .distinct()
+        .all()
+    )
+    return sorted({r[0] for r in rows if r[0]})
+
+
 @router.get("/api/traces")
 def list_traces(
     limit: int = 40,
@@ -314,6 +326,7 @@ def list_traces(
     min_latency: float | None = None,
     original_intent: str | None = None,
     resolved_intent: str | None = None,
+    environment: str | None = None,
     db: Session = Depends(get_db),
 ):
     q = db.query(Trace).filter(_agent_execution_root())
@@ -342,6 +355,8 @@ def list_traces(
         q = q.filter(Trace.original_intent == original_intent)
     if resolved_intent:
         q = q.filter(Trace.resolved_intent == resolved_intent)
+    if environment:
+        q = q.filter(Trace.environment == environment)
 
     traces = (
         q.order_by(Trace.start_time.desc())

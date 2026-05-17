@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getUsers, type UserItem } from '../../api'
+import { useAdminStore } from '../../stores/adminStore'
 import './UsersPage.css'
 
 function formatDate(iso: string | null) {
@@ -26,14 +27,16 @@ function QualityBadge({ score }: { score: number | null }) {
 
 export default function UsersPage() {
   const navigate = useNavigate()
+  const { environment } = useAdminStore()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const limit = 50
 
   const { data, isLoading } = useQuery({
-    queryKey: ['users', search, page],
+    queryKey: ['users', search, page, environment],
     queryFn: () => getUsers(limit, {
       search: search || undefined,
+      environment: environment ?? undefined,
       offset: page * limit,
     }),
   })
