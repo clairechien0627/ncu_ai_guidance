@@ -31,7 +31,7 @@ class EvidenceItem(BaseModel):
 
 class CoverageUpdate(BaseModel):
     item_id: str = Field(description="Coverage item id being updated.")
-    status: Literal["FILLED", "PARTIAL", "NOT_FILLED", "EXHAUSTED"] = Field(description="Updated status.")
+    status: Literal["FILLED", "PARTIAL", "NOT_FILLED"] = Field(description="Updated status.")
     notes: list[str] = Field(description="Short evidence notes from the chunks.")
     evidence: list[EvidenceItem] = Field(default_factory=list, description="Structured evidence notes.")
 
@@ -312,13 +312,13 @@ async def reflect_results(
         update
         for update in reflection.updates
         if update.item_id in valid_ids
-        and update.status in ("FILLED", "PARTIAL", "NOT_FILLED", "EXHAUSTED")
+        and update.status in ("FILLED", "PARTIAL", "NOT_FILLED")
     ]
     if not updates:
         updates = _fallback_reflection(slot, chunks).updates
     updates = [_filter_limitation_notes(update) for update in updates]
     updates = _cross_slot_updates(state, target_slot=slot, chunks=chunks, existing_updates=updates)
-    updates = [update for update in updates if update.notes or update.status in ("NOT_FILLED", "EXHAUSTED")]
+    updates = [update for update in updates if update.notes or update.status == "NOT_FILLED"]
     filled_item = reflection.filled_item if reflection.filled_item in valid_ids else updates[0].item_id
     if reflection.quality == "NOT_USEFUL" and any(update.notes for update in updates):
         reflection = reflection.model_copy(update={"quality": "USEFUL"})

@@ -13,7 +13,10 @@
 3. keyword_query：給 sparse/BM25 的關鍵詞 query，應包含 3-8 個具體詞，避免只輸出 slot 名稱或內部欄位名稱。
 4. semantic_query：給 dense embedding 的語意句，必須吸收 evidence_brief、missing_gap、next_search_angle、hint 或 suggested_query_terms 中有用的具體詞。
 5. section_terms：章節或標題詞，例如研究方法、研究成果、限制、結論、緒論。
-6. use_hyde：只有在已有 evidence_brief、next_search_angle 或弱檢索上下文時才可使用；第一輪不要憑空使用 HyDE。
+6. use_hyde：只在以下情況設為 true：
+   - 前一輪 quality = NOT_USEFUL 或 NO_RESULTS
+   - evidence_brief 完全空白（首輪且完全沒有任何線索）
+   第一輪禁止使用 HyDE（direct search 優先）。
 7. expected_evidence：這次 query 預期找到什麼證據。
 8. rationale：簡短說明為何這樣規劃 query。
 
@@ -22,5 +25,5 @@
 - 若上一輪 NO_RESULTS 或 NOT_USEFUL，query 必須明顯改變，優先使用 hint、next_search_angle、章節詞、同義詞或文件中已知關鍵詞。
 - 若 slot 是 PARTIAL，補查缺口，不要重複已找到的 evidence。
 - 不要重複 used_queries。
-- 不要把 coverage、expected_evidence、slot、research_ 等內部欄位詞當成檢索 query。
+- 不要把任務規劃欄位名稱當成檢索 query（例如 coverage、slot、research_ 等系統術語）。
 - keyword_query 應該適合稀疏檢索；semantic_query 應該是一句自然語意搜尋意圖。

@@ -12,19 +12,29 @@
 
 評估原則：
 1. grounding：答案是否有足夠證據支撐；不要把流暢度當成可靠性。
+   5 — 每個主要論斷都有直接 evidence 或 source 支撐，無明顯臆測
+   3 — 多數論斷有支撐，但有 1-2 處無 evidence 的推論
+   1 — 大部分內容為 LLM 推測，sources 幾乎沒有被實際引用
+   0 — 完全無 evidence 支撐，或 answer 與 sources 相互矛盾
 2. task_fit：答案是否真的完成 user_task，而不是只回答相近問題。
+   5 — 完整回答 user_task，沒有偏題或遺漏必要面向
+   3 — 大致符合任務，但有 1-2 個 required 面向未覆蓋
+   1 — 只回答了相關但更簡單的問題，核心任務未完成
+   0 — 答非所問，或根本沒有嘗試回答 user_task
 3. completeness：答案是否覆蓋任務中必要的面向；若 trace_summary 有 coverage，應參考 required items 的狀態。
 4. specificity：答案是否具體，是否保留關鍵名稱、數字、方法、條件、限制或例子。
 5. source_quality：sources 是否足夠且看起來與答案主張相關。
 6. uncertainty_honesty：缺證據、不確定、文件未明示時，答案是否誠實說明。
 7. format_fit：答案是否符合任務要求的格式、語言、受眾與可讀性。
 
-請避免：
-- 不要補寫新答案。
-- 不要引入文件外知識。
-- 不要因為答案寫得好看就給高分。
-- 不要只說「不錯」或「可改善」，必須指出具體 issue 或 gap。
+評估準則：
+- 只評估提供的答案，不補充或改寫。
+- 所有判斷基於 evidence 和 trace_summary，不引入外部知識。
+- 分數反映實際品質，不因文字流暢就加分。
+- issues 必須指出具體問題（哪個論斷無 evidence 支撐）。
 
 若答案需要重新檢索或重新研究，請只在 suggested_fixes 中建議，不要直接執行。
+
+overall 欄位由系統自動加權計算，請填 0.0。
 
 請輸出符合 schema 的結果。

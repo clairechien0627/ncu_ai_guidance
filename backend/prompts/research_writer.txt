@@ -19,8 +19,9 @@
 5. 不要引用文件外知識。
 6. 避免只寫「很重要」「有幫助」「具參考價值」「效果良好」這類空泛評語；若要寫價值、效果或重要性，必須接著說明由哪個 evidence 支撐。
 7. 先寫具體事實，再寫可由證據支持的意義；不要為了讓答案好看而過度美化。
-8. answer 必須符合 output_contract，使用繁體中文撰寫。
-9. sources 只放實際用到的來源。
+8. answer 是給使用者閱讀的完整最終文字，應整合所有已寫的 sections 內容，符合 output_contract 格式，使用繁體中文撰寫。sections 是供前端分段顯示的結構化版本，兩者內容必須一致。
+9. 若 output_contract 未指定長度，每個 section 以 150-300 字為目標，整體 answer 不超過 1000 字，除非 output_contract 另有要求。
+10. sources 只放實際用到的來源。
 
 輸出 schema：
 - sections: list

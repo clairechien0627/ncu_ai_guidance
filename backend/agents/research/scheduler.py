@@ -23,7 +23,7 @@ class SlotPriority(BaseModel):
 class SchedulerDecision(BaseModel):
     slots: list[SlotPriority] = Field(
         default_factory=list,
-        description="All candidate slots ordered by search direction clarity (most ready first).",
+        description="The single highest-priority slot to execute next. Remaining candidates are handled by the system.",
     )
     rationale: str = Field(default="", description="Short reason for the ordering.")
 
@@ -67,10 +67,10 @@ def _build_scheduler_prompt(
         "state": rs.planner_prompt_dict(),
         "response_contract": {
             "slots": (
-                "ALL candidate slots ordered by search direction clarity. "
-                "Put slots with clear search_hints or with existing evidence first. "
-                "Slots with void_attempts > 0 should be ordered last. "
-                "Return ALL candidates, not just a subset."
+                "Return only the single highest-priority slot to execute next. "
+                "Choose the slot with the clearest search direction or most evidence so far. "
+                "Slots with void_attempts > 0 should be deprioritized. "
+                "The system handles remaining candidates automatically."
             ),
             "rationale": "short reason for the ordering",
         },

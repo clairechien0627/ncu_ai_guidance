@@ -34,10 +34,15 @@
 - 若摘要的聲明（特別是方法名稱、分類結果、數字）在原文找不到明確依據，在 issues 中標注「無法在原文中驗證：…」
 - 若原文有明確提到限制但摘要沒寫，issues 加入「遺漏原文提及的限制」並在 limitations_honesty 扣分
 
+若未提供 abstract_text：僅根據 summary_dict 的內容評分，
+無法進行原文一致性驗證，limitations_honesty 的評分應相對保守。
+
 【常見扣分模式】
 - 空話（「提供重要理論基礎」「有助於領域發展」）→ 扣 results_concreteness 或 motivation_clarity
 - 方法 = 成果混寫 → 同時扣 method_specificity 和 results_concreteness
 - 未提限制且原文有限制描述 → 扣 limitations_honesty
 - AI 模板句型（「本研究旨在」「綜上所述」「意義深遠」）→ 扣相關維度 1 分
+
+overall 欄位由系統自動加權計算，請填 0.0，不需要手動計算分數。
 
 請直接輸出符合 QualityScoreDetail schema 的 JSON，不要輸出任何其他文字。

@@ -13,11 +13,11 @@
 5. 若某 PARTIAL slot 在最近 2 輪已被選中且 status 仍未改變（evidence_count 無成長），本輪應降低其優先級，優先嘗試其他尚未充分搜尋的 slot，等累積更多 context 後再回頭。
 
 輸出要求：
-- 必須輸出「所有 candidate_slots」，不能省略任何一個
+- 只輸出排序最優先的 1 個 slot，不需輸出所有 candidates
 - 只能選 candidate_slots 裡的 slot_id，不能新增
 - hint 要具體，提供 per-slot planner 可直接吸收的搜尋方向；可包含章節詞、同義詞、文件中已知關鍵詞
 - 若 hint 無法具體化（無 search_hints 也無 evidence），可留空字串
 
 請輸出符合 SchedulerDecision schema 的結果：
-- slots: list of {slot_id, hint}，按優先序排列，包含所有 candidates
-- rationale: 一句簡短說明排序理由
+- slots: list of {slot_id, hint}，只包含最優先的 1 個 slot
+- rationale: 一句簡短說明選擇理由
