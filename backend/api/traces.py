@@ -866,6 +866,147 @@ def get_session_detail(thread_id: str, db: Session = Depends(get_db)):
     }
 
 
+# ── Users ─────────────────────────────────────────────────────────────────────
+
+@router.get("/api/traces/users")
+def list_users(
+    limit: int = 50,
+    offset: int = 0,
+    environment: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    search: str | None = None,
+    db: Session = Depends(get_db),
+):
+    q = db.query(Trace).filter(
+        _agent_execution_root(),
+        Trace.user_id.isnot(None),
+    )
+    if environment:
+        q = q.filter(Trace.environment == environment)
+    if date_from:
+        try:
+            q = q.filter(Trace.start_time >= datetime.fromisoformat(date_from))
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            q = q.filter(Trace.start_time <= datetime.fromisoformat(date_to))
+        except ValueError:
+            pass
+    if search:
+        q = q.filter(Trace.user_id.ilike(f"%{search}%"))
+
+    traces = q.order_by(Trace.start_time.desc()).limit(5000).all()
+
+    users: dict[str, dict] = {}
+    for t in traces:
+        uid = t.user_id
+        if uid not in users:
+            users[uid] = {
+                "user_id": uid,
+                "first_event": t.start_time,
+                "last_event": t.start_time,
+                "session_ids": set(),
+                "trace_count": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "_quality_scores": [],
+            }
+        u = users[uid]
+        u["trace_count"] += 1
+        u["input_tokens"] += t.prompt_tokens or 0
+        u["output_tokens"] += t.completion_tokens or 0
+        if t.quality_score is not None:
+            u["_quality_scores"].append(t.quality_score)
+        if t.thread_id:
+            u["session_ids"].add(t.thread_id)
+        if t.start_time:
+            if u["first_event"] is None or t.start_time < u["first_event"]:
+                u["first_event"] = t.start_time
+            if u["last_event"] is None or t.start_time > u["last_event"]:
+                u["last_event"] = t.start_time
+
+    result = []
+    for u in users.values():
+        qs = u.pop("_quality_scores")
+        sids = u.pop("session_ids")
+        result.append({
+            "user_id": u["user_id"],
+            "first_event": u["first_event"].isoformat() if u["first_event"] else None,
+            "last_event": u["last_event"].isoformat() if u["last_event"] else None,
+            "session_count": len(sids),
+            "trace_count": u["trace_count"],
+            "input_tokens": u["input_tokens"],
+            "output_tokens": u["output_tokens"],
+            "total_tokens": u["input_tokens"] + u["output_tokens"],
+            "avg_quality_score": round(sum(qs) / len(qs), 2) if qs else None,
+        })
+
+    result.sort(key=lambda x: x["last_event"] or "", reverse=True)
+    total = len(result)
+    return {"users": result[offset: offset + limit], "total": total}
+
+
+@router.get("/api/traces/users/{user_id}")
+def get_user_detail(user_id: str, db: Session = Depends(get_db)):
+    # Sessions for this user
+    traces = (
+        db.query(Trace)
+        .filter(_agent_execution_root(), Trace.user_id == user_id)
+        .order_by(Trace.start_time.desc())
+        .limit(500)
+        .all()
+    )
+    if not traces:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Aggregate per session (thread_id)
+    sessions: dict[str, dict] = {}
+    for t in traces:
+        tid = t.thread_id or t.run_id
+        if tid not in sessions:
+            sessions[tid] = {
+                "thread_id": tid,
+                "task_type": t.route_intent,
+                "created_at": t.start_time,
+                "trace_count": 0,
+                "total_tokens": 0,
+                "_quality_scores": [],
+            }
+        s = sessions[tid]
+        s["trace_count"] += 1
+        s["total_tokens"] += (t.prompt_tokens or 0) + (t.completion_tokens or 0)
+        if t.quality_score is not None:
+            s["_quality_scores"].append(t.quality_score)
+        if t.start_time and s["created_at"] and t.start_time < s["created_at"]:
+            s["created_at"] = t.start_time
+
+    session_list = []
+    for s in sessions.values():
+        qs = s.pop("_quality_scores")
+        s["avg_quality_score"] = round(sum(qs) / len(qs), 2) if qs else None
+        s["created_at"] = s["created_at"].isoformat() if s["created_at"] else None
+        session_list.append(s)
+
+    session_list.sort(key=lambda x: x["created_at"] or "", reverse=True)
+
+    input_tokens = sum(t.prompt_tokens or 0 for t in traces)
+    output_tokens = sum(t.completion_tokens or 0 for t in traces)
+    qs_all = [t.quality_score for t in traces if t.quality_score is not None]
+
+    return {
+        "user_id": user_id,
+        "first_event": min((t.start_time for t in traces if t.start_time), default=None),
+        "last_event": max((t.start_time for t in traces if t.start_time), default=None),
+        "session_count": len(sessions),
+        "trace_count": len(traces),
+        "total_tokens": input_tokens + output_tokens,
+        "avg_quality_score": round(sum(qs_all) / len(qs_all), 2) if qs_all else None,
+        "sessions": session_list,
+    }
+
+
 # ── 動態路由（必須在所有靜態路徑之後） ────────────────────────────────────────
 
 @router.get("/api/traces/{run_id}")

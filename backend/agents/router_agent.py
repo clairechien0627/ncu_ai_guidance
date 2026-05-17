@@ -42,9 +42,11 @@ def _write_router_trace(
     *,
     end_time: datetime | None = None,
     error: str | None = None,
+    user_id: str | None = None,
 ) -> None:
     """Write or update a thin router-level trace entry (parent_run_id=None)."""
     from db import db_session, Trace
+    from observability.tracer import _get_default_environment
     try:
         with db_session() as db:
             existing = db.query(Trace).filter(Trace.run_id == run_id).first()
@@ -63,6 +65,8 @@ def _write_router_trace(
                     agent_name="router_agent",
                     original_intent=route.original_intent,
                     resolved_intent=route.resolved_intent,
+                    environment=_get_default_environment(),
+                    user_id=user_id,
                 ))
             else:
                 if end_time:
@@ -610,7 +614,7 @@ async def route_agent_message(
         )
         step = plan.target_step
         route_intent = _normalise_intent(route.intent)
-        await asyncio.to_thread(_write_router_trace, router_run_id, thread_id, document_ids, route)
+        await asyncio.to_thread(_write_router_trace, router_run_id, thread_id, document_ids, route, user_id=get_user_id())
 
         try:
             if route_intent == "evaluation":
@@ -685,7 +689,7 @@ async def route_agent_message(
         except Exception as exc:
             await asyncio.to_thread(
                 _write_router_trace, router_run_id, thread_id, document_ids, route,
-                end_time=datetime.now(timezone.utc), error=str(exc),
+                end_time=datetime.now(timezone.utc), error=str(exc), user_id=get_user_id(),
             )
             raise
 
@@ -703,7 +707,7 @@ async def route_agent_message(
 
         await asyncio.to_thread(
             _write_router_trace, router_run_id, thread_id, document_ids, route,
-            end_time=datetime.now(timezone.utc),
+            end_time=datetime.now(timezone.utc), user_id=get_user_id(),
         )
 
         composition_step = plan.composition_step
@@ -772,7 +776,7 @@ async def route_agent_stream(
         )
         step = plan.target_step
         route_intent = _normalise_intent(route.intent)
-        await asyncio.to_thread(_write_router_trace, router_run_id, thread_id, document_ids, route)
+        await asyncio.to_thread(_write_router_trace, router_run_id, thread_id, document_ids, route, user_id=get_user_id())
 
         if route_intent == "evaluation":
             result = await _run_evaluation_agent(
@@ -781,7 +785,7 @@ async def route_agent_stream(
                 parent_run_id=step.parent_run_id,
             )
             await asyncio.to_thread(_write_router_trace, router_run_id, thread_id, document_ids, route,
-                                    end_time=datetime.now(timezone.utc))
+                                    end_time=datetime.now(timezone.utc), user_id=get_user_id())
             yield result.response, False, []
             yield "", True, []
             return
@@ -878,7 +882,7 @@ async def route_agent_stream(
                     yield item
 
         await asyncio.to_thread(_write_router_trace, router_run_id, thread_id, document_ids, route,
-                                end_time=datetime.now(timezone.utc))
+                                end_time=datetime.now(timezone.utc), user_id=get_user_id())
 
         if plan.evaluate_after:
             _fire_and_forget(_run_evaluation_agent(

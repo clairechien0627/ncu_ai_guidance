@@ -413,6 +413,42 @@ export const getSessionDetail = async (threadId: string): Promise<SessionItem & 
   return data
 }
 
+// ── Users ─────────────────────────────────────────────────────────────────────
+
+export interface UserItem {
+  user_id: string
+  first_event: string | null
+  last_event: string | null
+  session_count: number
+  trace_count: number
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  avg_quality_score: number | null
+}
+
+export interface UsersResponse {
+  users: UserItem[]
+  total: number
+}
+
+export const getUsers = async (
+  limit = 50,
+  filters: { environment?: string; date_from?: string; date_to?: string; search?: string; offset?: number } = {},
+): Promise<UsersResponse> => {
+  const params = new URLSearchParams({ limit: String(limit) })
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') params.set(key, String(value))
+  })
+  const { data } = await api.get<UsersResponse>(`/traces/users?${params.toString()}`)
+  return data
+}
+
+export const getUserDetail = async (userId: string) => {
+  const { data } = await api.get(`/traces/users/${encodeURIComponent(userId)}`)
+  return data
+}
+
 export const getDocumentTraces = async (docId: number): Promise<TraceItem[]> => {
   const { data } = await api.get<TraceItem[]>(`/documents/${docId}/traces`)
   return data

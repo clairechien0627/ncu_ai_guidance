@@ -6,6 +6,7 @@ import TracesPage from './pages/admin/TracesPage'
 import SessionsPage from './pages/admin/SessionsPage'
 import SessionDetailPage from './pages/admin/SessionDetailPage'
 import UsersPage from './pages/admin/UsersPage'
+import UserDetailPage from './pages/admin/UserDetailPage'
 import DocumentsPage from './pages/admin/DocumentsPage'
 import JobsPage from './pages/admin/JobsPage'
 import PromptsPage from './pages/admin/PromptsPage'
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="sessions" element={<SessionsPage />} />
           <Route path="sessions/:threadId" element={<SessionDetailPage />} />
           <Route path="users" element={<UsersPage />} />
+          <Route path="users/:userId" element={<UserDetailPage />} />
           <Route path="documents" element={<DocumentsPage />} />
           <Route path="jobs" element={<JobsPage />} />
           <Route path="prompts" element={<PromptsPage />} />
