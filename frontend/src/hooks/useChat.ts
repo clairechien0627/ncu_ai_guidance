@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import { sendMessageStream } from '../api'
 import type { ChatResponse, DocumentItem } from '../api'
-import type { Message } from '../App'
+import type { Message } from '../types'
 
 interface UseChatOptions {
   model: string

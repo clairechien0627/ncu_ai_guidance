@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { Paperclip, ArrowUp, X, File, FileText, Trash2, PanelRight, Pencil, RefreshCw, Layers } from 'lucide-react'
 import ChunkViewer from '../viewer/ChunkViewer'
-import type { Message } from '../../App'
+import type { Message } from '../../types'
 import type { DocumentItem } from '../../api'
 
 const MarkdownRenderer = lazy(() => import('../MarkdownRenderer'))
