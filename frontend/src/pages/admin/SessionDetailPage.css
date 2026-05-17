@@ -1,0 +1,272 @@
+.sd-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: #f9fafb;
+}
+
+/* ── Sticky Header ── */
+
+.sd-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.sd-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.sd-back-btn {
+  padding: 6px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sd-back-btn:hover {
+  background: #f9fafb;
+}
+
+.sd-thread-id {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  margin: 0 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sd-header-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.sd-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: #f3f4f6;
+  font-size: 12px;
+  font-weight: 500;
+  color: #374151;
+  white-space: nowrap;
+}
+
+/* ── Intent Badges ── */
+
+.sd-intent-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.sd-intent-badge--research  { background: #ede9fe; color: #5b21b6; }
+.sd-intent-badge--retrieval { background: #dbeafe; color: #1e40af; }
+.sd-intent-badge--chat      { background: #dcfce7; color: #166534; }
+.sd-intent-badge--question  { background: #fef3c7; color: #92400e; }
+.sd-intent-badge--evaluation{ background: #fce7f3; color: #9d174d; }
+
+/* ── Quality dot ── */
+
+.sd-quality-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: #f3f4f6;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+}
+
+/* ── Trace list ── */
+
+.sd-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sd-empty {
+  text-align: center;
+  padding: 60px;
+  color: #9ca3af;
+  font-size: 14px;
+}
+
+/* ── Trace Card ── */
+
+.sd-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: flex;
+  overflow: hidden;
+  min-height: 120px;
+}
+
+.sd-card:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+/* Left: IO */
+.sd-card-io {
+  flex: 1;
+  min-width: 0;
+  padding: 16px 20px;
+  overflow: hidden;
+}
+
+/* Divider */
+.sd-card-divider {
+  width: 1px;
+  background: #e5e7eb;
+  flex-shrink: 0;
+}
+
+/* Right: Metadata */
+.sd-card-meta {
+  width: 260px;
+  min-width: 260px;
+  padding: 14px 16px;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sd-card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sd-card-idx {
+  font-size: 11px;
+  font-weight: 600;
+  color: #9ca3af;
+}
+
+.sd-card-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sd-card-meta-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9ca3af;
+}
+
+.sd-card-meta-item > span:last-child {
+  font-size: 12px;
+  color: #374151;
+}
+
+.sd-card-meta-mono {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px !important;
+  color: #6b7280 !important;
+}
+
+.sd-card-error {
+  font-size: 12px;
+  color: #dc2626;
+  font-weight: 500;
+}
+
+/* ── IO ── */
+
+.sd-io {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sd-io-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sd-io-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9ca3af;
+}
+
+.sd-io-text {
+  font-size: 13px;
+  color: #111827;
+  line-height: 1.5;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.sd-io-text--clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sd-io-empty {
+  font-size: 13px;
+  color: #9ca3af;
+  font-style: italic;
+  margin: 0;
+}
+
+/* ── States ── */
+
+.sd-loading,
+.sd-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  font-size: 14px;
+  color: #9ca3af;
+}
+
+.sd-error {
+  color: #dc2626;
+}

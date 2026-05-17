@@ -4,6 +4,7 @@ import AdminLayout from './layouts/AdminLayout'
 import DashboardPage from './pages/admin/DashboardPage'
 import TracesPage from './pages/admin/TracesPage'
 import SessionsPage from './pages/admin/SessionsPage'
+import SessionDetailPage from './pages/admin/SessionDetailPage'
 import UsersPage from './pages/admin/UsersPage'
 import DocumentsPage from './pages/admin/DocumentsPage'
 import JobsPage from './pages/admin/JobsPage'
@@ -20,6 +21,7 @@ export default function App() {
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="traces" element={<TracesPage />} />
           <Route path="sessions" element={<SessionsPage />} />
+          <Route path="sessions/:threadId" element={<SessionDetailPage />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="documents" element={<DocumentsPage />} />
           <Route path="jobs" element={<JobsPage />} />
