@@ -15,7 +15,7 @@ PDF 解析品質比較腳本
 import sys, os, warnings
 warnings.filterwarnings("ignore")
 
-BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BACKEND_DIR)
 
 from dotenv import load_dotenv

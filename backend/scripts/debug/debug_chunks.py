@@ -25,7 +25,7 @@ import os
 import sys
 import textwrap
 
-BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BACKEND_DIR)
 
 from dotenv import load_dotenv

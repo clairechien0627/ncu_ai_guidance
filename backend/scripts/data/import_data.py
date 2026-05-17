@@ -6,7 +6,7 @@ import requests
 from pathlib import Path
 
 # Add parent directory to path to import config
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from config import settings
 
 DATA_PACKAGE_DIR = Path(__file__).parent.parent.parent / "data-package"
