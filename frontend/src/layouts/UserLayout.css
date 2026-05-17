@@ -8,8 +8,18 @@
 .user-main {
   flex: 1;
   overflow-y: auto;
-  scrollbar-width: thin;
+  scrollbar-gutter: stable both-edges;   /* 左右預留等量空間，切頁不位移也不不對稱 */
+  background: var(--page-bg);
   scrollbar-color: #cbd5e1 transparent;
 }
-.user-main::-webkit-scrollbar { width: 6px; }
-.user-main::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+/* track 20px：thumb 視覺 12px（左 2px + thumb + 右 6px 讓它離邊緣更遠） */
+.user-main::-webkit-scrollbar { width: 20px; }
+.user-main::-webkit-scrollbar-button { display: none; }   /* 移除上下箭頭按鈕 */
+.user-main::-webkit-scrollbar-track { background: transparent; }
+.user-main::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  border-right-width: 6px;              /* 右側多留 6px，thumb 視覺離右邊更遠 */
+  background-clip: padding-box;
+}

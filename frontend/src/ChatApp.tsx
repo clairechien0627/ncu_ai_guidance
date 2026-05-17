@@ -28,7 +28,7 @@ export default function ChatApp() {
   const model = 'openai'
   const [pdfOpen, setPdfOpen] = useState(false)
   const [pdfViewDocId, setPdfViewDocId] = useState<number | null>(null)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
   const [docPanelOpen, setDocPanelOpen] = useState(false)
 
   // ── Server state ───────────────────────────────────────────────────────────

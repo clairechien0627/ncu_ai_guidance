@@ -1,0 +1,28 @@
+.section-block {
+  margin-bottom: 24px;
+}
+
+.section-block-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--primary-900);
+  margin-bottom: 10px;
+}
+
+.section-block-bar {
+  width: 4px;
+  height: 24px;
+  background: var(--primary-700, #334e68);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.section-block-body {
+  padding-left: 16px;
+  font-size: 14px;
+  line-height: 1.85;
+  color: #475569;
+}

@@ -1,11 +1,10 @@
 .app-layout {
   display: flex;
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 12% 16%, rgba(201, 240, 229, 0.88) 0%, rgba(201, 240, 229, 0) 26%),
-    radial-gradient(circle at 86% 16%, rgba(255, 236, 200, 0.82) 0%, rgba(255, 236, 200, 0) 24%),
-    linear-gradient(180deg, #fbfdff 0%, #edf4ff 100%);
+  max-width: 1280px;
+  margin: 0 auto;
+  width: 100%;
   color: #334155;
 }
 

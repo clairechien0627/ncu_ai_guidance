@@ -26,14 +26,14 @@ export default function PromptsPage() {
   const prompts: PromptSummary[] = Array.isArray(data) ? data : []
 
   return (
-    <div className="pp-page">
-      <div className="pp-header">
-        <h1 className="pp-title">Prompts</h1>
-        <p className="pp-subtitle">{prompts.length} prompts</p>
+    <div className="adm-pp-page">
+      <div className="adm-pp-header">
+        <h1 className="adm-pp-title">Prompts</h1>
+        <p className="adm-pp-subtitle">{prompts.length} prompts</p>
       </div>
 
-      <div className="pp-table-wrapper">
-        <table className="pp-table">
+      <div className="adm-pp-table-wrapper">
+        <table className="adm-pp-table">
           <thead>
             <tr>
               <th>Name</th>
@@ -46,11 +46,11 @@ export default function PromptsPage() {
           </thead>
           <tbody>
             {isLoading && (
-              <tr><td colSpan={6} className="pp-loading">Loading…</td></tr>
+              <tr><td colSpan={6} className="adm-pp-loading">Loading…</td></tr>
             )}
             {!isLoading && prompts.length === 0 && (
               <tr>
-                <td colSpan={6} className="pp-empty">
+                <td colSpan={6} className="adm-pp-empty">
                   No versions synced yet. Run <code>python scripts/prompts/sync_prompts.py</code> to populate.
                 </td>
               </tr>
@@ -58,21 +58,21 @@ export default function PromptsPage() {
             {prompts.map((p: PromptSummary) => (
               <tr
                 key={p.name}
-                className="pp-row"
+                className="adm-pp-row"
                 onClick={() => navigate(`/admin/prompts/${encodeURIComponent(p.name)}`)}
               >
-                <td className="pp-td-name">{p.name}</td>
-                <td className="pp-td-hash">
+                <td className="adm-pp-td-name">{p.name}</td>
+                <td className="adm-pp-td-hash">
                   {p.current_hash ? <code>#{p.current_hash}</code> : <span style={{ color: '#d1d5db' }}>—</span>}
                 </td>
-                <td className="pp-td-num">{p.word_count ?? '—'}</td>
-                <td className="pp-td-num">
-                  <span className={p.version_count > 0 ? 'pp-version-badge' : ''}>
+                <td className="adm-pp-td-num">{p.word_count ?? '—'}</td>
+                <td className="adm-pp-td-num">
+                  <span className={p.version_count > 0 ? 'adm-pp-version-badge' : ''}>
                     {p.version_count > 0 ? p.version_count : '—'}
                   </span>
                 </td>
-                <td className="pp-td-date">{formatDate(p.synced_at)}</td>
-                <td className="pp-td-num"><QualityBadge score={p.avg_quality_score} /></td>
+                <td className="adm-pp-td-date">{formatDate(p.synced_at)}</td>
+                <td className="adm-pp-td-num"><QualityBadge score={p.avg_quality_score} /></td>
               </tr>
             ))}
           </tbody>

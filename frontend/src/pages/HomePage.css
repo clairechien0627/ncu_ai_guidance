@@ -1,12 +1,12 @@
 /* Page animation */
 @keyframes pageFadeIn {
   from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: translateZ(0); }
 }
 
 .home-root {
   animation: pageFadeIn 320ms ease-out;
-  background: var(--page-bg);
+  /* background: transparent — 漸層由 user-main 統一提供 */
   min-height: 100%;
   padding: 0 16px 64px;
 }

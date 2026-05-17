@@ -29,6 +29,7 @@ yarn-error.log*
 logs/
 *.log
 uploads/
+.playwright-mcp/
 chroma_db/
 qdrant_storage/
 llamacache/

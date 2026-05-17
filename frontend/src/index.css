@@ -6,8 +6,9 @@
 
 :root {
   color-scheme: light;
+  /* bg-theme-1 from reference ncu_ai_guidance (unchanged) */
   --page-bg:
-    radial-gradient(circle at 14% 16%, rgba(196, 244, 233, 0.92) 0%, rgba(196, 244, 233, 0) 34%),
+    radial-gradient(circle at 14% 18%, rgba(196, 244, 233, 0.92) 0%, rgba(196, 244, 233, 0) 34%),
     radial-gradient(circle at 84% 18%, rgba(252, 241, 182, 0.88) 0%, rgba(252, 241, 182, 0) 32%),
     linear-gradient(180deg, #fbfdff 0%, #eef5ff 100%);
   --surface: rgba(255, 255, 255, 0.80);
@@ -46,7 +47,7 @@
 
 body {
   font-family: "Inter", "Noto Sans TC", -apple-system, BlinkMacSystemFont, sans-serif;
-  background: var(--page-bg);
+  background: #f8fafc;      /* 中性底色，寬螢幕側邊不漏色 */
   color: var(--text-body);
   height: 100vh;
   overflow: hidden;
@@ -57,6 +58,17 @@ body {
 
 #root {
   height: 100vh;
+  background: #f8fafc;
+}
+
+/* 內容頁最大寬度容器：1280px 居中，透明（漸層由父層提供） */
+.page-container {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 24px;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
 }
 
 @keyframes spin {
