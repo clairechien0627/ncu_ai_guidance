@@ -19,10 +19,11 @@ function QualityBadge({ score }: { score: number | null }) {
 
 export default function PromptsPage() {
   const navigate = useNavigate()
-  const { data: prompts = [], isLoading } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['prompts-list'],
     queryFn: getPromptList2,
   })
+  const prompts: PromptSummary[] = Array.isArray(data) ? data : []
 
   return (
     <div className="pp-page">

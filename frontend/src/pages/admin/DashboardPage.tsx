@@ -149,7 +149,8 @@ export default function DashboardPage() {
   const [days, setDays] = useState(14)
 
   const { data: stats }   = useQuery({ queryKey: ['dash-stats',    days], queryFn: () => getTraceStats(days) })
-  const { data: byRoute = [] } = useQuery({ queryKey: ['dash-route'],      queryFn: getTracesByRouteIntent })
+  const { data: byRouteRaw } = useQuery({ queryKey: ['dash-route'], queryFn: getTracesByRouteIntent })
+  const byRoute: TraceGroupStats[] = Array.isArray(byRouteRaw) ? byRouteRaw : []
   const { data: errors = [] }  = useQuery({ queryKey: ['dash-errors'],     queryFn: () => getTraceErrors(5) })
   const { data: timeline = [] } = useQuery({ queryKey: ['dash-timeline', days], queryFn: () => getTraceTimeline(undefined, undefined, days) })
 
