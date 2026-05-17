@@ -8,11 +8,9 @@ Run with:
     python -m pytest tests/test_rag_filters.py -v
 """
 import sys
-import os
 from unittest.mock import MagicMock
 
 # Stub heavy dependencies before importing rag
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for mod in ("database", "config", "services.job_service"):
     sys.modules.setdefault(mod, MagicMock())
 

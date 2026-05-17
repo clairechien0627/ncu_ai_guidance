@@ -1,10 +1,7 @@
 import asyncio
-import os
 import sys
 import types
 from dataclasses import dataclass
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.research.scheduler import decide_slot_ordering, get_candidate_slots
 from agents.research.planner import PlannerDecision

@@ -1,12 +1,8 @@
 """Unit tests for services/job_service.py — sync state machine functions only."""
 import asyncio
 import sys
-import os
 import unittest
 from unittest.mock import MagicMock, patch
-
-# Ensure backend root is importable without a running DB/Qdrant
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Stub out heavy imports before loading job_service
 for mod in ("database", "rag", "extraction", "config", "agent"):
