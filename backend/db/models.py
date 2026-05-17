@@ -230,6 +230,8 @@ class Trace(Base):
     original_intent = Column(String, nullable=True, index=True)
     resolved_intent = Column(String, nullable=True, index=True)
     quality_detail = Column(JsonColumn, nullable=True)
+    environment = Column(String(40), nullable=False, default="default", index=True)
+    user_id = Column(String, nullable=True, index=True)
 
     def __repr__(self) -> str:
         return f"<Trace run_id={self.run_id!r} task_type={self.task_type!r} agent={self.agent_name!r}>"

@@ -6,12 +6,17 @@ One instance per agent call; flushed to DB when the root chain ends.
 import asyncio
 import json
 import logging
+import os
 from datetime import datetime, timezone
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 
 logger = logging.getLogger(__name__)
+
+
+def _get_default_environment() -> str:
+    return os.environ.get("LANGFUSE_TRACING_ENVIRONMENT", "default")
 
 
 # ── Serialisation helpers ──────────────────────────────────────────────────────
@@ -191,6 +196,8 @@ class LocalTracer(BaseCallbackHandler):
         parent_run_id: str | None = None,
         original_intent: str | None = None,
         resolved_intent: str | None = None,
+        environment: str | None = None,
+        user_id: str | None = None,
     ):
         super().__init__()
         self.thread_id = thread_id
@@ -217,6 +224,8 @@ class LocalTracer(BaseCallbackHandler):
         self.parent_run_id = parent_run_id
         self.original_intent = original_intent
         self.resolved_intent = resolved_intent
+        self.environment = environment or _get_default_environment()
+        self.user_id = user_id
         self._tool_count = 0
         self._llm_call_count = 0
         self._root_run_id: str | None = None
@@ -436,6 +445,8 @@ class LocalTracer(BaseCallbackHandler):
                 "user_feedback": self.user_feedback if is_root else None,
                 "original_intent": self.original_intent if is_root else None,
                 "resolved_intent": self.resolved_intent if is_root else None,
+                "environment": self.environment,
+                "user_id": self.user_id if is_root else None,
             })
         return rows
 
