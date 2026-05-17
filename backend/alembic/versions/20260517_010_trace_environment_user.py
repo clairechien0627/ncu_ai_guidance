@@ -27,7 +27,7 @@ def upgrade():
 
     # Add user_id column (nullable)
     conn.execute(sa.text(
-        "ALTER TABLE traces ADD COLUMN IF NOT EXISTS user_id VARCHAR NULLABLE"
+        "ALTER TABLE traces ADD COLUMN IF NOT EXISTS user_id VARCHAR"
     ))
     conn.execute(sa.text(
         "CREATE INDEX IF NOT EXISTS ix_trace_user_id ON traces (user_id)"
