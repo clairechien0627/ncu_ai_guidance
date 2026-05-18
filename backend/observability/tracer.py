@@ -370,21 +370,29 @@ class LocalTracer(BaseCallbackHandler):
     # ── Flush ──────────────────────────────────────────────────────────────────
 
     def _flush(self, root_outputs):
-        """Serialize event data in memory, then schedule async DB write.
+        """Serialize event data in memory, then schedule DB/outbox writes.
 
         The serialisation step is synchronous and fast (pure memory reads).
         The actual DB I/O runs in a thread pool via asyncio.to_thread so it
-        never blocks the event loop.  Falls back to a synchronous write when
+        never blocks the event loop.  Falls back to synchronous writes when
         there is no running event loop (e.g. test context).
         """
         rows = self._build_trace_rows(root_outputs)
         if not rows:
             return
+        events = self._build_trace_events(rows)
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(asyncio.to_thread(LocalTracer._write_traces, rows))
+            if events:
+                from services.trace_ingestion import TraceEventIngestor
+                loop.create_task(TraceEventIngestor.enqueue(events))
         except RuntimeError:
             LocalTracer._write_traces(rows)
+            if events:
+                from services.trace_ingestion import TraceEventIngestor, TraceIngestionWorker
+                TraceEventIngestor.enqueue_sync(events)
+                TraceIngestionWorker.process_pending()
 
     def _build_trace_rows(self, root_outputs) -> list[dict]:
         """Build trace dicts from in-memory event data without any I/O."""
@@ -449,6 +457,100 @@ class LocalTracer(BaseCallbackHandler):
                 "user_id": self.user_id if is_root else None,
             })
         return rows
+
+    def _build_trace_events(self, rows: list[dict]) -> list[dict]:
+        """Build normalized Trace System v2 events from legacy trace rows."""
+        root_row = next((row for row in rows if row["run_id"] == self._root_run_id), None)
+        if root_row is None:
+            return []
+
+        def _loads(value):
+            if not value:
+                return None
+            if isinstance(value, str):
+                try:
+                    return json.loads(value)
+                except Exception:
+                    return value
+            return value
+
+        metadata = {
+            "task_type": self.task_type,
+            "route_intent": self.route_intent,
+            "agent_name": self.agent_name,
+            "prompt_name": self.prompt_name,
+            "prompt_version": self.prompt_version,
+            "base_prompt_name": self.base_prompt_name,
+            "task_prompt_name": self.task_prompt_name,
+            "quality_prompt_name": self.quality_prompt_name,
+            "base_prompt_hash": self.base_prompt_hash,
+            "task_prompt_hash": self.task_prompt_hash,
+            "quality_prompt_hash": self.quality_prompt_hash,
+            "prompt_stack_name": self.prompt_stack_name,
+            "prompt_stack_json": _loads(self.prompt_stack_json),
+            "primary_prompt_json": _loads(self.primary_prompt_json),
+            "workflow_prompts_json": _loads(self.workflow_prompts_json),
+            "prompt_stack_tokens": self.prompt_stack_tokens,
+            "tool_count": self._tool_count,
+            "llm_call_count": self._llm_call_count,
+            "original_intent": self.original_intent,
+            "resolved_intent": self.resolved_intent,
+            "document_ids": self.document_ids,
+        }
+        metadata = {k: v for k, v in metadata.items() if v is not None}
+
+        events = [{
+            "event_id": f"trace-create:{root_row['run_id']}",
+            "event_type": "trace-create",
+            "body": {
+                "trace_id": root_row["run_id"],
+                "name": root_row.get("name") or "trace",
+                "thread_id": self.thread_id,
+                "session_id": self.thread_id,
+                "user_id": self.user_id,
+                "environment": self.environment,
+                "input": _loads(root_row.get("inputs")),
+                "output": _loads(root_row.get("outputs")),
+                "metadata": metadata,
+                "tags": [self.route_intent, self.agent_name] if self.route_intent or self.agent_name else [],
+                "start_time": root_row.get("start_time"),
+                "end_time": root_row.get("end_time"),
+            },
+        }]
+
+        for row in rows:
+            if row["run_id"] == root_row["run_id"]:
+                continue
+            usage = {}
+            if row.get("prompt_tokens") is not None:
+                usage["input"] = row.get("prompt_tokens")
+            if row.get("completion_tokens") is not None:
+                usage["output"] = row.get("completion_tokens")
+            if usage:
+                usage["total"] = (usage.get("input") or 0) + (usage.get("output") or 0)
+                usage["unit"] = "TOKENS"
+            events.append({
+                "event_id": f"observation-create:{row['run_id']}",
+                "event_type": "observation-create",
+                "body": {
+                    "observation_id": row["run_id"],
+                    "trace_id": root_row["run_id"],
+                    "parent_observation_id": row.get("parent_run_id") if row.get("parent_run_id") != root_row["run_id"] else None,
+                    "type": row.get("run_type") or "span",
+                    "name": row.get("name") or "observation",
+                    "usage": usage or None,
+                    "prompt_name": row.get("prompt_name"),
+                    "prompt_version": row.get("prompt_version"),
+                    "input": _loads(row.get("inputs")),
+                    "output": _loads(row.get("outputs")),
+                    "metadata": metadata,
+                    "level": "ERROR" if row.get("error") else "DEFAULT",
+                    "status_message": row.get("error"),
+                    "start_time": row.get("start_time"),
+                    "end_time": row.get("end_time"),
+                },
+            })
+        return events
 
     @staticmethod
     def _write_traces(rows: list[dict]) -> None:

@@ -1,15 +1,20 @@
-import asyncio
 import json
 import logging
-from collections import Counter
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, or_, and_, select
+from sqlalchemy import or_, and_, select
 from sqlalchemy.orm import Session
 
-from db import get_db, Trace
+from db import get_db, Trace, Observation, Score
+from services.datasets import DatasetService
+from services.evaluation_analytics import EvaluationAnalyticsService
+from services.evaluation_reports import EvaluationReportService
+from services.evaluation_runs import EvaluationRunService
+from services.evaluation_worker import EvaluationWorker
+from services.experiments import ExperimentRunService
+from services.trace_repositories import ScoreRepository
+from services.trace_read_service import TraceReadService
 
 logger = logging.getLogger(__name__)
 
@@ -264,54 +269,32 @@ def _matches_trace_filters(
 
 @router.get("/api/documents/{doc_id}/traces")
 def get_document_traces(doc_id: int, db: Session = Depends(get_db)):
-    # document_ids is jsonb (migration 009). Use @> containment with GIN index.
-    from sqlalchemy import func
-    doc_filter = Trace.document_ids.op('@>')(func.jsonb_build_array(doc_id))
-    candidates = (
-        db.query(Trace)
-        .filter(_agent_execution_root(), Trace.document_ids.isnot(None), doc_filter)
-        .order_by(Trace.start_time.desc())
-        .limit(200)
-        .all()
-    )
-    extract_traces = []
-    other_traces = []
-    for t in candidates:
-        if t.thread_id and t.thread_id.startswith("_extract_"):
-            extract_traces.append(t)
-        elif t.thread_id and not t.thread_id.lstrip("-").isdigit():
-            other_traces.append(t)
-
-    seen = {t.run_id for t in extract_traces}
-    combined = extract_traces + [t for t in other_traces if t.run_id not in seen]
-
-    return [
-        {
-            "id": t.run_id,
-            "name": t.name,
-            "status": "error" if t.error else "success",
-            "start_time": t.start_time.isoformat() + "Z" if t.start_time else None,
-            "latency": _latency_seconds(t),
-            "error": t.error,
-            "url": None,
-            "display": _display(t),
-            **_trace_meta(t),
-            "runtime_prompt_metadata": _prompt_metadata_from_display(t),
-        }
-        for t in combined[:10]
-    ]
+    return TraceReadService(db).document_traces(doc_id)
 
 
 @router.get("/api/traces/environments")
 def list_environments(db: Session = Depends(get_db)):
     """Return distinct environment values present in root traces."""
-    rows = (
-        db.query(Trace.environment)
-        .filter(_agent_execution_root(), Trace.environment.isnot(None))
-        .distinct()
-        .all()
-    )
-    return sorted({r[0] for r in rows if r[0]})
+    return TraceReadService(db).environments()
+
+
+class BatchDeleteTracesRequest(BaseModel):
+    ids: list[str]  # run_ids
+
+
+@router.delete("/api/traces/batch")
+def batch_delete_traces(
+    payload: BatchDeleteTracesRequest,
+    db: Session = Depends(get_db),
+):
+    run_ids = payload.ids
+    if not run_ids:
+        return {"deleted": 0}
+    db.query(Score).filter(Score.trace_id.in_(run_ids)).delete(synchronize_session=False)
+    db.query(Observation).filter(Observation.trace_id.in_(run_ids)).delete(synchronize_session=False)
+    deleted = db.query(Trace).filter(Trace.run_id.in_(run_ids)).delete(synchronize_session=False)
+    db.commit()
+    return {"deleted": deleted}
 
 
 @router.get("/api/traces")
@@ -328,118 +311,35 @@ def list_traces(
     has_score: bool | None = None,
     original_intent: str | None = None,
     resolved_intent: str | None = None,
+    agent_name: str | None = None,
     environment: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     db: Session = Depends(get_db),
 ):
-    q = db.query(Trace).filter(_agent_execution_root())
-
-    task_type = _clean_filter(task_type)
-    route_intent = _clean_filter(route_intent)
-    prompt_name = _clean_filter(prompt_name)
-    prompt_version = _clean_filter(prompt_version)
-    status = _clean_filter(status)
-    original_intent = _clean_filter(original_intent)
-    resolved_intent = _clean_filter(resolved_intent)
-
-    if task_type:
-        q = q.filter(Trace.task_type == task_type)
-    if route_intent:
-        q = q.filter(Trace.route_intent == route_intent)
-    if prompt_name:
-        q = q.filter(Trace.prompt_name == prompt_name)
-    if prompt_version:
-        q = q.filter(Trace.prompt_version == prompt_version)
-    if status == "error":
-        q = q.filter(Trace.error.isnot(None))
-    elif status == "success":
-        q = q.filter(Trace.error.is_(None))
-    if original_intent:
-        q = q.filter(Trace.original_intent == original_intent)
-    if resolved_intent:
-        q = q.filter(Trace.resolved_intent == resolved_intent)
-    if environment:
-        q = q.filter(Trace.environment == environment)
-    if max_quality is not None:
-        q = q.filter(Trace.quality_score.isnot(None), Trace.quality_score < max_quality)
-    if has_score is True:
-        q = q.filter(Trace.quality_score.isnot(None))
-    elif has_score is False:
-        q = q.filter(Trace.quality_score.is_(None))
-
-    traces = (
-        q.order_by(Trace.start_time.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
+    return TraceReadService(db).list_traces(
+        limit=limit,
+        offset=offset,
+        task_type=task_type,
+        route_intent=route_intent,
+        prompt_name=prompt_name,
+        prompt_version=prompt_version,
+        status=status,
+        min_latency=min_latency,
+        max_quality=max_quality,
+        has_score=has_score,
+        original_intent=original_intent,
+        resolved_intent=resolved_intent,
+        agent_name=agent_name,
+        environment=environment,
+        date_from=date_from,
+        date_to=date_to,
     )
-
-    # min_latency requires computed value; filter in Python only when needed
-    if min_latency is not None:
-        traces = [t for t in traces if (_latency_seconds(t) or 0) >= min_latency]
-
-    result = []
-    for t in traces:
-        item = _trace_payload(t)
-        item["display"] = None
-        result.append(item)
-    return result
 
 
 @router.get("/api/traces/stats")
 def trace_stats(days: int = 7, db: Session = Depends(get_db)):
-    from datetime import timedelta, timezone as tz
-    root = _agent_execution_root()
-    now = datetime.now(tz.utc)
-    cur_start  = now - timedelta(days=days)
-    prev_start = now - timedelta(days=days * 2)
-
-    total_all = db.query(func.count(Trace.id)).filter(root).scalar() or 0
-
-    cur_traces  = db.query(Trace).filter(root, Trace.start_time >= cur_start).all()
-    prev_traces = db.query(Trace).filter(
-        root, Trace.start_time >= prev_start, Trace.start_time < cur_start,
-    ).all()
-
-    def _agg(traces):
-        n = len(traces)
-        errs = sum(1 for t in traces if t.error)
-        lats = [v for v in (_latency_seconds(t) for t in traces) if v is not None]
-        qs   = [t.quality_score for t in traces if t.quality_score is not None]
-        return {
-            "runs":        n,
-            "errors":      errs,
-            "error_rate":  round(errs / n * 100, 1) if n else 0.0,
-            "avg_latency": round(sum(lats) / len(lats), 2) if lats else None,
-            "avg_quality": round(sum(qs) / len(qs), 2) if qs else None,
-        }
-
-    def _trend(cur_val, prev_val):
-        if prev_val is None or prev_val == 0:
-            return None
-        return round((cur_val - prev_val) / prev_val * 100, 1)
-
-    cur  = _agg(cur_traces)
-    prev = _agg(prev_traces)
-
-    return {
-        # All-time
-        "total_runs": total_all,
-        # Current period
-        "period_runs":     cur["runs"],
-        "error_runs":      cur["errors"],
-        "success_runs":    cur["runs"] - cur["errors"],
-        "error_rate":      cur["error_rate"],
-        "avg_latency":     cur["avg_latency"],
-        "avg_quality":     cur["avg_quality"],
-        # Trends vs previous period (positive = up, negative = down)
-        "runs_trend":      _trend(cur["runs"],        prev["runs"]),
-        "error_rate_trend":_trend(cur["error_rate"],  prev["error_rate"]),
-        "latency_trend":   _trend(cur["avg_latency"], prev["avg_latency"]),
-        "quality_trend":   _trend(cur["avg_quality"], prev["avg_quality"]),
-        # Legacy fields kept for AdminTracesPage compatibility
-        "avg_tool_count":     0,
-        "avg_llm_call_count": 0,
-    }
+    return TraceReadService(db).stats(days=days)
 
 
 def _grouped_trace_stats(traces: list[Trace], field: str) -> list[dict]:
@@ -516,48 +416,27 @@ def _grouped_prompt_version_stats(traces: list[Trace]) -> list[dict]:
 
 @router.get("/api/traces/by-task-type")
 def traces_by_task_type(db: Session = Depends(get_db)):
-    traces = db.query(Trace).filter(_agent_execution_root()).order_by(Trace.start_time.desc()).limit(1000).all()
-    return _grouped_trace_stats(traces, "task_type")
+    return TraceReadService(db).grouped("task_type")
 
 
 @router.get("/api/traces/by-route-intent")
 def traces_by_route_intent(db: Session = Depends(get_db)):
-    traces = db.query(Trace).filter(_agent_execution_root()).order_by(Trace.start_time.desc()).limit(1000).all()
-    return _grouped_trace_stats(traces, "route_intent")
+    return TraceReadService(db).grouped("route_intent")
 
 
 @router.get("/api/traces/by-prompt")
 def traces_by_prompt(db: Session = Depends(get_db)):
-    traces = db.query(Trace).filter(_agent_execution_root()).order_by(Trace.start_time.desc()).limit(1000).all()
-    return _grouped_trace_stats(traces, "prompt_name")
+    return TraceReadService(db).grouped("prompt_name")
 
 
 @router.get("/api/traces/by-prompt-version")
 def traces_by_prompt_version(db: Session = Depends(get_db)):
-    traces = db.query(Trace).filter(_agent_execution_root()).order_by(Trace.start_time.desc()).limit(1000).all()
-    return _grouped_prompt_version_stats(traces)
+    return TraceReadService(db).grouped("prompt_version")
 
 
 @router.get("/api/traces/errors")
 def trace_errors(limit: int = 40, db: Session = Depends(get_db)):
-    traces = (
-        db.query(Trace)
-        .filter(_agent_execution_root(), Trace.error.isnot(None))
-        .order_by(Trace.start_time.desc())
-        .limit(limit)
-        .all()
-    )
-    return [
-        {
-            "id": t.run_id,
-            "name": t.name,
-            "start_time": t.start_time.isoformat() + "Z" if t.start_time else None,
-            "latency": _latency_seconds(t),
-            "error": t.error,
-            **_trace_meta(t),
-        }
-        for t in traces
-    ]
+    return TraceReadService(db).errors(limit=limit)
 
 
 @router.get("/api/traces/observations")
@@ -568,72 +447,18 @@ def list_observations(
     db: Session = Depends(get_db),
 ):
     """Return child spans (LLM calls, tool calls, chains) — i.e. non-root traces."""
-    q = db.query(Trace).filter(Trace.parent_run_id.isnot(None))
-    if run_type and run_type != "all":
-        q = q.filter(Trace.run_type == run_type)
-    rows = q.order_by(Trace.start_time.desc()).offset(offset).limit(limit).all()
-    return [
-        {
-            "id":               t.run_id,
-            "run_type":         t.run_type,
-            "name":             t.name,
-            "parent_run_id":    t.parent_run_id,
-            "thread_id":        t.thread_id,
-            "start_time":       t.start_time.isoformat() + "Z" if t.start_time else None,
-            "latency":          _latency_seconds(t),
-            "prompt_tokens":    t.prompt_tokens,
-            "completion_tokens": t.completion_tokens,
-            "error":            t.error,
-            "input":            _truncate(t.inputs, 120),
-            "output":           _truncate(t.outputs, 120),
-        }
-        for t in rows
-    ]
+    return TraceReadService(db).observations(limit=limit, offset=offset, run_type=run_type)
 
 
 @router.get("/api/traces/observations/stats")
 def observations_stats(db: Session = Depends(get_db)):
     """Aggregate counts and token totals for the Observations page KPI row."""
-    from sqlalchemy import case
-    rows = (
-        db.query(
-            Trace.run_type,
-            func.count(Trace.id).label("cnt"),
-            func.coalesce(func.sum(Trace.prompt_tokens), 0).label("prompt_tok"),
-            func.coalesce(func.sum(Trace.completion_tokens), 0).label("completion_tok"),
-        )
-        .filter(Trace.parent_run_id.isnot(None))
-        .group_by(Trace.run_type)
-        .all()
-    )
-    total = sum(r.cnt for r in rows)
-    by_type = {r.run_type: {"count": r.cnt, "prompt_tokens": int(r.prompt_tok), "completion_tokens": int(r.completion_tok)} for r in rows}
-    total_tokens = sum(int(r.prompt_tok) + int(r.completion_tok) for r in rows)
-    return {"total": total, "by_type": by_type, "total_tokens": total_tokens}
+    return TraceReadService(db).observation_stats()
 
 
 @router.get("/api/traces/slow-runs")
 def slow_runs(limit: int = 40, min_latency: float = 10, db: Session = Depends(get_db)):
-    candidates = (
-        db.query(Trace)
-        .filter(_agent_execution_root(), Trace.end_time.isnot(None))
-        .order_by(Trace.start_time.desc())
-        .limit(1000)
-        .all()
-    )
-    traces = [t for t in candidates if (_latency_seconds(t) or 0) >= min_latency]
-    traces.sort(key=lambda t: _latency_seconds(t) or 0, reverse=True)
-    return [
-        {
-            "id": t.run_id,
-            "name": t.name,
-            "start_time": t.start_time.isoformat() + "Z" if t.start_time else None,
-            "latency": _latency_seconds(t),
-            "error": t.error,
-            **_trace_meta(t),
-        }
-        for t in traces[:limit]
-    ]
+    return TraceReadService(db).slow_runs(limit=limit, min_latency=min_latency)
 
 
 # ── 靜態路徑端點（必須在 /{run_id} 動態路由之前） ────────────────────────────
@@ -647,48 +472,12 @@ def trace_timeline(
     db: Session = Depends(get_db),
 ):
     """每日 avg_quality / avg_latency 走勢，供前端折線圖使用。"""
-    from datetime import datetime, timedelta, timezone
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-
-    query = db.query(Trace).filter(
-        _agent_execution_root(),
-        Trace.start_time >= cutoff,
+    return TraceReadService(db).timeline(
+        prompt_name=prompt_name,
+        task_type=task_type,
+        route_intent=route_intent,
+        days=days,
     )
-    if _clean_filter(prompt_name):
-        query = query.filter(Trace.prompt_name == prompt_name)
-    if _clean_filter(task_type):
-        query = query.filter(Trace.task_type == task_type)
-    if _clean_filter(route_intent):
-        query = query.filter(Trace.route_intent == route_intent)
-    traces = query.all()
-
-    buckets: dict[str, dict] = {}
-    for t in traces:
-        if not t.start_time:
-            continue
-        day = t.start_time.strftime("%Y-%m-%d")
-        b = buckets.setdefault(day, {
-            "date": day, "runs": 0, "errors": 0,
-            "latencies": [], "quality_scores": [],
-        })
-        b["runs"] += 1
-        if t.error:
-            b["errors"] += 1
-        lat = _latency_seconds(t)
-        if lat is not None:
-            b["latencies"].append(lat)
-        if t.quality_score is not None:
-            b["quality_scores"].append(t.quality_score)
-
-    result = []
-    for day in sorted(buckets):
-        b = buckets[day]
-        lats = b.pop("latencies")
-        qs = b.pop("quality_scores")
-        b["avg_latency"] = round(sum(lats) / len(lats), 2) if lats else None
-        b["avg_quality"] = round(sum(qs) / len(qs), 2) if qs else None
-        result.append(b)
-    return result
 
 
 @router.get("/api/traces/compare")
@@ -699,30 +488,7 @@ def compare_prompt_versions(
     db: Session = Depends(get_db),
 ):
     """比較兩個 prompt_version 的品質、延遲、錯誤率。"""
-    def _stats(version: str) -> dict:
-        traces = (
-            db.query(Trace)
-            .filter(_agent_execution_root(), Trace.prompt_version == version)
-            .order_by(Trace.start_time.desc())
-            .limit(limit)
-            .all()
-        )
-        if not traces:
-            return {"version": version, "runs": 0, "errors": 0,
-                    "avg_latency": None, "avg_quality": None, "error_rate": None}
-        latencies = [v for v in (_latency_seconds(t) for t in traces) if v is not None]
-        quality = [t.quality_score for t in traces if t.quality_score is not None]
-        errors = sum(1 for t in traces if t.error)
-        return {
-            "version": version,
-            "runs": len(traces),
-            "errors": errors,
-            "error_rate": round(errors / len(traces), 3),
-            "avg_latency": round(sum(latencies) / len(latencies), 2) if latencies else None,
-            "avg_quality": round(sum(quality) / len(quality), 2) if quality else None,
-        }
-
-    return {"v1": _stats(v1), "v2": _stats(v2)}
+    return TraceReadService(db).compare_prompt_versions(v1, v2, limit=limit)
 
 
 class BatchScoreResponse(BaseModel):
@@ -730,129 +496,301 @@ class BatchScoreResponse(BaseModel):
     message: str
 
 
+class DatasetCreateRequest(BaseModel):
+    name: str
+    description: str | None = None
+    source: str | None = None
+    metadata: dict | None = None
+
+
+class DatasetManualItemRequest(BaseModel):
+    input: dict | None = None
+    output: dict | str | None = None
+    expected_output: dict | str | None = None
+    context: dict | None = None
+    tags: list[str] | None = None
+    metadata: dict | None = None
+
+
+class DatasetTraceItemRequest(BaseModel):
+    trace_id: str
+    tags: list[str] | None = None
+
+
+class DatasetLowQualityRequest(BaseModel):
+    max_quality: float = 3.0
+    limit: int = 50
+
+
+class DatasetEvalRunRequest(BaseModel):
+    name: str | None = None
+    metadata: dict | None = None
+
+
+class ExperimentReplayRequest(BaseModel):
+    dataset_id: str
+    name: str | None = None
+    target_agent: str | None = None
+    model: str | None = None
+    prompt_name: str | None = None
+    prompt_version: str | None = None
+    runtime_config: dict | None = None
+    metadata: dict | None = None
+
+
+class ExperimentEvalRequest(BaseModel):
+    name: str | None = None
+    metadata: dict | None = None
+
+
 @router.post("/api/traces/batch-score")
 async def batch_score_traces(
     limit: int = 50,
     db: Session = Depends(get_db),
 ):
-    """對最近 limit 條 quality_score=null 的 root trace 執行 evaluation_agent 評分。
+    """對最近 limit 條未評分 root trace 建立 evaluation run 並背景執行。"""
+    run = EvaluationRunService.create_trace_batch(db, limit=limit)
+    if run is None:
+        return {"queued": 0, "message": "沒有需要自動評分的追蹤記錄。"}
+    await EvaluationWorker.wakeup(run.total_count)
+    return {"queued": run.total_count, "message": f"已排入 {run.total_count} 條追蹤記錄的自動評分。"}
 
-    細項寫入 quality_detail；overall 寫入 quality_score。
-    """
-    from agents.evaluation_agent import score_trace
 
-    traces = (
-        db.query(Trace)
-        .filter(
-            _agent_execution_root(),
-            Trace.quality_score.is_(None),
-            Trace.error.is_(None),
-        )
-        .order_by(Trace.start_time.desc())
-        .limit(limit)
-        .all()
+@router.get("/api/evaluations/runs")
+def list_evaluation_runs(
+    limit: int = 50,
+    offset: int = 0,
+    status: str | None = None,
+    name: str | None = None,
+    scope: str | None = None,
+    db: Session = Depends(get_db),
+):
+    return EvaluationRunService.list_runs(
+        db,
+        limit=limit,
+        offset=offset,
+        status=status,
+        name=name,
+        scope=scope,
     )
-    run_ids_context = [(t.run_id, t.task_type or "", t.route_intent or "") for t in traces]
 
-    async def _score_all(items: list[tuple[str, str, str]]) -> None:
-        from db import db_session
-        for run_id, task_type, route_intent in items:
-            try:
-                def _read(_run_id=run_id):
-                    with db_session() as session:
-                        t = session.query(Trace).filter(Trace.run_id == _run_id).first()
-                        if not t:
-                            return None
-                        display_data: dict = {}
-                        if t.display:
-                            try:
-                                display_data = json.loads(t.display)
-                            except Exception:
-                                pass
-                        return display_data
 
-                display_data = await asyncio.to_thread(_read)
-                if display_data is None:
-                    continue
+@router.get("/api/evaluations/compare")
+def compare_evaluation_runs(left: str, right: str, db: Session = Depends(get_db)):
+    return EvaluationAnalyticsService.compare_eval_runs(db, left, right)
 
-                score, explanation, detail = await score_trace(
-                    display_data,
-                    task_type=task_type or "unknown",
-                    route_intent=route_intent or None,
-                )
 
-                def _write(_run_id=run_id, _score=score, _explanation=explanation, _detail=detail):
-                    with db_session() as session:
-                        t = session.query(Trace).filter(Trace.run_id == _run_id).first()
-                        if t:
-                            t.quality_detail = json.dumps(_detail, ensure_ascii=False) if _detail else None
-                            t.quality_score = _score
-                            if not t.user_feedback:
-                                t.user_feedback = _explanation[:500]
-                            session.commit()
+@router.get("/api/evaluations/runs/{eval_run_id}/score-stats")
+def get_evaluation_run_score_stats(eval_run_id: str, db: Session = Depends(get_db)):
+    return EvaluationAnalyticsService.eval_run_score_stats(db, eval_run_id)
 
-                await asyncio.to_thread(_write)
-            except Exception as exc:
-                logger.warning("batch_score failed for %s: %s", run_id, exc)
 
-    asyncio.create_task(_score_all(run_ids_context))
-    return {"queued": len(run_ids_context), "message": f"已排入 {len(run_ids_context)} 條追蹤記錄的自動評分。"}
+@router.get("/api/evaluations/runs/{eval_run_id}")
+def get_evaluation_run(eval_run_id: str, db: Session = Depends(get_db)):
+    return EvaluationRunService.get_run_detail(db, eval_run_id)
+
+
+@router.post("/api/experiments/dataset-replays")
+async def create_dataset_replay(body: ExperimentReplayRequest, db: Session = Depends(get_db)):
+    run = ExperimentRunService.create_dataset_replay(
+        db,
+        dataset_id=body.dataset_id,
+        name=body.name or "dataset-replay",
+        target_agent=body.target_agent,
+        model=body.model,
+        prompt_name=body.prompt_name,
+        prompt_version=body.prompt_version,
+        runtime_config=body.runtime_config,
+        metadata=body.metadata,
+    )
+    if run is None:
+        return {"queued": 0, "experiment_run_id": None, "message": "Dataset 沒有可 replay 的樣本。"}
+    await EvaluationWorker.wakeup(run.total_count)
+    return {
+        "queued": run.total_count,
+        "experiment_run_id": run.experiment_run_id,
+        "message": f"已排入 {run.total_count} 筆 dataset items 的 replay。",
+    }
+
+
+@router.get("/api/experiments/runs")
+def list_experiment_runs(
+    limit: int = 50,
+    offset: int = 0,
+    status: str | None = None,
+    dataset_id: str | None = None,
+    name: str | None = None,
+    db: Session = Depends(get_db),
+):
+    return ExperimentRunService.list_runs(
+        db,
+        limit=limit,
+        offset=offset,
+        status=status,
+        dataset_id=dataset_id,
+        name=name,
+    )
+
+
+@router.get("/api/experiments/runs/{experiment_run_id}/score-stats")
+def get_experiment_score_stats(experiment_run_id: str, db: Session = Depends(get_db)):
+    return EvaluationAnalyticsService.experiment_score_stats(db, experiment_run_id)
+
+
+@router.get("/api/experiments/runs/{experiment_run_id}/report")
+def get_experiment_report(experiment_run_id: str, limit: int = 50, db: Session = Depends(get_db)):
+    return EvaluationReportService.experiment_report(db, experiment_run_id, limit=limit)
+
+
+@router.post("/api/experiments/runs/{experiment_run_id}/eval")
+async def create_experiment_eval_run(
+    experiment_run_id: str,
+    body: ExperimentEvalRequest | None = None,
+    db: Session = Depends(get_db),
+):
+    body = body or ExperimentEvalRequest()
+    run = ExperimentRunService.create_eval_run_for_experiment(
+        db,
+        experiment_run_id,
+        name=body.name or "experiment-evaluation",
+        metadata=body.metadata,
+    )
+    if run is None:
+        return {"queued": 0, "eval_run_id": None, "message": "Experiment 沒有已完成的 replay item 可評估。"}
+    await EvaluationWorker.wakeup(run.total_count)
+    return {
+        "queued": run.total_count,
+        "eval_run_id": run.eval_run_id,
+        "message": f"已排入 {run.total_count} 筆 experiment outputs 的評估。",
+    }
+
+
+@router.get("/api/experiments/compare")
+def compare_experiment_runs(a: str, b: str, db: Session = Depends(get_db)):
+    """Compare two experiment runs item-by-item. ?a=exp-xxx&b=exp-yyy"""
+    return ExperimentRunService.compare_runs(db, a, b)
+
+
+@router.get("/api/experiments/compare/report")
+def compare_experiment_runs_report(left: str, right: str, limit: int = 50, db: Session = Depends(get_db)):
+    return EvaluationReportService.experiment_comparison_report(db, left, right, limit=limit)
+
+
+@router.get("/api/experiments/runs/{experiment_run_id}")
+def get_experiment_run(experiment_run_id: str, db: Session = Depends(get_db)):
+    return ExperimentRunService.get_run_detail(db, experiment_run_id)
+
+
+@router.get("/api/datasets")
+def list_datasets(
+    limit: int = 50,
+    offset: int = 0,
+    include_archived: bool = False,
+    db: Session = Depends(get_db),
+):
+    return DatasetService.list_datasets(db, limit=limit, offset=offset, include_archived=include_archived)
+
+
+@router.post("/api/datasets")
+def create_dataset(body: DatasetCreateRequest, db: Session = Depends(get_db)):
+    row = DatasetService.create_dataset(
+        db,
+        name=body.name,
+        description=body.description,
+        source=body.source,
+        metadata=body.metadata,
+    )
+    return DatasetService.get_dataset_detail(db, row.dataset_id)
+
+
+@router.get("/api/datasets/{dataset_id}/score-stats")
+def get_dataset_score_stats(dataset_id: str, db: Session = Depends(get_db)):
+    return EvaluationAnalyticsService.dataset_score_stats(db, dataset_id)
+
+
+@router.get("/api/datasets/{dataset_id}/regression-cases")
+def get_dataset_regression_cases(dataset_id: str, limit: int = 50, threshold: float = 3.0, db: Session = Depends(get_db)):
+    return EvaluationReportService.dataset_regression_cases(db, dataset_id, limit=limit, threshold=threshold)
+
+
+@router.get("/api/datasets/{dataset_id}/eval-runs")
+def get_dataset_eval_runs(
+    dataset_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+):
+    return EvaluationAnalyticsService.dataset_eval_runs(db, dataset_id, limit=limit, offset=offset)
+
+
+@router.get("/api/datasets/{dataset_id}/items/{dataset_item_id}/scores")
+def get_dataset_item_scores(dataset_id: str, dataset_item_id: str, db: Session = Depends(get_db)):
+    return EvaluationAnalyticsService.dataset_item_score_history(db, dataset_id, dataset_item_id)
+
+
+@router.get("/api/datasets/{dataset_id}")
+def get_dataset(dataset_id: str, db: Session = Depends(get_db)):
+    return DatasetService.get_dataset_detail(db, dataset_id)
+
+
+@router.post("/api/datasets/{dataset_id}/items/from-trace")
+def add_dataset_item_from_trace(dataset_id: str, body: DatasetTraceItemRequest, db: Session = Depends(get_db)):
+    item = DatasetService.add_trace_item(db, dataset_id, body.trace_id, tags=body.tags)
+    return DatasetService.get_dataset_detail(db, item.dataset_id)
+
+
+@router.post("/api/datasets/{dataset_id}/items/from-low-quality")
+def add_dataset_items_from_low_quality(dataset_id: str, body: DatasetLowQualityRequest, db: Session = Depends(get_db)):
+    return DatasetService.add_low_quality_traces(
+        db,
+        dataset_id,
+        max_quality=body.max_quality,
+        limit=body.limit,
+    )
+
+
+@router.post("/api/datasets/{dataset_id}/items")
+def add_dataset_item_manual(dataset_id: str, body: DatasetManualItemRequest, db: Session = Depends(get_db)):
+    """手動新增 dataset item（不需要 source trace）。"""
+    DatasetService.add_manual_item(
+        db,
+        dataset_id,
+        input=body.input,
+        output=body.output,
+        expected_output=body.expected_output,
+        context=body.context,
+        tags=body.tags,
+        metadata=body.metadata,
+    )
+    return DatasetService.get_dataset_detail(db, dataset_id)
+
+
+@router.delete("/api/datasets/{dataset_id}/items/{item_id}")
+def delete_dataset_item(dataset_id: str, item_id: str, db: Session = Depends(get_db)):
+    """Archive a dataset item (soft delete)."""
+    DatasetService.archive_item(db, dataset_id, item_id)
+    return {"deleted": item_id}
+
+
+@router.post("/api/datasets/{dataset_id}/eval-runs")
+async def create_dataset_eval_run(dataset_id: str, body: DatasetEvalRunRequest | None = None, db: Session = Depends(get_db)):
+    body = body or DatasetEvalRunRequest()
+    run = EvaluationRunService.create_dataset_run(
+        db,
+        dataset_id=dataset_id,
+        name=body.name or "dataset-evaluation",
+        metadata=body.metadata,
+    )
+    if run is None:
+        return {"queued": 0, "eval_run_id": None, "message": "Dataset 沒有可評估的樣本。"}
+    await EvaluationWorker.wakeup(run.total_count)
+    return {"queued": run.total_count, "eval_run_id": run.eval_run_id, "message": f"已排入 {run.total_count} 筆 dataset items 的評估。"}
 
 
 @router.get("/api/traces/score-stats")
 def score_stats(db: Session = Depends(get_db)):
     """Score distribution, dimension averages, and queue counts for the Scores page."""
-    traces = (
-        db.query(Trace)
-        .filter(_agent_execution_root())
-        .all()
-    )
-
-    scored = [t for t in traces if t.quality_score is not None]
-    unscored_count = len(traces) - len(scored)
-
-    # Distribution buckets
-    buckets = {"0-1": 0, "1-2": 0, "2-3": 0, "3-4": 0, "4-5": 0}
-    for t in scored:
-        s = t.quality_score
-        if s < 1:   buckets["0-1"] += 1
-        elif s < 2: buckets["1-2"] += 1
-        elif s < 3: buckets["2-3"] += 1
-        elif s < 4: buckets["3-4"] += 1
-        else:        buckets["4-5"] += 1
-
-    avg_score = round(sum(t.quality_score for t in scored) / len(scored), 2) if scored else None
-    low_quality_count = sum(1 for t in scored if t.quality_score < 3)
-
-    # Per-dimension averages from quality_detail JSON
-    dim_sums: dict[str, list[float]] = {
-        k: [] for k in ["grounding", "task_fit", "completeness", "specificity",
-                         "source_quality", "uncertainty_honesty", "format_fit"]
-    }
-    for t in scored:
-        detail = _parse_json(t.quality_detail) if t.quality_detail else None
-        if not isinstance(detail, dict):
-            continue
-        for k in dim_sums:
-            v = detail.get(k)
-            if isinstance(v, (int, float)):
-                dim_sums[k].append(float(v))
-
-    dimension_avgs = {
-        k: round(sum(v) / len(v), 2) if v else None
-        for k, v in dim_sums.items()
-    }
-
-    return {
-        "total": len(traces),
-        "scored": len(scored),
-        "unscored": unscored_count,
-        "avg_score": avg_score,
-        "low_quality_count": low_quality_count,
-        "low_quality_pct": round(low_quality_count / len(scored) * 100, 1) if scored else None,
-        "distribution": [{"bucket": k, "count": v} for k, v in buckets.items()],
-        "dimension_avgs": dimension_avgs,
-    }
+    return TraceReadService(db).score_stats()
 
 
 class TestRouteRequest(BaseModel):
@@ -902,139 +840,22 @@ def list_sessions(
     order_dir: str = "desc",
     db: Session = Depends(get_db),
 ):
-    q = db.query(Trace).filter(_agent_execution_root(), Trace.thread_id.isnot(None))
-
-    if environment:
-        q = q.filter(Trace.environment == environment)
-    if route_intent:
-        q = q.filter(Trace.route_intent == route_intent)
-    if user_id:
-        q = q.filter(Trace.user_id == user_id)
-    if date_from:
-        try:
-            q = q.filter(Trace.start_time >= datetime.fromisoformat(date_from))
-        except ValueError:
-            pass
-    if date_to:
-        try:
-            q = q.filter(Trace.start_time <= datetime.fromisoformat(date_to))
-        except ValueError:
-            pass
-
-    traces = q.order_by(Trace.start_time.desc()).limit(2000).all()
-
-    sessions: dict[str, dict] = {}
-    for t in traces:
-        tid = t.thread_id
-        if tid not in sessions:
-            sessions[tid] = {
-                "thread_id": tid,
-                "_route_intents": [],
-                "created_at": t.start_time,
-                "ended_at": t.end_time,
-                "trace_count": 0,
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "_quality_scores": [],
-                "_user_ids": set(),
-            }
-        s = sessions[tid]
-        s["trace_count"] += 1
-        s["input_tokens"] += t.prompt_tokens or 0
-        s["output_tokens"] += t.completion_tokens or 0
-        if t.route_intent:
-            s["_route_intents"].append(t.route_intent)
-        if t.quality_score is not None:
-            s["_quality_scores"].append(t.quality_score)
-        if t.user_id:
-            s["_user_ids"].add(t.user_id)
-        if t.start_time and s["created_at"] and t.start_time < s["created_at"]:
-            s["created_at"] = t.start_time
-        if t.end_time and (s["ended_at"] is None or t.end_time > s["ended_at"]):
-            s["ended_at"] = t.end_time
-
-    result = []
-    for s in sessions.values():
-        intents = s.pop("_route_intents")
-        qs = s.pop("_quality_scores")
-        uid = s.pop("_user_ids")
-
-        task_type = Counter(intents).most_common(1)[0][0] if intents else None
-        total_tokens = s["input_tokens"] + s["output_tokens"]
-        avg_quality = round(sum(qs) / len(qs), 2) if qs else None
-        created_at = s["created_at"]
-        ended_at = s["ended_at"]
-        duration = (
-            round((ended_at - created_at).total_seconds(), 1)
-            if created_at and ended_at
-            else None
-        )
-        result.append({
-            "thread_id": s["thread_id"],
-            "task_type": task_type,
-            "created_at": created_at.isoformat() if created_at else None,
-            "ended_at": ended_at.isoformat() if ended_at else None,
-            "duration_seconds": duration,
-            "trace_count": s["trace_count"],
-            "input_tokens": s["input_tokens"],
-            "output_tokens": s["output_tokens"],
-            "total_tokens": total_tokens,
-            "avg_quality_score": avg_quality,
-            "user_ids": sorted(uid),
-        })
-
-    reverse = order_dir.lower() != "asc"
-    sort_key_fn = {
-        "created_at": lambda x: x["created_at"] or "",
-        "duration": lambda x: x["duration_seconds"] or 0,
-        "trace_count": lambda x: x["trace_count"],
-        "total_tokens": lambda x: x["total_tokens"],
-        "avg_quality": lambda x: x["avg_quality_score"] or 0,
-    }.get(order_by, lambda x: x["created_at"] or "")
-    result.sort(key=sort_key_fn, reverse=reverse)
-
-    total = len(result)
-    return {"sessions": result[offset: offset + limit], "total": total}
+    return TraceReadService(db).sessions(
+        limit=limit,
+        offset=offset,
+        route_intent=route_intent,
+        user_id=user_id,
+        environment=environment,
+        date_from=date_from,
+        date_to=date_to,
+        order_by=order_by,
+        order_dir=order_dir,
+    )
 
 
 @router.get("/api/traces/sessions/{thread_id}")
 def get_session_detail(thread_id: str, db: Session = Depends(get_db)):
-    traces = (
-        db.query(Trace)
-        .filter(_agent_execution_root(), Trace.thread_id == thread_id)
-        .order_by(Trace.start_time.asc())
-        .all()
-    )
-    if not traces:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    input_tokens = sum(t.prompt_tokens or 0 for t in traces)
-    output_tokens = sum(t.completion_tokens or 0 for t in traces)
-    qs = [t.quality_score for t in traces if t.quality_score is not None]
-    user_ids = sorted({t.user_id for t in traces if t.user_id})
-    created_at = min((t.start_time for t in traces if t.start_time), default=None)
-    ended_at = max((t.end_time for t in traces if t.end_time), default=None)
-    intents = [t.route_intent for t in traces if t.route_intent]
-    task_type = Counter(intents).most_common(1)[0][0] if intents else None
-
-    return {
-        "thread_id": thread_id,
-        "task_type": task_type,
-        "created_at": created_at.isoformat() if created_at else None,
-        "ended_at": ended_at.isoformat() if ended_at else None,
-        "duration_seconds": (
-            round((ended_at - created_at).total_seconds(), 1)
-            if created_at and ended_at
-            else None
-        ),
-        "trace_count": len(traces),
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-        "total_tokens": input_tokens + output_tokens,
-        "avg_quality_score": round(sum(qs) / len(qs), 2) if qs else None,
-        "user_ids": user_ids,
-        "traces": [_trace_payload(t) for t in traces],
-    }
+    return TraceReadService(db).session_detail(thread_id)
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────
@@ -1049,153 +870,26 @@ def list_users(
     search: str | None = None,
     db: Session = Depends(get_db),
 ):
-    q = db.query(Trace).filter(
-        _agent_execution_root(),
-        Trace.user_id.isnot(None),
+    return TraceReadService(db).users(
+        limit=limit,
+        offset=offset,
+        environment=environment,
+        date_from=date_from,
+        date_to=date_to,
+        search=search,
     )
-    if environment:
-        q = q.filter(Trace.environment == environment)
-    if date_from:
-        try:
-            q = q.filter(Trace.start_time >= datetime.fromisoformat(date_from))
-        except ValueError:
-            pass
-    if date_to:
-        try:
-            q = q.filter(Trace.start_time <= datetime.fromisoformat(date_to))
-        except ValueError:
-            pass
-    if search:
-        q = q.filter(Trace.user_id.ilike(f"%{search}%"))
-
-    traces = q.order_by(Trace.start_time.desc()).limit(5000).all()
-
-    users: dict[str, dict] = {}
-    for t in traces:
-        uid = t.user_id
-        if uid not in users:
-            users[uid] = {
-                "user_id": uid,
-                "first_event": t.start_time,
-                "last_event": t.start_time,
-                "session_ids": set(),
-                "trace_count": 0,
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "_quality_scores": [],
-            }
-        u = users[uid]
-        u["trace_count"] += 1
-        u["input_tokens"] += t.prompt_tokens or 0
-        u["output_tokens"] += t.completion_tokens or 0
-        if t.quality_score is not None:
-            u["_quality_scores"].append(t.quality_score)
-        if t.thread_id:
-            u["session_ids"].add(t.thread_id)
-        if t.start_time:
-            if u["first_event"] is None or t.start_time < u["first_event"]:
-                u["first_event"] = t.start_time
-            if u["last_event"] is None or t.start_time > u["last_event"]:
-                u["last_event"] = t.start_time
-
-    result = []
-    for u in users.values():
-        qs = u.pop("_quality_scores")
-        sids = u.pop("session_ids")
-        result.append({
-            "user_id": u["user_id"],
-            "first_event": u["first_event"].isoformat() if u["first_event"] else None,
-            "last_event": u["last_event"].isoformat() if u["last_event"] else None,
-            "session_count": len(sids),
-            "trace_count": u["trace_count"],
-            "input_tokens": u["input_tokens"],
-            "output_tokens": u["output_tokens"],
-            "total_tokens": u["input_tokens"] + u["output_tokens"],
-            "avg_quality_score": round(sum(qs) / len(qs), 2) if qs else None,
-        })
-
-    result.sort(key=lambda x: x["last_event"] or "", reverse=True)
-    total = len(result)
-    return {"users": result[offset: offset + limit], "total": total}
 
 
 @router.get("/api/traces/users/{user_id}")
 def get_user_detail(user_id: str, db: Session = Depends(get_db)):
-    # Sessions for this user
-    traces = (
-        db.query(Trace)
-        .filter(_agent_execution_root(), Trace.user_id == user_id)
-        .order_by(Trace.start_time.desc())
-        .limit(500)
-        .all()
-    )
-    if not traces:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # Aggregate per session (thread_id)
-    sessions: dict[str, dict] = {}
-    for t in traces:
-        tid = t.thread_id or t.run_id
-        if tid not in sessions:
-            sessions[tid] = {
-                "thread_id": tid,
-                "task_type": t.route_intent,
-                "created_at": t.start_time,
-                "trace_count": 0,
-                "total_tokens": 0,
-                "_quality_scores": [],
-            }
-        s = sessions[tid]
-        s["trace_count"] += 1
-        s["total_tokens"] += (t.prompt_tokens or 0) + (t.completion_tokens or 0)
-        if t.quality_score is not None:
-            s["_quality_scores"].append(t.quality_score)
-        if t.start_time and s["created_at"] and t.start_time < s["created_at"]:
-            s["created_at"] = t.start_time
-
-    session_list = []
-    for s in sessions.values():
-        qs = s.pop("_quality_scores")
-        s["avg_quality_score"] = round(sum(qs) / len(qs), 2) if qs else None
-        s["created_at"] = s["created_at"].isoformat() if s["created_at"] else None
-        session_list.append(s)
-
-    session_list.sort(key=lambda x: x["created_at"] or "", reverse=True)
-
-    input_tokens = sum(t.prompt_tokens or 0 for t in traces)
-    output_tokens = sum(t.completion_tokens or 0 for t in traces)
-    qs_all = [t.quality_score for t in traces if t.quality_score is not None]
-
-    return {
-        "user_id": user_id,
-        "first_event": min((t.start_time for t in traces if t.start_time), default=None),
-        "last_event": max((t.start_time for t in traces if t.start_time), default=None),
-        "session_count": len(sessions),
-        "trace_count": len(traces),
-        "total_tokens": input_tokens + output_tokens,
-        "avg_quality_score": round(sum(qs_all) / len(qs_all), 2) if qs_all else None,
-        "sessions": session_list,
-    }
+    return TraceReadService(db).user_detail(user_id)
 
 
 # ── 動態路由（必須在所有靜態路徑之後） ────────────────────────────────────────
 
 @router.get("/api/traces/{run_id}")
 def get_trace_detail(run_id: str, db: Session = Depends(get_db)):
-    trace = db.query(Trace).filter(Trace.run_id == run_id).first()
-    if not trace:
-        raise HTTPException(status_code=404, detail="Trace not found")
-
-    children = (
-        db.query(Trace)
-        .filter(Trace.parent_run_id == run_id)
-        .order_by(Trace.start_time.asc())
-        .limit(200)
-        .all()
-    )
-    payload = _trace_payload(trace, include_raw=True)
-    payload["children"] = [_trace_payload(child, include_raw=True) for child in children]
-    return payload
+    return TraceReadService(db).trace_detail(run_id)
 
 
 @router.patch("/api/traces/{run_id}/feedback")
@@ -1208,6 +902,28 @@ def update_trace_feedback(run_id: str, body: TraceFeedbackRequest, db: Session =
 
     trace.quality_score = body.quality_score
     trace.user_feedback = body.user_feedback.strip() if body.user_feedback else None
+    if body.quality_score is not None:
+        ScoreRepository.upsert_score(db, {
+            "score_id": f"{run_id}:overall:annotation",
+            "trace_id": run_id,
+            "name": "overall",
+            "value": body.quality_score,
+            "data_type": "NUMERIC",
+            "source": "ANNOTATION",
+            "comment": trace.user_feedback,
+            "metadata": {"source": "trace_feedback"},
+        }, sync_legacy_cache=False)
+    if trace.user_feedback:
+        ScoreRepository.upsert_score(db, {
+            "score_id": f"{run_id}:feedback:annotation",
+            "trace_id": run_id,
+            "name": "feedback",
+            "string_value": trace.user_feedback,
+            "data_type": "TEXT",
+            "source": "ANNOTATION",
+            "comment": trace.user_feedback,
+            "metadata": {"source": "trace_feedback"},
+        }, sync_legacy_cache=False)
     db.commit()
     db.refresh(trace)
     return _trace_payload(trace, include_raw=True)

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { Menu, X } from 'lucide-react'
+import ncuLogo from '../assets/NCULogo.png'
 import './UserNavbar.css'
 
 const NAV_ITEMS = [
@@ -15,9 +16,10 @@ function MobileOverlay({ pathname, onClose }: { pathname: string; onClose: () =>
     <div className="unav-overlay">
       <div className="unav-overlay-top">
         <Link to="/" className="unav-logo" onClick={onClose}>
-          <div className="unav-logo-icon">R</div>
+          <img src={ncuLogo} alt="國立中央大學" className="unav-logo-img" />
           <div className="unav-logo-text">
-            <span className="unav-logo-name">Report Agent</span>
+            <span className="unav-logo-name">國立中央大學</span>
+            <span className="unav-logo-sub">大專生研究計畫平台</span>
           </div>
         </Link>
         <button className="unav-overlay-close" onClick={onClose} aria-label="關閉選單">
@@ -59,9 +61,9 @@ export default function UserNavbar() {
       <nav className="unav">
         <div className="unav-inner">
           <Link to="/" className="unav-logo">
-            <div className="unav-logo-icon">R</div>
+            <img src={ncuLogo} alt="國立中央大學" className="unav-logo-img" />
             <div className="unav-logo-text">
-              <span className="unav-logo-name">Report Agent</span>
+              <span className="unav-logo-name">國立中央大學</span>
               <span className="unav-logo-sub">大專生研究計畫平台</span>
             </div>
           </Link>

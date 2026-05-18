@@ -1,8 +1,15 @@
 from pydantic import SecretStr
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        # "ignore" silently drops unknown env vars instead of accepting them,
+        # which catches typos that would otherwise be invisible.
+        extra="ignore",
+    )
+
     azure_openai_api_key: SecretStr = SecretStr("")
     azure_openai_endpoint: str = ""
     # Preview version enables structured-output features; bump to stable once GA.
@@ -39,12 +46,6 @@ class Settings(BaseSettings):
     langfuse_base_url: str = "http://localhost:3000"
     # Backward-compatible alias used by older local env files.
     langfuse_host: str = "http://localhost:3000"
-
-    class Config:
-        env_file = ".env"
-        # "ignore" silently drops unknown env vars instead of accepting them,
-        # which catches typos that would otherwise be invisible.
-        extra = "ignore"
 
 
 settings = Settings()

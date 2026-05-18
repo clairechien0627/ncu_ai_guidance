@@ -1,12 +1,6 @@
 """Unit tests for services/job_service.py — sync state machine functions only."""
 import asyncio
-import sys
 import unittest
-from unittest.mock import MagicMock, patch
-
-# Stub out heavy imports before loading job_service
-for mod in ("database", "rag", "extraction", "config", "agent"):
-    sys.modules.setdefault(mod, MagicMock())
 
 import services.job_service as js
 

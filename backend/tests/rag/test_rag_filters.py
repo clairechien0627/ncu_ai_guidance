@@ -11,7 +11,7 @@ import sys
 from unittest.mock import MagicMock
 
 # Stub heavy dependencies before importing rag
-for mod in ("database", "config", "services.job_service"):
+for mod in ("database", "config"):
     sys.modules.setdefault(mod, MagicMock())
 
 # Stub config.settings so rag.py module-level code doesn't fail

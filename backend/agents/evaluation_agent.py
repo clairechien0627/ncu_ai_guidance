@@ -205,40 +205,15 @@ def _trace_payload(trace: Trace) -> tuple[str, str, list[str], dict]:
 async def evaluate_trace_by_run_id(run_id: str) -> EvaluationResult | None:
     """Evaluate a root trace and persist score/detail back to the Trace row."""
     try:
-        def _fetch():
-            with db_session() as db:
-                trace = db.query(Trace).filter(Trace.run_id == run_id).first()
-                if not trace:
-                    return None
-                return (_trace_payload(trace), trace.task_type, trace.route_intent, trace.agent_name)
-
-        data = await asyncio.to_thread(_fetch)
-        if data is None:
-            return None
-        (user_task, answer, sources, trace_summary), task_type, route_intent, agent_name = data
-
-        result = await evaluate_output(
-            user_task=user_task,
-            answer=answer,
-            task_type=task_type or "chat_turn",
-            route_intent=route_intent,
-            sources=sources,
-            trace_summary=trace_summary,
-            extra_context={"run_id": run_id, "agent_name": agent_name},
+        from services.evaluation_runs import EvaluationRunService
+        result = await EvaluationRunService.evaluate_single_trace(
+            run_id,
+            evaluator=evaluate_output,
+            name="background-evaluation",
+            scope="single_trace",
+            metadata={"source": "evaluate_trace_by_run_id"},
         )
-
-        def _save():
-            with db_session() as db:
-                trace = db.query(Trace).filter(Trace.run_id == run_id).first()
-                if trace:
-                    trace.quality_score = result.overall
-                    trace.quality_detail = json.dumps(result.model_dump(), ensure_ascii=False)
-                    if not trace.user_feedback:
-                        trace.user_feedback = _format_evaluation(result)[:500]
-                    db.commit()
-
-        await asyncio.to_thread(_save)
-        return result
+        return result if isinstance(result, EvaluationResult) else None
     except Exception as exc:
         logger.warning("evaluate_trace_by_run_id failed for %s: %s", run_id, exc)
         return None

@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
-import { Paperclip, ArrowUp, X, File, FileText, Trash2, PanelRight, Pencil, RefreshCw, Layers } from 'lucide-react'
+import { Paperclip, ArrowUp, X, File, FileText, Trash2, PanelRight, Pencil } from 'lucide-react'
 import ChunkViewer from '../viewer/ChunkViewer'
 import type { Message } from '../../types'
 import type { DocumentItem } from '../../api'
@@ -382,22 +382,6 @@ export default function ChatWindow({
                             </div>
                           ) : (
                             <div className="doc-action-btns">
-                              <button
-                                className="doc-delete-btn"
-                                onClick={() => onReindexDoc(doc.id)}
-                                disabled={loading || doc.status === 'processing'}
-                                title="重新嵌入"
-                              >
-                                <RefreshCw size={12} />
-                              </button>
-                              <button
-                                className="doc-delete-btn"
-                                onClick={() => { setChunkDocId(doc.id); setMenuOpen(false) }}
-                                disabled={doc.status !== 'ready'}
-                                title="查看 chunks"
-                              >
-                                <Layers size={12} />
-                              </button>
                               <button
                                 className="doc-delete-btn"
                                 onClick={() => setConfirmDocId(doc.id)}

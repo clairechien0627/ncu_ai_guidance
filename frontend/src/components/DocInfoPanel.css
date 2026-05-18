@@ -80,7 +80,16 @@
   background: rgba(240, 244, 248, 0.85);
 }
 
-.dip-checkbox { flex-shrink: 0; cursor: pointer; accent-color: var(--primary-900); }
+.dip-remove-btn {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
+  border: none; border-radius: 6px;
+  background: none; color: #94a3b8;
+  cursor: pointer;
+  transition: background 150ms, color 150ms;
+}
+.dip-remove-btn:hover { background: #fee2e2; color: #dc2626; }
 
 .dip-card-body {
   flex: 1;

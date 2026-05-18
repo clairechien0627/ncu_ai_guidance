@@ -154,6 +154,25 @@ def expand_queries(
         cleaned = " ".join(str(raw or "").split())
         if cleaned and cleaned not in queries:
             queries.append(cleaned)
+    if use_hyde and _query_expander_llm is not None:
+        try:
+            hyde = _query_expander_llm.invoke(
+                [
+                    SystemMessage(content=_HYDE_PROMPT),
+                    HumanMessage(
+                        content=(
+                            f"semantic_query: {semantic_query or query or keyword_query}\n"
+                            f"keyword_query: {keyword_query}\n"
+                            f"section_terms: {' '.join(section_terms or [])}"
+                        )
+                    ),
+                ]
+            )
+            passage = str(getattr(hyde, "content", "") or "").strip()
+            if passage and passage not in queries:
+                queries.append(passage)
+        except Exception:
+            pass
     return queries
 
 

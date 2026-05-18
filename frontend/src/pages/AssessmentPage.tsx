@@ -188,7 +188,7 @@ function QuizPanel({ item, onBack, tab, onTabChange }: {
               <button className="ap-reset-btn" onClick={() => { setScores(questions.map(() => null)); setSubmitted(false) }} type="button">
                 <RotateCcw size={14} /> 重新評量
               </button>
-              <button className="ap-goto-btn" onClick={() => navigate('/projects')} type="button">
+              <button className="ap-goto-btn" onClick={() => navigate('/projects', { state: { selectedId: item.id } })} type="button">
                 前往完整計畫 <ArrowRight size={14} />
               </button>
             </div>

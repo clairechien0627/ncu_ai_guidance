@@ -262,7 +262,7 @@ def test_chat_default_stack_has_no_retrieval_prompt():
 def test_chat_and_question_agents_use_no_tool_runner():
     from pathlib import Path
 
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     chat_source = (root / "agents" / "chat_agent.py").read_text(encoding="utf-8")
     question_source = (root / "agents" / "question_agent.py").read_text(encoding="utf-8")
 
@@ -276,7 +276,7 @@ def test_chat_and_question_agents_use_no_tool_runner():
 def test_retrieval_agent_uses_tool_runner():
     from pathlib import Path
 
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     retrieval_source = (root / "agents" / "retrieval_agent.py").read_text(encoding="utf-8")
 
     assert "run_tool_agent" in retrieval_source
@@ -286,7 +286,7 @@ def test_retrieval_agent_uses_tool_runner():
 def test_removed_legacy_agent_aliases_are_gone():
     from pathlib import Path
 
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     runner_source = (root / "agents" / "runner.py").read_text(encoding="utf-8")
 
     assert not (root / "agents" / "main_agent.py").exists()
@@ -298,7 +298,7 @@ def test_removed_legacy_agent_aliases_are_gone():
 def test_removed_agent_tools_module_is_gone():
     from pathlib import Path
 
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
 
     assert not (root / "agents" / "agent_tools.py").exists()
 

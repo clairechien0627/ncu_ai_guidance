@@ -28,17 +28,13 @@
 }
 .unav-logo:hover { transform: translateY(-1px); }
 
-.unav-logo-icon {
+.unav-logo-img {
   width: 40px; height: 40px;
-  background: var(--primary-900);
-  border-radius: 10px;
-  display: flex; align-items: center; justify-content: center;
-  color: #fff;
-  font-size: 16px; font-weight: 800;
+  object-fit: contain;
   flex-shrink: 0;
 }
 
-.unav-logo-text { display: none; flex-direction: column; }
+.unav-logo-text { display: none; flex-direction: column; gap: 3px; }
 @media (min-width: 640px) { .unav-logo-text { display: flex; } }
 
 .unav-logo-name { font-size: 14px; font-weight: 700; color: var(--primary-900); line-height: 1.2; }

@@ -263,10 +263,11 @@
 }
 .pp-mobile-tab--active { color: var(--primary-900); border-bottom-color: var(--primary-900); }
 
-/* PDF+Chat grid：置中，限寬，兩欄 + glass cards */
+/* PDF+Chat grid：置中，限寬，兩欄等高 */
 .pp-pdf-chat-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  align-items: stretch;
   gap: 16px;
   flex: 1; min-height: 0;
   padding: 0 24px 16px;
@@ -280,35 +281,59 @@
 .pp-pdf-pane,
 .pp-chat-pane { min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 
-/* PDF card：圓角 glass */
+/* PDF：覆蓋 viewer.css 的固定寬 & margin，填滿 pane（glass/border-radius 保留 viewer.css） */
 .pp-pdf-pane .pdf-panel {
+  width: 100% !important;
+  min-width: unset !important;
   height: 100%;
-  border-radius: 20px;
-  border: 1px solid rgba(255,255,255,0.70);
-  overflow: hidden;
+  margin: 0 !important;
 }
-.pp-pdf-pane .pdf-panel-header { display: none; }
+.pp-pdf-pane .pdf-panel-header { display: none !important; }
+.pp-pdf-pane .pdf-viewer { padding: 0; }       /* 移除白邊 padding */
+.pp-pdf-pane .pdf-iframe { border-radius: 0; } /* iframe 不需要自己的圓角，由外層 panel 控制 */
 
-/* Chat card：glass 包裝 */
+/* Chat card：與 pdf-panel 相同 glass 樣式 */
 .pp-chat-card {
   height: 100%;
-  border-radius: 20px;
-  border: 1px solid rgba(255,255,255,0.70);
-  background: rgba(255,255,255,0.84);
-  backdrop-filter: blur(16px);
-  box-shadow: var(--shadow-soft);
+  border-radius: 28px;
+  border: 1px solid rgba(207, 219, 232, 0.92);
+  background: rgba(255, 255, 255, 0.84);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 18px 36px rgba(148, 163, 184, 0.16);
   overflow: hidden;
 }
 
-/* 窄版：單欄 */
+/* 窄版：改用 flex column，hidden 的 pane 消失後另一個自動填滿 */
 @media (max-width: 1024px) {
   .pp-pdf-chat-grid {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
     gap: 0;
     padding: 0 16px 16px;
   }
-  .pp-pdf-pane .pdf-panel { border-radius: 16px; }
-  .pp-chat-card { border-radius: 16px; }
+  .pp-pdf-pane,
+  .pp-chat-pane {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  /* PDF panel：絕對定位填滿 pane，繞過 viewer.css 固定寬/min-width */
+  .pp-pdf-pane {
+    position: relative;
+  }
+  .pp-pdf-pane .pdf-panel {
+    position: absolute !important;
+    inset: 0 !important;
+    width: auto !important;
+    min-width: unset !important;
+    height: auto !important;
+    margin: 0 !important;
+    border-radius: 16px;
+  }
+  .pp-chat-card { flex: 1; border-radius: 16px; }
+  /* Tab 切換 */
   .pp-pdf-chat-grid--mobile-chat .pp-pdf-pane  { display: none; }
   .pp-pdf-chat-grid--mobile-pdf  .pp-chat-pane { display: none; }
 }

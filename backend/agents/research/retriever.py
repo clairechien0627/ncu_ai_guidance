@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 from collections.abc import Callable
 
 from langfuse import observe
@@ -55,7 +56,7 @@ async def retrieve_evidence(
         max_searches=max_searches,
         max_consecutive_empty=max_consecutive_empty,
     )
-    raw = await run_search_report(
+    raw_result = run_search_report(
         query=query,
         ctx=ctx,
         sub_queries=sub_queries,
@@ -65,6 +66,7 @@ async def retrieve_evidence(
         section_terms=section_terms,
         use_hyde=use_hyde,
     )
+    raw = await raw_result if inspect.isawaitable(raw_result) else raw_result
     payload = json.loads(raw)
     chunks = [dict(chunk) for chunk in payload.get("results", [])]
     sources = []

@@ -60,8 +60,8 @@
   overflow: hidden;
 }
 
-/* Narrow viewport: master-detail single-column */
-@media (max-width: 767px) {
+/* Narrow viewport: master-detail single-column（對齊 ProjectsPage 1023px） */
+@media (max-width: 1023px) {
   .ap-grid { grid-template-columns: 1fr; }
   .ap-grid--list   .ap-right { display: none; }
   .ap-grid--detail .ap-left  { display: none; }
@@ -196,7 +196,7 @@
 }
 .ap-mobile-back:hover { color: var(--primary-900); }
 
-@media (max-width: 767px) {
+@media (max-width: 1023px) {
   .ap-mobile-back { display: inline-flex; }
 }
 

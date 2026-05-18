@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import {
-  BookOpen,
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
@@ -21,7 +20,6 @@ interface SidebarProps {
   loading: boolean
   collapsed: boolean
   onToggleCollapse: () => void
-  onOpenSummaries: () => void
 }
 
 export default function Sidebar({
@@ -33,7 +31,6 @@ export default function Sidebar({
   loading,
   collapsed,
   onToggleCollapse,
-  onOpenSummaries,
 }: SidebarProps) {
   const [query, setQuery] = useState('')
   const [confirmId, setConfirmId] = useState<number | null>(null)
@@ -77,9 +74,7 @@ export default function Sidebar({
           <button className="new-chat-icon-btn" onClick={onNewChat} disabled={loading} title="New chat">
             <Plus size={16} strokeWidth={2.5} />
           </button>
-          <button className="new-chat-icon-btn" onClick={onOpenSummaries} title="Summaries">
-            <BookOpen size={16} strokeWidth={1.8} />
-          </button>
+
         </>
       )}
 
@@ -104,11 +99,6 @@ export default function Sidebar({
               </button>
             )}
           </div>
-
-          <button className="new-chat-btn" onClick={onOpenSummaries} style={{ backgroundColor: 'transparent', border: '1px solid #45475a' }}>
-            <BookOpen size={14} strokeWidth={1.8} />
-            Summaries
-          </button>
 
           <div className="section-label">Recent chats</div>
 

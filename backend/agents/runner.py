@@ -72,6 +72,10 @@ _checkpointer: AsyncPostgresSaver | None = None
 _store: AsyncPostgresStore | None = None
 _tool_agent = None
 _tool_agent_mini = None
+_llm = None
+_agent_llm = None
+_mini_llm = None
+_mini_agent_llm = None
 
 # Runtime prompt behavior now comes from prompting.loader stacks injected per
 # request.  Keep the agent-level system prompt intentionally small so prompt
@@ -90,38 +94,59 @@ class AgentResponse(BaseModel):
 
 
 
-try:
-    _llm = AzureChatOpenAI(
-        azure_deployment=settings.azure_chat_deployment,
-        azure_endpoint=settings.azure_openai_endpoint,
-        api_key=settings.azure_openai_api_key.get_secret_value(),
-        api_version=settings.azure_openai_api_version,
-        temperature=0.3,
-    )
-    _agent_llm = _llm.bind(parallel_tool_calls=False)
-    set_query_expander_llm(_llm)
+def _get_llm():
+    """Create the primary Azure chat client lazily so helper imports do not need credentials."""
+    global _llm, _agent_llm
+    if _llm is None:
+        _llm = AzureChatOpenAI(
+            azure_deployment=settings.azure_chat_deployment,
+            azure_endpoint=settings.azure_openai_endpoint,
+            api_key=settings.azure_openai_api_key.get_secret_value(),
+            api_version=settings.azure_openai_api_version,
+            temperature=0.3,
+        )
+        _agent_llm = _llm.bind(parallel_tool_calls=False)
+        set_query_expander_llm(_llm)
+    return _llm
 
-    _mini_llm = AzureChatOpenAI(
-        azure_deployment=settings.azure_mini_deployment,
-        azure_endpoint=settings.azure_openai_endpoint,
-        api_key=settings.azure_openai_api_key.get_secret_value(),
-        api_version=settings.azure_openai_api_version,
-        temperature=0.3,
-    )
-    _mini_agent_llm = _mini_llm.bind(parallel_tool_calls=False)
-except Exception as _llm_init_err:
-    logger.error(
-        "Failed to initialise Azure OpenAI clients at startup: %s. "
-        "Check AZURE_OPENAI_API_KEY / AZURE_OPENAI_ENDPOINT in .env.",
-        _llm_init_err,
-    )
-    raise
+
+def _get_agent_llm():
+    global _agent_llm
+    if _agent_llm is None:
+        _get_llm()
+    return _agent_llm
+
+
+def _get_mini_llm():
+    """Create the mini Azure chat client lazily so helper imports do not need credentials."""
+    global _mini_llm, _mini_agent_llm
+    if _mini_llm is None:
+        _mini_llm = AzureChatOpenAI(
+            azure_deployment=settings.azure_mini_deployment,
+            azure_endpoint=settings.azure_openai_endpoint,
+            api_key=settings.azure_openai_api_key.get_secret_value(),
+            api_version=settings.azure_openai_api_version,
+            temperature=0.3,
+        )
+        _mini_agent_llm = _mini_llm.bind(parallel_tool_calls=False)
+    return _mini_llm
+
+
+def _get_mini_agent_llm():
+    global _mini_agent_llm
+    if _mini_agent_llm is None:
+        _get_mini_llm()
+    return _mini_agent_llm
 
 
 @after_model
-def _track_model_cost(response: AIMessage, state: dict, runtime) -> None:
+def _track_model_cost(state: dict, runtime) -> None:
     """Log token usage per model call for cost observability."""
     try:
+        messages = state.get("messages", [])
+        response = messages[-1] if messages else None
+        if response is None:
+            return
         usage = getattr(response, "usage_metadata", None)
         if not usage:
             return
@@ -259,7 +284,7 @@ async def setup_checkpointer():
                 _memory_prompt,                         # dynamic system prompt + memory per policy
                 # ── Context management ───────────────────────────────────
                 SummarizationMiddleware(                # compress old messages instead of dropping
-                    model=_mini_llm,
+                    model=_get_mini_llm(),
                     trigger=("tokens", 4000),
                     keep=("messages", 10),
                 ),
@@ -275,7 +300,7 @@ async def setup_checkpointer():
                     exit_behavior="end",
                 ),
                 # ── Resilience ───────────────────────────────────────────
-                ModelFallbackMiddleware(_mini_llm),     # fallback to mini when primary Azure OpenAI fails
+                ModelFallbackMiddleware(_get_mini_llm()),     # fallback to mini when primary Azure OpenAI fails
                 ModelRetryMiddleware(                   # replaces manual StructuredOutputValidationError retry
                     max_retries=2,
                     retry_on=lambda e: any(
@@ -300,8 +325,8 @@ async def setup_checkpointer():
             context_schema=AgentContext,
         )
 
-    _tool_agent = _make_agent(_agent_llm, TOOLS)
-    _tool_agent_mini = _make_agent(_mini_agent_llm, TOOLS)
+    _tool_agent = _make_agent(_get_agent_llm(), TOOLS)
+    _tool_agent_mini = _make_agent(_get_mini_agent_llm(), TOOLS)
 
 
 def _get_tool_agent(mini: bool = False):
@@ -426,7 +451,7 @@ async def generate_title(messages: list[dict]) -> str:
     context = "\n".join(
         f"{m['role']}: {m['content'][:300]}" for m in messages[:4]
     )
-    response = await _mini_llm.ainvoke([
+    response = await _get_mini_llm().ainvoke([
         SystemMessage(content=(
             "根據以下對話內容，用繁體中文生成一個簡潔的對話標題（5-10字）。"
             "只回傳標題本身，不要加引號或其他說明。"

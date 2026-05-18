@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { ArrowLeft, Plus, FileText, X } from 'lucide-react'
+import { ArrowLeft, Plus, FileText, X, Minus } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { getSummaries, type DocumentItem } from '../api'
 import './DocInfoPanel.css'
@@ -91,6 +91,15 @@ export default function DocInfoPanel({
   const [detailDoc, setDetailDoc] = useState<DocumentItem | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  const { data: summaries = [] } = useQuery({
+    queryKey: ['summaries-slim'],
+    queryFn: () => getSummaries(true),
+    staleTime: 60_000,
+  })
+
+  const hasSummary = (docId: number) =>
+    summaries.find(s => s.id === docId)?.summary != null
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []).filter(f => f.type === 'application/pdf')
     if (files.length > 0) onUpload(files)
@@ -125,7 +134,7 @@ export default function DocInfoPanel({
       <div className="dip-list">
         {documents.length === 0 ? (
           <div className="dip-empty">
-            尚未上傳文件<br />點擊下方按鈕上傳 PDF
+            尚未附加文件<br />從聊天框的迴紋針選取 PDF
           </div>
         ) : (
           documents.map(doc => {
@@ -137,21 +146,20 @@ export default function DocInfoPanel({
               : doc.status === 'processing' ? '處理中' : '錯誤'
 
             return (
-              <div key={doc.id} className={`dip-card${selected ? ' dip-card--selected' : ''}`}>
-                <input
-                  type="checkbox"
-                  checked={selected}
-                  onChange={() => onToggleDoc(doc.id)}
-                  disabled={doc.status !== 'ready'}
-                  onClick={e => e.stopPropagation()}
-                  className="dip-checkbox"
-                />
-                <div className="dip-card-body" onClick={() => setDetailDoc(doc)}>
+              <div key={doc.id} className="dip-card dip-card--selected">
+                <div className="dip-card-body" onClick={() => hasSummary(doc.id) ? setDetailDoc(doc) : onOpenPdf(doc.id)}>
                   <span className="dip-card-name" title={doc.filename}>
                     {getTitle(doc.filename)}
                   </span>
                   <span className={`dip-status ${statusCls}`}>{statusLabel}</span>
                 </div>
+                <button
+                  className="dip-remove-btn"
+                  onClick={e => { e.stopPropagation(); onToggleDoc(doc.id) }}
+                  title="從聊天框移除"
+                >
+                  <Minus size={12} />
+                </button>
               </div>
             )
           })

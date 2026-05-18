@@ -2,7 +2,6 @@ import asyncio
 import logging
 import os
 import sys
-from datetime import datetime, timezone
 from typing import Callable
 
 from dotenv import load_dotenv
@@ -29,7 +28,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from db import create_tables, SessionLocal
+from db import create_tables
 from agents.runner import setup_checkpointer
 from services import job_service
 from api import documents, summaries, jobs, chat, traces, health, prompts
@@ -54,6 +53,17 @@ def _run_migrations():
     except Exception as exc:
         logger.error("Alembic migration failed: %s", exc)
 
+
+def _reset_stuck_runs():
+    """Reset experiment/eval runs stuck in 'running' state from a previous crash."""
+    try:
+        from services.evaluation_worker import EvaluationWorker
+        result = EvaluationWorker.recover_stale_records(timeout_seconds=0)
+        if any(result.values()):
+            logger.info("startup recovery: %s", result)
+    except Exception as exc:
+        logger.warning("startup recovery failed: %s", exc)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _init_tracing()
@@ -65,9 +75,16 @@ async def lifespan(app: FastAPI):
     ensure_memory_collection()
     await init_redis()
     job_service.reset_stuck_processing()
+    _reset_stuck_runs()
     job_service.init_workers()
+    from services.trace_ingestion import init_trace_ingestion_worker, stop_trace_ingestion_worker
+    from services.evaluation_worker import init_evaluation_worker, stop_evaluation_worker
+    init_trace_ingestion_worker()
+    init_evaluation_worker()
     job_service.restore_jobs_from_db()
     yield
+    await stop_evaluation_worker()
+    await stop_trace_ingestion_worker()
     job_service.mark_all_interrupted()
     await close_redis()
     # Signal all active research graph runs to stop at the next superstep boundary.

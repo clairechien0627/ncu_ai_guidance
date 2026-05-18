@@ -1,5 +1,6 @@
-import { Suspense, lazy, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Search, MessageSquare, User, GraduationCap } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import PdfPanel from '../components/viewer/PdfPanel'
 import { getSummaries, type SummaryItem } from '../api'
@@ -99,6 +100,7 @@ function ProjectDetail({ item, onOpenPdfChat }: { item: SummaryItem; onOpenPdfCh
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ProjectsPage() {
+  const location   = useLocation()
   const [search,     setSearch]     = useState('')
   const [filterYear, setFilterYear] = useState('')
   const [filterDept, setFilterDept] = useState('')
@@ -106,11 +108,24 @@ export default function ProjectsPage() {
   const [viewMode,   setViewMode]   = useState<'outline' | 'pdf-chat'>('outline')
   const [mobilePane, setMobilePane] = useState<'list' | 'detail'>('list')
   const [mobilePdfChatTab, setMobilePdfChatTab] = useState<'chat' | 'pdf'>('chat')
+  const appliedNavId = useRef<number | null>(null)
+
   const { data: items = [] } = useQuery({
     queryKey: ['summaries-slim'],
     queryFn:  () => getSummaries(true),
     staleTime: 60_000,
   })
+
+  useEffect(() => {
+    const targetId = (location.state as { selectedId?: number } | null)?.selectedId
+    if (!targetId || appliedNavId.current === targetId || items.length === 0) return
+    const target = items.find(i => i.id === targetId)
+    if (!target) return
+    appliedNavId.current = targetId
+    setSelected(target)
+    setViewMode('outline')
+    setMobilePane('detail')
+  }, [items, location.state])
 
   const years = useMemo(() => {
     const set = new Set(items.map(i => getYear(i.filename)).filter(Boolean))

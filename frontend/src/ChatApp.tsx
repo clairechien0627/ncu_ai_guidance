@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState, useEffect, useCallback } from 'react'
+import { Suspense, lazy, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Sidebar from './components/Sidebar'
@@ -30,6 +30,7 @@ export default function ChatApp() {
   const [pdfViewDocId, setPdfViewDocId] = useState<number | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
   const [docPanelOpen, setDocPanelOpen] = useState(false)
+  const sidebarCollapsedBeforePdf = useRef(true)
 
   // ── Server state ───────────────────────────────────────────────────────────
 
@@ -66,6 +67,13 @@ export default function ChatApp() {
       queryClient.invalidateQueries({ queryKey: ['conversations'] })
     }, [queryClient]),
   })
+
+  // ── Cited documents（只顯示回覆中有明確引用的文件） ───────────────────────
+
+  const attachedDocuments = useMemo(
+    () => documents.filter(d => selectedDocIds.includes(d.id)),
+    [documents, selectedDocIds]
+  )
 
   // ── Persist attachment badges ───────────────────────────────────────────────
 
@@ -189,17 +197,19 @@ export default function ChatApp() {
   )
 
   const handleOpenDoc = useCallback((docId: number) => {
+    sidebarCollapsedBeforePdf.current = sidebarCollapsed
     setPdfViewDocId(docId)
     setSidebarCollapsed(true)
     setPdfOpen(true)
-  }, [])
+  }, [sidebarCollapsed])
 
   const handleOpenPdfFromPanel = useCallback((docId: number) => {
+    sidebarCollapsedBeforePdf.current = sidebarCollapsed
     setDocPanelOpen(false)
     setPdfViewDocId(docId)
     setSidebarCollapsed(true)
     setPdfOpen(true)
-  }, [])
+  }, [sidebarCollapsed])
 
   const handleNewChat = () => {
     setMessages([])
@@ -231,7 +241,6 @@ export default function ChatApp() {
         loading={loading || convLoading}
         collapsed={sidebarCollapsed}
         onToggleCollapse={handleToggleSidebar}
-        onOpenSummaries={() => navigate('/projects')}
       />
       <ChatWindow
         messages={messages}
@@ -263,13 +272,13 @@ export default function ChatApp() {
           <PdfPanel
             documents={documents}
             initialDocId={pdfViewDocId ?? selectedDocIds[0] ?? null}
-            onClose={() => { setPdfOpen(false); setSidebarCollapsed(false) }}
+            onClose={() => { setPdfOpen(false); setSidebarCollapsed(sidebarCollapsedBeforePdf.current) }}
           />
         </Suspense>
       )}
       {!pdfOpen && docPanelOpen && (
         <DocInfoPanel
-          documents={documents}
+          documents={attachedDocuments}
           selectedDocIds={selectedDocIds}
           onToggleDoc={(id) => setSelectedDocIds(prev =>
             prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id]

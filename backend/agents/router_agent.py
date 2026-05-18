@@ -384,13 +384,21 @@ def _build_execution_plan(
     )
 
 
-_router_llm = AzureChatOpenAI(
-    azure_deployment=settings.azure_mini_deployment or settings.azure_chat_deployment,
-    azure_endpoint=settings.azure_openai_endpoint,
-    api_key=settings.azure_openai_api_key.get_secret_value(),
-    api_version=settings.azure_openai_api_version,
-    temperature=0,
-)
+_router_llm = None
+
+
+def _get_router_llm():
+    """Create the router LLM lazily so importing this module does not require Azure credentials."""
+    global _router_llm
+    if _router_llm is None:
+        _router_llm = AzureChatOpenAI(
+            azure_deployment=settings.azure_mini_deployment or settings.azure_chat_deployment,
+            azure_endpoint=settings.azure_openai_endpoint,
+            api_key=settings.azure_openai_api_key.get_secret_value(),
+            api_version=settings.azure_openai_api_version,
+            temperature=0,
+        )
+    return _router_llm
 
 
 async def _llm_classify_intent(message: str, has_docs: bool) -> RouterDecision:
@@ -414,7 +422,7 @@ async def _llm_classify_intent(message: str, has_docs: bool) -> RouterDecision:
             SystemMessage(content=system),
             ("human", "{payload}"),
         ])
-        structured = _router_llm.with_structured_output(RouterDecision)
+        structured = _get_router_llm().with_structured_output(RouterDecision)
         chain = prompt | structured
         decision: RouterDecision = await ainvoke_traced_generation(
             chain,
