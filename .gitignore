@@ -57,3 +57,6 @@ _reference/
 .claude/
 各系大專生計畫(104-114)/
 reports.snapshot
+run_backup.bat
+backend/scripts/data/auto_backup.py
+backups/

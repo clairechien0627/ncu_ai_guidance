@@ -61,21 +61,22 @@ class CoreExtractionResponse(BaseModel):
 
 
 # ── Step 3 model: interest survey (reads Step 1 raw summary) ─────────────────
-InterestQuestion = Annotated[str, Field(min_length=90, max_length=120)]
+InterestQuestion = Annotated[str, Field(min_length=45, max_length=80)]
 
 
 class QuestionGenerationResponse(BaseModel):
     intro: str = Field(
-        min_length=120,
-        max_length=260,
-        description="120~220字導讀文字。讓高中生快速理解研究方向，並願意作答後面的興趣量表。"
+        min_length=100,
+        max_length=220,
+        description="100~180字導讀文字。讓高中生感受這個研究世界為什麼迷人，而不是介紹研究目的。"
     )
     questions: list[InterestQuestion] = Field(
         min_length=3,
         max_length=3,
         description=(
-            "三題興趣量表題目，每題90~120字。順序建議為情境吸引力、研究方式吸引力、思考方式吸引力。"
-            "每題都必須能用 1~5 分回答個人興趣程度，不是考研究內容。不可三題都用「你是否對」開頭。"
+            "三題興趣量表題目，每題45~80字，分別對應情境吸引力、研究方式吸引力、思考方式吸引力三種題型。"
+            "每題設計上必須能讓學生用 1~5 分回答個人興趣程度，但題目本身不要寫出評分說明，由系統另行顯示。"
+            "不是考研究內容。不可三題都用「你是否對」開頭。"
         )
     )
 
