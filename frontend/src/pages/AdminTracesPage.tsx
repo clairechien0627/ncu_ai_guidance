@@ -1307,7 +1307,7 @@ function TraceList({
   return (
     <div className="trace-list">
       {rows.map((row) => {
-        const isErr = row.status === 'error'
+        const isErr = row.level === 'ERROR'
         const dotColor = isErr ? '#dc2626' : (MODE_COLOR[row.mode ?? ''] ?? '#94a3b8')
         const isSelected = selectedId === row.id
         const hasHandoff = row.original_intent && row.original_intent !== row.resolved_intent

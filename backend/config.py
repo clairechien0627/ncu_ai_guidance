@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     log_level: str = "INFO"      # DEBUG | INFO | WARNING | ERROR
     log_format: str = "json"     # json | text
 
+    # Auth / JWT
+    jwt_secret_key: str = "change-me-in-production-please"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_hours: int = 24
+    google_client_id: str = ""  # OAuth 2.0 Client ID from Google Cloud Console
+
     # Langfuse
     langfuse_enabled: bool = True
     langfuse_public_key: SecretStr = SecretStr("")

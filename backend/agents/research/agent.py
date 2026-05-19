@@ -531,6 +531,10 @@ def _write_trace(
     error: str | None = None,
     parent_run_id: str | None = None,
 ) -> None:
+    import os
+    if os.environ.get("LEGACY_TRACE_WRITE", "true").lower() in ("0", "false", "no"):
+        return
+
     db = None
     try:
         with db_session() as db:
@@ -820,13 +824,19 @@ async def run_research_task(
         _cp = None
         _st = None
     _graph = get_or_build_research_graph(checkpointer=_cp, store=_st)
-    graph_config = {
+    graph_config: dict = {
         "configurable": {
             "llm": llm,
             "on_stage": on_stage,
             "thread_id": run_id,
         }
     }
+    if plan_llm_calls == 0:
+        # Task planning fell back to defaults → mark the entire graph run as WARNING
+        graph_config["metadata"] = {
+            "level": "WARNING",
+            "status_message": "planning_fallback: using default research plan",
+        }
 
     try:
         result = await _run_graph_streaming(initial_state, graph_config, on_stage, on_token, graph=_graph)

@@ -382,6 +382,7 @@
 .adm-badge--ready      { background: var(--adm-green-bg);  color: var(--adm-green-text); }
 .adm-badge--processing { background: var(--adm-amber-bg);  color: var(--adm-amber-text); }
 .adm-badge--info       { background: var(--adm-blue-bg);   color: var(--adm-blue-text); }
+.adm-badge--neutral    { background: var(--adm-surface-2);  color: var(--adm-text-2); }
 
 @keyframes adm-pulse {
   0%, 100% { opacity: 1; }
@@ -565,7 +566,7 @@
   position: relative;
   user-select: none;
 }
-/* 裝飾版：所有非最後欄都有，pure visual */
+/* 所有欄分隔線統一外觀 */
 .adm-col-resize-handle {
   position: absolute;
   right: 0;
@@ -579,20 +580,14 @@
 .adm-col-resize-handle::after {
   content: '';
   display: block;
-  width: 1px;
+  width: 2px;
   height: 50%;
   border-radius: 2px;
-  background: var(--adm-border);
+  background: var(--adm-border-2);
   transition: background 120ms, height 120ms;
 }
-/* 互動版：可拖動的分隔線（resizable 欄或有可調欄在兩側的 fixed 欄） */
-.adm-col-resize-handle--live {
-  cursor: col-resize;
-}
-.adm-col-resize-handle--live::after {
-  width: 2px;
-  background: var(--adm-border-2);
-}
+/* 可拖動的分隔線：加 cursor 和 hover 效果 */
+.adm-col-resize-handle--live { cursor: col-resize; }
 .adm-col-resize-handle--live:hover::after  { background: var(--adm-blue); height: 75%; }
 .adm-col-resize-handle--live:active::after { background: var(--adm-blue); height: 100%; }
 .adm-table th:first-child { padding-left: 16px; }

@@ -8,6 +8,7 @@ New code should import directly from the sub-modules:
 from .session import engine, SessionLocal, Base, get_db, db_session
 from .models import (
     JsonColumn,
+    User,
     Document,
     DocumentExtraction,
     DocumentResearchCache,
@@ -25,6 +26,7 @@ from .models import (
     DatasetItem,
     ExperimentRun,
     ExperimentRunItem,
+    PromptVersion,
 )
 from .migrations import create_tables
 
@@ -35,6 +37,7 @@ __all__ = [
     "get_db",
     "db_session",
     "JsonColumn",
+    "User",
     "Document",
     "DocumentExtraction",
     "DocumentResearchCache",
@@ -52,5 +55,6 @@ __all__ = [
     "DatasetItem",
     "ExperimentRun",
     "ExperimentRunItem",
+    "PromptVersion",
     "create_tables",
 ]

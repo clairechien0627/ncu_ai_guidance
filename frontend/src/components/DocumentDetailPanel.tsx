@@ -372,7 +372,7 @@ export function DocumentDetailPanel({
                       className="trace-row-head"
                       onClick={() => onExpandTrace(isOpen ? null : trace.id)}
                     >
-                      <span className="trace-dot" data-status={trace.status} />
+                      <span className="trace-dot" data-status={trace.level === 'ERROR' ? 'error' : 'success'} />
                       <span className="trace-name">{trace.name}</span>
                       <span className="trace-latency" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         {timeAgo && <span>{timeAgo}</span>}

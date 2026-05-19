@@ -10,7 +10,8 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from db import Dataset, DatasetItem, EvaluationRun, EvaluationRunItem, Trace, db_session
-from services.trace_repositories import ScoreRepository
+from db.models import Score, TraceV2
+from services.trace_repositories import ScoreRepository, TraceRepository
 
 
 EvaluatorFn = Callable[..., Awaitable[object]]
@@ -249,14 +250,32 @@ class EvaluationRunService:
         name: str = "trace-batch-score",
         metadata: dict | None = None,
     ) -> EvaluationRun:
-        traces = (
-            db.query(Trace)
-            .filter(_agent_execution_root(), Trace.quality_score.is_(None), Trace.error.is_(None))
-            .order_by(Trace.start_time.desc())
+        # v2-first: pick from traces_v2 that have no overall score yet
+        scored_ids = select(Score.trace_id).where(Score.name == "overall", Score.trace_id.isnot(None))
+        v2_traces = (
+            db.query(TraceV2)
+            .filter(TraceV2.trace_id.notin_(scored_ids))
+            .order_by(TraceV2.start_time.desc())
             .limit(limit)
             .all()
         )
-        trace_ids = [trace.run_id for trace in traces]
+        trace_ids = [t.trace_id for t in v2_traces]
+        # fallback: legacy traces not already covered by v2 or scored
+        if len(trace_ids) < limit:
+            already = set(trace_ids)
+            legacy = (
+                db.query(Trace)
+                .filter(
+                    _agent_execution_root(),
+                    Trace.quality_score.is_(None),
+                    Trace.error.is_(None),
+                    Trace.run_id.notin_(already) if already else True,
+                )
+                .order_by(Trace.start_time.desc())
+                .limit(limit - len(trace_ids))
+                .all()
+            )
+            trace_ids += [t.run_id for t in legacy]
         if not trace_ids:
             return None
         eval_run_id = f"eval-{uuid.uuid4().hex}"
@@ -417,11 +436,17 @@ class EvaluationRunService:
 
         items = []
         with db_session() as db:
+            retry_cutoff = _utcnow() - timedelta(seconds=60)
             items = [
                 item.eval_item_id
                 for item in db.query(EvaluationRunItem)
                 .filter(EvaluationRunItem.eval_run_id == eval_run_id)
                 .filter(EvaluationRunItem.status.in_(["pending", "failed"]))
+                # failed items must wait at least 60s before retry
+                .filter(or_(
+                    EvaluationRunItem.status == "pending",
+                    EvaluationRunItem.updated_at < retry_cutoff,
+                ))
                 .order_by(EvaluationRunItem.created_at.asc())
                 .all()
             ]
@@ -502,15 +527,22 @@ class EvaluationRunService:
                 route_intent = trace.route_intent
 
         try:
-            result = await evaluator(
-                user_task=user_task,
-                answer=answer,
-                task_type=task_type,
-                route_intent=route_intent,
-                sources=sources,
-                trace_summary=trace_summary,
-                extra_context=extra_context,
-            )
+            import contextlib
+            from langfuse import propagate_attributes
+            _ctx = propagate_attributes(
+                session_id=f"eval:{eval_run_id}",
+                metadata={"source_trace_id": trace_id, "eval_item_id": eval_item_id},
+            ) if trace_id else contextlib.nullcontext()
+            with _ctx:
+                result = await evaluator(
+                    user_task=user_task,
+                    answer=answer,
+                    task_type=task_type,
+                    route_intent=route_intent,
+                    sources=sources,
+                    trace_summary=trace_summary,
+                    extra_context=extra_context,
+                )
             result_obj = result
             result_dict = _result_to_dict(result)
             score_payloads = evaluation_result_to_score_payloads(
@@ -530,10 +562,49 @@ class EvaluationRunService:
                 trace = db.query(Trace).filter(Trace.run_id == item.trace_id).first() if item else None
                 if item is None or trace is None:
                     return
+                # Ensure the trace exists in traces_v2 before writing scores
+                # (FK constraint: scores.trace_id → traces_v2.trace_id)
+                if trace is not None and TraceRepository.get_trace(db, trace.run_id) is None:
+                    TraceRepository.upsert_trace(db, {
+                        "trace_id": trace.run_id,
+                        "name": trace.agent_name or trace.name or "trace",
+                        "session_id": trace.thread_id,
+                        "user_id": trace.user_id,
+                        "environment": trace.environment or "default",
+                        "start_time": trace.start_time.isoformat() if trace.start_time else None,
+                        "end_time": trace.end_time.isoformat() if trace.end_time else None,
+                    })
                 for payload in score_payloads:
                     ScoreRepository.upsert_score(db, payload, sync_legacy_cache=False)
                 if item.dataset_item_id is None and trace is not None:
                     ScoreRepository.sync_legacy_trace_cache(db, trace.run_id)
+                # Write evaluation result as a local observation so it shows in trace detail
+                if trace_id:
+                    try:
+                        from services.trace_ingestion import TraceEventIngestor
+                        now_iso = _utcnow().isoformat()
+                        TraceEventIngestor.enqueue_sync([{
+                            "event_type": "observation-create",
+                            "body": {
+                                "observation_id": f"eval-obs:{eval_item_id}",
+                                "trace_id": trace_id,
+                                "type": "EVALUATOR",
+                                "name": "Evaluate Output",
+                                "start_time": now_iso,
+                                "end_time": now_iso,
+                                "output": {k: v for k, v in result_dict.items()
+                                           if k in ("overall", "grounding", "task_fit",
+                                                    "completeness", "verdict", "issues")},
+                                "metadata": {
+                                    "eval_run_id": eval_run_id,
+                                    "eval_item_id": eval_item_id,
+                                    "task_type": task_type,
+                                },
+                                "level": "DEFAULT",
+                            },
+                        }])
+                    except Exception:
+                        pass
                 now = _utcnow()
                 item.status = "completed"
                 item.score_ids = _json_text(score_ids)

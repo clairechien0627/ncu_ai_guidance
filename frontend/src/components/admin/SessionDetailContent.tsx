@@ -46,7 +46,7 @@ function IOPreview({ trace }: { trace: TraceItem }) {
 }
 
 function TraceCard({ trace, idx, onOpenTrace }: { trace: TraceItem; idx: number; onOpenTrace: (id: string) => void }) {
-  const isErr = trace.status === 'error'
+  const isErr = trace.level === 'ERROR'
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, padding: '14px 16px', background: isErr ? 'rgba(220,38,38,0.03)' : 'var(--adm-surface)', border: `1px solid ${isErr ? 'rgba(220,38,38,0.25)' : 'var(--adm-border)'}`, borderRadius: 'var(--adm-radius-lg)', marginBottom: 8 }}>
       <IOPreview trace={trace} />

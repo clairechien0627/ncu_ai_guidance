@@ -83,11 +83,9 @@ def _metadata(trace: TraceV2) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _score_summary(db: Session, trace_id: str) -> tuple[float | None, dict | None, str | None]:
-    rows = db.query(Score).filter(Score.trace_id == trace_id).all()
+def _score_summary_from_rows(rows: list[Score]) -> tuple[float | None, dict | None, str | None]:
     if not rows:
         return None, None, None
-
     numeric: dict[str, float] = {}
     feedback: str | None = None
     verdict: str | None = None
@@ -98,37 +96,90 @@ def _score_summary(db: Session, trace_id: str) -> tuple[float | None, dict | Non
             feedback = row.comment
         if row.string_value and row.name in {"verdict", "feedback"}:
             verdict = row.string_value
-
     quality_score = numeric.get("overall")
-    if quality_score is None and numeric:
-        quality_score = round(sum(numeric.values()) / len(numeric), 2)
-
+    if quality_score is None:
+        # Only average recognised quality dimensions, not operational metrics
+        quality_nums = [v for k, v in numeric.items() if k in QUALITY_DIMENSIONS]
+        if quality_nums:
+            quality_score = round(sum(quality_nums) / len(quality_nums), 2)
     detail = dict(numeric) if numeric else None
     if detail is not None and verdict:
         detail["verdict"] = verdict
     return quality_score, detail, feedback
 
 
-def _usage_totals(db: Session, trace_id: str) -> tuple[int, int]:
+def _score_summary(db: Session, trace_id: str) -> tuple[float | None, dict | None, str | None]:
+    return _score_summary_from_rows(db.query(Score).filter(Score.trace_id == trace_id).all())
+
+
+def _usage_totals_from_rows(observations: list[Observation]) -> tuple[int, int]:
     prompt_tokens = 0
     completion_tokens = 0
-    observations = db.query(Observation).filter(Observation.trace_id == trace_id).all()
     for obs in observations:
-        usage = _parse_json(obs.usage) or {}
-        if isinstance(usage, dict):
-            prompt_tokens += int(usage.get("input") or usage.get("prompt_tokens") or 0)
-            completion_tokens += int(usage.get("output") or usage.get("completion_tokens") or 0)
+        prompt_tokens += obs.prompt_tokens or 0
+        completion_tokens += obs.completion_tokens or 0
     return prompt_tokens, completion_tokens
 
 
-def _v2_trace_payload(db: Session, trace: TraceV2, *, include_raw: bool = False, include_display: bool = True) -> dict:
+def _cost_total_from_rows(observations: list[Observation]) -> float | None:
+    total = sum(obs.total_cost for obs in observations if obs.total_cost is not None)
+    return round(total, 8) if total else None
+
+
+def _level_info(observations: list[Observation]) -> tuple[str | None, dict | None]:
+    """Return (worst_level, non-default level counts)."""
+    if not observations:
+        return None, None
+    counts: dict[str, int] = {}
+    for obs in observations:
+        lvl = (obs.level or "DEFAULT").upper()
+        if lvl != "DEFAULT":
+            counts[lvl] = counts.get(lvl, 0) + 1
+    if "ERROR" in counts:
+        return "ERROR", counts
+    if "WARNING" in counts:
+        return "WARNING", counts
+    return "DEFAULT", None
+
+
+_STANDARD_META_KEYS = {
+    "task_type", "route_intent", "agent_name", "prompt_name", "prompt_version",
+    "base_prompt_name", "task_prompt_name", "quality_prompt_name",
+    "base_prompt_hash", "task_prompt_hash", "quality_prompt_hash",
+    "prompt_stack_name", "prompt_stack_json", "primary_prompt_json",
+    "workflow_prompts_json", "prompt_stack_tokens", "tool_count", "llm_call_count",
+    "original_intent", "resolved_intent", "document_ids", "display",
+}
+
+
+def _usage_totals(db: Session, trace_id: str) -> tuple[int, int]:
+    return _usage_totals_from_rows(
+        db.query(Observation).filter(Observation.trace_id == trace_id).all()
+    )
+
+
+def _build_v2_payload(
+    trace: TraceV2,
+    scores: list[Score],
+    observations: list[Observation],
+    *,
+    include_raw: bool = False,
+    include_display: bool = True,
+) -> dict:
     meta = _metadata(trace)
-    quality_score, quality_detail, user_feedback = _score_summary(db, trace.trace_id)
+    quality_score, quality_detail, user_feedback = _score_summary_from_rows(scores)
     input_obj = _parse_json(trace.input)
     output_obj = _parse_json(trace.output)
-    prompt_tokens, completion_tokens = _usage_totals(db, trace.trace_id)
-    observations = db.query(Observation).filter(Observation.trace_id == trace.trace_id).all()
+    prompt_tokens, completion_tokens = _usage_totals_from_rows(observations)
+    total_cost = _cost_total_from_rows(observations)
+    input_cost = round(sum(o.input_cost or 0 for o in observations if o.input_cost is not None), 8) or None
+    output_cost = round(sum(o.output_cost or 0 for o in observations if o.output_cost is not None), 8) or None
+    tags = _parse_json(trace.tags) if trace.tags else []
+    if not isinstance(tags, list):
+        tags = []
+    worst_level, level_counts = _level_info(observations)
     error = next((o.status_message for o in observations if o.level == "ERROR" and o.status_message), None)
+    extra_meta = {k: v for k, v in meta.items() if k not in _STANDARD_META_KEYS} or None
 
     display = meta.get("display") if isinstance(meta.get("display"), dict) else None
     answer = display.get("answer") if isinstance(display, dict) else None
@@ -138,7 +189,7 @@ def _v2_trace_payload(db: Session, trace: TraceV2, *, include_raw: bool = False,
     payload = {
         "id": trace.trace_id,
         "name": trace.name,
-        "status": "error" if error else "success",
+        "level": worst_level or "DEFAULT",
         "start_time": trace.start_time.isoformat() + "Z" if trace.start_time else None,
         "end_time": trace.end_time.isoformat() + "Z" if trace.end_time else None,
         "latency": _latency(trace.start_time, trace.end_time),
@@ -174,17 +225,32 @@ def _v2_trace_payload(db: Session, trace: TraceV2, *, include_raw: bool = False,
         "runtime_prompt_metadata": {},
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
+        "total_cost": total_cost,
+        "input_cost": input_cost,
+        "output_cost": output_cost,
+        "tags": tags,
+        "thread_id": trace.thread_id,
+        "environment": trace.environment,
+        "observation_count": len(observations),
+        "level": worst_level,
+        "obs_level_counts": level_counts,
+        "metadata": extra_meta,
     }
     if include_raw:
         payload.update({
             "run_type": "chain",
             "parent_run_id": None,
-            "thread_id": trace.thread_id,
             "document_ids": meta.get("document_ids"),
             "inputs_raw": input_obj,
             "outputs_raw": output_obj,
         })
     return payload
+
+
+def _v2_trace_payload(db: Session, trace: TraceV2, *, include_raw: bool = False, include_display: bool = True) -> dict:
+    scores = db.query(Score).filter(Score.trace_id == trace.trace_id).all()
+    observations = db.query(Observation).filter(Observation.trace_id == trace.trace_id).all()
+    return _build_v2_payload(trace, scores, observations, include_raw=include_raw, include_display=include_display)
 
 
 def _legacy_latency(t: Trace) -> float | None:
@@ -212,7 +278,7 @@ def legacy_trace_payload(t: Trace, *, include_raw: bool = False, include_display
     payload = {
         "id": t.run_id,
         "name": t.name,
-        "status": "error" if t.error else "success",
+        "level": "ERROR" if t.error else "DEFAULT",
         "start_time": t.start_time.isoformat() + "Z" if t.start_time else None,
         "end_time": t.end_time.isoformat() + "Z" if t.end_time else None,
         "latency": _legacy_latency(t),
@@ -248,12 +314,21 @@ def legacy_trace_payload(t: Trace, *, include_raw: bool = False, include_display
         "runtime_prompt_metadata": display.get("prompt_metadata", {}) if isinstance(display, dict) else {},
         "prompt_tokens": t.prompt_tokens,
         "completion_tokens": t.completion_tokens,
+        "total_cost": None,
+        "input_cost": None,
+        "output_cost": None,
+        "tags": None,
+        "thread_id": t.thread_id,
+        "environment": t.environment,
+        "observation_count": None,
+        "level": "ERROR" if t.error else "DEFAULT",
+        "obs_level_counts": {"ERROR": 1} if t.error else None,
+        "metadata": None,
     }
     if include_raw:
         payload.update({
             "run_type": t.run_type,
             "parent_run_id": t.parent_run_id,
-            "thread_id": t.thread_id,
             "document_ids": _parse_json(t.document_ids),
             "inputs_raw": _parse_json(t.inputs),
             "outputs_raw": _parse_json(t.outputs),

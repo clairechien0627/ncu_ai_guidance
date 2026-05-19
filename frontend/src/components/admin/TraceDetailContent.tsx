@@ -102,7 +102,7 @@ function FeedbackForm({ trace, onSaved }: { trace: TraceDetail; onSaved: (t: Tra
 
 function ChildSpan({ child }: { child: TraceDetail }) {
   const [open, setOpen] = useState(false)
-  const isErr = child.status === 'error'
+  const isErr = child.level === 'ERROR'
   return (
     <div style={{ border: '1px solid var(--adm-border)', borderRadius: 'var(--adm-radius)', marginBottom: 6, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer', background: open ? 'var(--adm-surface-2)' : 'var(--adm-surface)' }}
@@ -165,7 +165,7 @@ export function TraceDetailContent({ traceId, compact = false }: Props) {
   if (isLoading) return <div style={{ padding: 32, textAlign: 'center', color: 'var(--adm-text-3)' }}><div className="adm-spinner" style={{ margin: '0 auto 8px' }} />載入中…</div>
   if (!trace) return <div style={{ padding: 32, color: 'var(--adm-red)' }}>Trace 不存在</div>
 
-  const isErr      = trace.status === 'error'
+  const isErr      = trace.level === 'ERROR'
   const sources    = trace.display?.sources ?? []
   const hasChildren = (trace.children?.length ?? 0) > 0
 

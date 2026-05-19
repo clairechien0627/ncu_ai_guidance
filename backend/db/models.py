@@ -180,6 +180,26 @@ class DocumentResearchCache(Base):
                         onupdate=lambda: datetime.now(timezone.utc))
 
 
+def _utcnow():
+    return datetime.now(timezone.utc)
+
+
+class User(Base):
+    __tablename__ = "users"
+    id         = Column(Integer, primary_key=True, index=True)
+    email      = Column(String, unique=True, nullable=False, index=True)
+    username   = Column(String, unique=True, nullable=False, index=True)
+    hashed_pw  = Column(String, nullable=False)
+    role       = Column(String, nullable=False, default="user")   # "user" | "admin"
+    is_active  = Column(Boolean, nullable=False, default=True)
+    display_name = Column(String, nullable=True)
+    # 用量配額（None = 無限）
+    quota_tokens_per_day   = Column(Integer, nullable=True)
+    quota_requests_per_day = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
     id = Column(Integer, primary_key=True, index=True)

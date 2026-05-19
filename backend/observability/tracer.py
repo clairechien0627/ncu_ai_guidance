@@ -381,14 +381,17 @@ class LocalTracer(BaseCallbackHandler):
         if not rows:
             return
         events = self._build_trace_events(rows)
+        legacy_write = os.environ.get("LEGACY_TRACE_WRITE", "").lower() in ("1", "true", "yes")
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(asyncio.to_thread(LocalTracer._write_traces, rows))
+            if legacy_write:
+                loop.create_task(asyncio.to_thread(LocalTracer._write_traces, rows))
             if events:
                 from services.trace_ingestion import TraceEventIngestor
                 loop.create_task(TraceEventIngestor.enqueue(events))
         except RuntimeError:
-            LocalTracer._write_traces(rows)
+            if legacy_write:
+                LocalTracer._write_traces(rows)
             if events:
                 from services.trace_ingestion import TraceEventIngestor, TraceIngestionWorker
                 TraceEventIngestor.enqueue_sync(events)
@@ -431,6 +434,7 @@ class LocalTracer(BaseCallbackHandler):
                 "thread_id": self.thread_id,
                 "document_ids": doc_ids_json,
                 "display": display_json if is_root else None,
+                "event_metadata": ev.get("metadata") or {},
                 "task_type": self.task_type,
                 "route_intent": self.route_intent,
                 "agent_name": self.agent_name,
@@ -499,6 +503,58 @@ class LocalTracer(BaseCallbackHandler):
         }
         metadata = {k: v for k, v in metadata.items() if v is not None}
 
+        _VALID_LEVELS = {"DEBUG", "DEFAULT", "WARNING", "ERROR"}
+
+        def _resolve_level(row: dict) -> str:
+            if row.get("error"):
+                return "ERROR"
+            meta_level = str(row.get("event_metadata", {}).get("level") or "").upper()
+            return meta_level if meta_level in _VALID_LEVELS else "DEFAULT"
+
+        def _obs_body(row: dict, trace_id: str, parent_observation_id) -> dict:
+            usage: dict = {}
+            if row.get("prompt_tokens") is not None:
+                usage["input"] = row["prompt_tokens"]
+            if row.get("completion_tokens") is not None:
+                usage["output"] = row["completion_tokens"]
+            if usage:
+                usage["total"] = (usage.get("input") or 0) + (usage.get("output") or 0)
+                usage["unit"] = "TOKENS"
+            return {
+                "observation_id": row["run_id"],
+                "trace_id": trace_id,
+                "parent_observation_id": parent_observation_id,
+                "type": row.get("run_type") or "span",
+                "name": row.get("name") or "observation",
+                "usage": usage or None,
+                "prompt_name": row.get("prompt_name"),
+                "prompt_version": row.get("prompt_version"),
+                "input": _loads(row.get("inputs")),
+                "output": _loads(row.get("outputs")),
+                "metadata": metadata,
+                "level": _resolve_level(row),
+                "status_message": row.get("error"),
+                "start_time": row.get("start_time"),
+                "end_time": row.get("end_time"),
+            }
+
+        if self.parent_run_id:
+            # Sub-agent tracer: all runs (including root) become observations under
+            # the parent trace so the hierarchy stays within a single Langfuse trace.
+            events = []
+            for row in rows:
+                is_root = row["run_id"] == self._root_run_id
+                # Root run → top-level observation (no parent observation)
+                # Children → point to their actual LangChain parent (also an observation)
+                parent_obs = None if is_root else row.get("parent_run_id")
+                events.append({
+                    "event_id": f"observation-create:{row['run_id']}",
+                    "event_type": "observation-create",
+                    "body": _obs_body(row, self.parent_run_id, parent_obs),
+                })
+            return events
+
+        # Root tracer: create one trace + observations for every non-root run
         events = [{
             "event_id": f"trace-create:{root_row['run_id']}",
             "event_type": "trace-create",
@@ -517,38 +573,16 @@ class LocalTracer(BaseCallbackHandler):
                 "end_time": root_row.get("end_time"),
             },
         }]
-
         for row in rows:
-            if row["run_id"] == root_row["run_id"]:
+            if row["run_id"] == self._root_run_id:
                 continue
-            usage = {}
-            if row.get("prompt_tokens") is not None:
-                usage["input"] = row.get("prompt_tokens")
-            if row.get("completion_tokens") is not None:
-                usage["output"] = row.get("completion_tokens")
-            if usage:
-                usage["total"] = (usage.get("input") or 0) + (usage.get("output") or 0)
-                usage["unit"] = "TOKENS"
+            # Direct children of root → parent_observation_id=None (root-level observations)
+            # Deeper children → point to their direct LangChain parent
+            parent_obs = None if row.get("parent_run_id") == self._root_run_id else row.get("parent_run_id")
             events.append({
                 "event_id": f"observation-create:{row['run_id']}",
                 "event_type": "observation-create",
-                "body": {
-                    "observation_id": row["run_id"],
-                    "trace_id": root_row["run_id"],
-                    "parent_observation_id": row.get("parent_run_id") if row.get("parent_run_id") != root_row["run_id"] else None,
-                    "type": row.get("run_type") or "span",
-                    "name": row.get("name") or "observation",
-                    "usage": usage or None,
-                    "prompt_name": row.get("prompt_name"),
-                    "prompt_version": row.get("prompt_version"),
-                    "input": _loads(row.get("inputs")),
-                    "output": _loads(row.get("outputs")),
-                    "metadata": metadata,
-                    "level": "ERROR" if row.get("error") else "DEFAULT",
-                    "status_message": row.get("error"),
-                    "start_time": row.get("start_time"),
-                    "end_time": row.get("end_time"),
-                },
+                "body": _obs_body(row, root_row["run_id"], parent_obs),
             })
         return events
 

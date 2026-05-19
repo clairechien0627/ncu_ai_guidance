@@ -33,7 +33,15 @@ class TraceSessionUserReadService:
         ]
         if not payloads:
             raise HTTPException(status_code=404, detail="Session not found")
-        payloads.sort(key=lambda p: p.get("start_time") or "")
+        def _ts(p):
+            st = p.get("start_time")
+            if not st:
+                return datetime.min
+            try:
+                return datetime.fromisoformat(st.replace("Z", "+00:00")).replace(tzinfo=None)
+            except Exception:
+                return datetime.min
+        payloads.sort(key=_ts)
         return self.core._session_detail_from_payloads(thread_id, payloads)
 
 

@@ -16,6 +16,7 @@ const NAV_GROUPS = [
     items: [
       { label: 'Dashboard',    path: '/admin/dashboard',    icon: <LayoutDashboard size={16} /> },
       { label: 'System Jobs',  path: '/admin/jobs',         icon: <Briefcase size={16} /> },
+      { label: 'Playground',   path: '/admin/playground',   icon: <TestTube size={16} /> },
     ],
   },
   {
@@ -48,14 +49,20 @@ const NAV_GROUPS = [
       { label: 'Prompts',      path: '/admin/prompts',      icon: <BookOpen size={16} /> },
     ],
   },
+  {
+    group: 'Settings',
+    items: [
+      { label: 'User Accounts', path: '/admin/users-manage', icon: <Users size={16} /> },
+    ],
+  },
 ]
 
 const PAGE_TITLES: Record<string, string> = {
   dashboard: 'Dashboard', traces: 'Traces', sessions: 'Sessions',
-  users: 'Users', documents: 'Documents', jobs: 'Jobs', prompts: 'Prompts',
+  users: 'Users', documents: 'Documents', jobs: 'Jobs', playground: 'Playground', prompts: 'Prompts',
   scores: 'Scores', observations: 'Observations',
   evaluations: 'Eval Runs', datasets: 'Datasets', experiments: 'Experiments',
-  compare: 'Compare',
+  compare: 'Compare', 'users-manage': 'User Accounts',
 }
 
 function usePageTitle() {

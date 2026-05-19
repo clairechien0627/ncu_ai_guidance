@@ -107,9 +107,13 @@ class TraceIngestionWorker:
     @staticmethod
     def process_pending(limit: int = 100) -> int:
         processed = 0
-        worker_id = f"trace-worker-{uuid.uuid4().hex[:12]}"
         with _worker_session() as db:
+            # Recover stale locks first, commit separately so they're visible to the main query
             TraceIngestionWorker.recover_stale_processing(db)
+            db.commit()
+
+            # Single-transaction: SELECT FOR UPDATE SKIP LOCKED prevents concurrent workers
+            # from processing the same event simultaneously
             rows = (
                 db.query(TraceEventOutbox)
                 .filter(
@@ -118,31 +122,21 @@ class TraceIngestionWorker:
                 )
                 .order_by(TraceEventOutbox.created_at.asc())
                 .limit(limit)
-                .all()
-            )
-            for row in rows:
-                row.status = "processing"
-                row.locked_at = _utcnow()
-                row.locked_by = worker_id
-            db.commit()
-
-        with _worker_session() as db:
-            rows = (
-                db.query(TraceEventOutbox)
-                .filter(
-                    TraceEventOutbox.status == "processing",
-                    TraceEventOutbox.locked_by == worker_id,
-                )
-                .order_by(TraceEventOutbox.created_at.asc())
+                .with_for_update(skip_locked=True)
                 .all()
             )
             for row in rows:
                 try:
                     row.attempts = (row.attempts or 0) + 1
+                    row.status = "processing"
+                    row.locked_at = _utcnow()
+                    db.flush()
+
                     body = row.body_json
                     if isinstance(body, str):
                         body = json.loads(body)
                     TraceIngestionWorker._process_event(db, row.event_type, body)
+
                     row.status = "processed"
                     row.processed_at = _utcnow()
                     row.last_error = None
@@ -187,7 +181,10 @@ class TraceIngestionWorker:
         elif event_type in {"observation-create", "observation-update"}:
             ObservationRepository.upsert_observation(db, body)
         elif event_type == "score-create":
-            ScoreRepository.upsert_score(db, body)
+            # sync_legacy_cache=False: cache sync happens after all events in this
+            # batch are processed and the session is about to commit, avoiding
+            # stale reads on partial writes.
+            ScoreRepository.upsert_score(db, body, sync_legacy_cache=False)
         else:
             raise ValueError(f"Unsupported trace event type: {event_type}")
 

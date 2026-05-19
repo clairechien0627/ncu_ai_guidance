@@ -92,15 +92,15 @@ async def _worker_loop() -> None:
     while not _stop_event.is_set():
         try:
             if redis_enabled():
-                await redis_blpop(EVALUATION_WAKEUP_QUEUE, timeout=2)
+                await redis_blpop(EVALUATION_WAKEUP_QUEUE, timeout=15)
             else:
-                await asyncio.sleep(2)
+                await asyncio.sleep(15)
             await EvaluationWorker.process_pending_once()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.warning("evaluation worker tick failed: %s", exc)
-            await asyncio.sleep(2)
+            await asyncio.sleep(15)
 
 
 def init_evaluation_worker() -> None:

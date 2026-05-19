@@ -6,6 +6,17 @@ from services.trace_read_core import _TraceReadCore
 from services.trace_repositories import observation_to_trace_payload
 
 
+def _score_buckets(values: list[float]) -> dict[str, int]:
+    buckets: dict[str, int] = {"0-1": 0, "1-2": 0, "2-3": 0, "3-4": 0, "4-5": 0}
+    for v in values:
+        if v < 1:   buckets["0-1"] += 1
+        elif v < 2: buckets["1-2"] += 1
+        elif v < 3: buckets["2-3"] += 1
+        elif v < 4: buckets["3-4"] += 1
+        else:       buckets["4-5"] += 1
+    return buckets
+
+
 class TraceStatsReadService:
     def __init__(self, core: _TraceReadCore):
         self.core = core
@@ -91,124 +102,89 @@ class TraceStatsReadService:
 
 
     def observation_stats(self) -> dict:
-        if self.core.db.query(Observation.id).first():
+        def _agg_rows(rows, type_fn, pt_fn, ct_fn) -> dict:
             by_type: dict[str, dict] = {}
-            total_tokens = 0
-            for obs in self.core.db.query(Observation).all():
-                item = by_type.setdefault(obs.type, {"count": 0, "prompt_tokens": 0, "completion_tokens": 0})
-                usage = _parse_json(obs.usage) or {}
+            for row in rows:
+                item = by_type.setdefault(type_fn(row), {"count": 0, "prompt_tokens": 0, "completion_tokens": 0})
                 item["count"] += 1
-                prompt_tokens = 0
-                completion_tokens = 0
-                if isinstance(usage, dict):
-                    prompt_tokens = int(usage.get("input") or usage.get("prompt_tokens") or 0)
-                    completion_tokens = int(usage.get("output") or usage.get("completion_tokens") or 0)
-                    item["prompt_tokens"] += prompt_tokens
-                    item["completion_tokens"] += completion_tokens
-                total_tokens += prompt_tokens + completion_tokens
+                item["prompt_tokens"] += pt_fn(row) or 0
+                item["completion_tokens"] += ct_fn(row) or 0
+            total_tokens = sum(v["prompt_tokens"] + v["completion_tokens"] for v in by_type.values())
             return {"total": sum(v["count"] for v in by_type.values()), "by_type": by_type, "total_tokens": total_tokens}
+
+        if self.core.db.query(Observation.id).first():
+            rows = self.core.db.query(Observation).all()
+            return _agg_rows(rows,
+                type_fn=lambda o: o.type,
+                pt_fn=lambda o: o.prompt_tokens,
+                ct_fn=lambda o: o.completion_tokens,
+            )
         rows = self.core.db.query(Trace).filter(Trace.parent_run_id.isnot(None)).all()
-        by_type: dict[str, dict] = {}
-        for t in rows:
-            item = by_type.setdefault(t.run_type, {"count": 0, "prompt_tokens": 0, "completion_tokens": 0})
-            item["count"] += 1
-            item["prompt_tokens"] += t.prompt_tokens or 0
-            item["completion_tokens"] += t.completion_tokens or 0
-        return {"total": len(rows), "by_type": by_type, "total_tokens": sum(v["prompt_tokens"] + v["completion_tokens"] for v in by_type.values())}
+        return _agg_rows(rows,
+            type_fn=lambda t: t.run_type,
+            pt_fn=lambda t: t.prompt_tokens,
+            ct_fn=lambda t: t.completion_tokens,
+        )
 
 
     def score_stats(self) -> dict:
+        def _dim_avgs(dim_values: dict[str, list[float]]) -> dict[str, float | None]:
+            return {k: round(sum(v) / len(v), 2) if v else None for k, v in dim_values.items()}
+
+        def _summary(total: int, values: list[float], dim_values: dict[str, list[float]]) -> dict:
+            low = sum(1 for v in values if v < 3)
+            return {
+                "total": total,
+                "scored": len(values),
+                "unscored": max(total - len(values), 0),
+                "avg_score": round(sum(values) / len(values), 2) if values else None,
+                "low_quality_count": low,
+                "low_quality_pct": round(low / len(values) * 100, 1) if values else None,
+                "distribution": [{"bucket": k, "count": v} for k, v in _score_buckets(values).items()],
+                "dimension_avgs": _dim_avgs(dim_values),
+            }
+
         payloads = self.core._merged_payloads({}, include_display=False)
         if payloads:
             values = [float(p["quality_score"]) for p in payloads if p.get("quality_score") is not None]
-            buckets = {"0-1": 0, "1-2": 0, "2-3": 0, "3-4": 0, "4-5": 0}
-            for value in values:
-                if value < 1: buckets["0-1"] += 1
-                elif value < 2: buckets["1-2"] += 1
-                elif value < 3: buckets["2-3"] += 1
-                elif value < 4: buckets["3-4"] += 1
-                else: buckets["4-5"] += 1
-
+            # Dimension averages come from the scores table (v2 source of truth).
+            # Only fall back to legacy quality_detail for traces not yet in v2.
             dim_values: dict[str, list[float]] = {name: [] for name in QUALITY_DIMENSIONS}
             for score in self.core.db.query(Score).filter(Score.name.in_(QUALITY_DIMENSIONS), Score.value.isnot(None)).all():
                 dim_values.setdefault(score.name, []).append(float(score.value))
-
-            v2_ids = {tid for (tid,) in self.core.db.query(TraceV2.trace_id).all() if tid}
-            for trace in self.core._legacy_filtered({}, limit=100000, offset=0):
-                if trace.run_id in v2_ids:
-                    continue
-                detail = _legacy_parse_quality(trace.quality_detail)
-                if not isinstance(detail, dict):
-                    continue
-                for name in QUALITY_DIMENSIONS:
-                    value = detail.get(name)
-                    if isinstance(value, (int, float)):
-                        dim_values.setdefault(name, []).append(float(value))
-
-            low = sum(1 for v in values if v < 3)
-            return {
-                "total": len(payloads),
-                "scored": len(values),
-                "unscored": len(payloads) - len(values),
-                "avg_score": round(sum(values) / len(values), 2) if values else None,
-                "low_quality_count": low,
-                "low_quality_pct": round(low / len(values) * 100, 1) if values else None,
-                "distribution": [{"bucket": k, "count": v} for k, v in buckets.items()],
-                "dimension_avgs": {
-                    name: round(sum(vals) / len(vals), 2) if vals else None
-                    for name, vals in dim_values.items()
-                },
-            }
+            if not self.core.has_v2():
+                for trace in self.core._legacy_filtered({}, limit=100000, offset=0):
+                    detail = _legacy_parse_quality(trace.quality_detail)
+                    if not isinstance(detail, dict):
+                        continue
+                    for name in QUALITY_DIMENSIONS:
+                        v = detail.get(name)
+                        if isinstance(v, (int, float)):
+                            dim_values.setdefault(name, []).append(float(v))
+            return _summary(len(payloads), values, dim_values)
 
         rows = self.core.db.query(Score).all()
         if rows:
-            trace_ids = {r.trace_id for r in rows if r.trace_id}
-            all_trace_count = self.core.db.query(TraceV2).count() or len(trace_ids)
+            all_trace_count = self.core.db.query(TraceV2).count() or len({r.trace_id for r in rows if r.trace_id})
             overall = [r for r in rows if r.name == "overall" and r.value is not None]
             values = [float(r.value) for r in overall]
-            buckets = {"0-1": 0, "1-2": 0, "2-3": 0, "3-4": 0, "4-5": 0}
-            for value in values:
-                if value < 1: buckets["0-1"] += 1
-                elif value < 2: buckets["1-2"] += 1
-                elif value < 3: buckets["2-3"] += 1
-                elif value < 4: buckets["3-4"] += 1
-                else: buckets["4-5"] += 1
-            dim_avgs = {}
-            for name in QUALITY_DIMENSIONS:
-                vals = [float(r.value) for r in rows if r.name == name and r.value is not None]
-                dim_avgs[name] = round(sum(vals) / len(vals), 2) if vals else None
-            low = sum(1 for v in values if v < 3)
-            return {
-                "total": all_trace_count,
-                "scored": len({r.trace_id for r in overall if r.trace_id}),
-                "unscored": max(all_trace_count - len({r.trace_id for r in overall if r.trace_id}), 0),
-                "avg_score": round(sum(values) / len(values), 2) if values else None,
-                "low_quality_count": low,
-                "low_quality_pct": round(low / len(values) * 100, 1) if values else None,
-                "distribution": [{"bucket": k, "count": v} for k, v in buckets.items()],
-                "dimension_avgs": dim_avgs,
+            dim_values = {
+                name: [float(r.value) for r in rows if r.name == name and r.value is not None]
+                for name in QUALITY_DIMENSIONS
             }
+            scored_count = len({r.trace_id for r in overall if r.trace_id})
+            result = _summary(all_trace_count, values, dim_values)
+            result["scored"] = scored_count
+            result["unscored"] = max(all_trace_count - scored_count, 0)
+            return result
+
         legacy_rows = self.core._legacy_filtered({}, limit=100000, offset=0)
         scored = [t for t in legacy_rows if t.quality_score is not None]
-        buckets = {"0-1": 0, "1-2": 0, "2-3": 0, "3-4": 0, "4-5": 0}
-        for t in scored:
-            s = t.quality_score
-            if s < 1: buckets["0-1"] += 1
-            elif s < 2: buckets["1-2"] += 1
-            elif s < 3: buckets["2-3"] += 1
-            elif s < 4: buckets["3-4"] += 1
-            else: buckets["4-5"] += 1
-        low = sum(1 for t in scored if t.quality_score < 3)
-        return {
-            "total": len(legacy_rows),
-            "scored": len(scored),
-            "unscored": len(legacy_rows) - len(scored),
-            "avg_score": round(sum(t.quality_score for t in scored) / len(scored), 2) if scored else None,
-            "low_quality_count": low,
-            "low_quality_pct": round(low / len(scored) * 100, 1) if scored else None,
-            "distribution": [{"bucket": k, "count": v} for k, v in buckets.items()],
-            "dimension_avgs": self.core._legacy_dimension_avgs(scored),
-        }
+        values = [float(t.quality_score) for t in scored]
+        dim_values = self.core._legacy_dimension_avgs(scored)
+        result = _summary(len(legacy_rows), values, {k: [] for k in QUALITY_DIMENSIONS})
+        result["dimension_avgs"] = dim_values
+        return result
 
 
     def timeline(self, *, prompt_name: str | None = None, task_type: str | None = None, route_intent: str | None = None, days: int = 14) -> list[dict]:

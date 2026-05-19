@@ -734,7 +734,7 @@ function DocDetailDrawer({ item, onClose, onFlash, jobs }: DetailProps) {
             <div style={{ fontSize: 12, color: 'var(--adm-text-3)', fontStyle: 'italic' }}>尚無追蹤紀錄</div>
           ) : docTraces.map(trace => {
             const isOpen = expandedTraceId === trace.id
-            const isErr  = trace.status === 'error'
+            const isErr  = trace.level === 'ERROR'
             return (
               <div key={trace.id}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 0', cursor: 'pointer', borderBottom: '1px solid var(--adm-border)' }}

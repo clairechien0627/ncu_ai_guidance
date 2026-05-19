@@ -38,13 +38,8 @@ QUALITY_DIMENSIONS = {
 
 
 def _agent_execution_root():
-    router_run_ids = (
-        select(Trace.run_id).where(Trace.agent_name == "router_agent").scalar_subquery()
-    )
-    return or_(
-        Trace.parent_run_id.in_(router_run_ids),
-        and_(Trace.parent_run_id.is_(None), Trace.agent_name != "router_agent"),
-    )
+    # Router runs ARE the roots; task/chain runs under them become observations.
+    return Trace.agent_name == "router_agent"
 
 
 def _parse_json(value: Any) -> Any:
@@ -222,28 +217,41 @@ def backfill(db: Session, *, dry_run: bool = False, limit: int | None = None, ru
     }
 
     for root in roots:
-        children = (
-            db.query(Trace)
-            .filter(Trace.parent_run_id == root.run_id)
-            .order_by(Trace.start_time.asc())
-            .all()
-        )
+        # Collect ALL descendants (not just direct children) so deeply nested
+        # task runs also become observations under the router trace.
+        descendants: list[Trace] = []
+        queue = [root.run_id]
+        while queue:
+            parent_id = queue.pop()
+            children = (
+                db.query(Trace)
+                .filter(Trace.parent_run_id == parent_id)
+                .order_by(Trace.start_time.asc())
+                .all()
+            )
+            descendants.extend(children)
+            queue.extend(c.run_id for c in children)
+
         score_bodies = _score_bodies(root)
 
         if dry_run:
             summary["traces_written"] += 1
-            summary["observations_written"] += len(children)
+            summary["observations_written"] += len(descendants)
             summary["scores_written"] += len(score_bodies)
             continue
 
         TraceRepository.upsert_trace(db, _trace_body(root))
         summary["traces_written"] += 1
-        for child in children:
+        for child in descendants:
             ObservationRepository.upsert_observation(db, _observation_body(root, child))
             summary["observations_written"] += 1
         for score in score_bodies:
-            ScoreRepository.upsert_score(db, score, sync_legacy_cache=False)
-            summary["scores_written"] += 1
+            try:
+                ScoreRepository.upsert_score(db, score, sync_legacy_cache=False)
+                summary["scores_written"] += 1
+            except ValueError:
+                summary.setdefault("scores_skipped", 0)
+                summary["scores_skipped"] += 1
 
     if dry_run:
         db.rollback()

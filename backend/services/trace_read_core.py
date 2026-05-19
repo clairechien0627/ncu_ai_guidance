@@ -35,26 +35,96 @@ class _TraceReadCore:
         v2_ids: set[str] = set()
         if self.has_v2():
             v2_rows = self._v2_filtered(filters)
-            v2_ids = {row.trace_id for row in v2_rows}
-            payloads.extend(
-                _v2_trace_payload(self.db, row, include_raw=include_raw, include_display=include_display)
-                for row in v2_rows
-            )
+            if v2_rows:
+                trace_ids = [r.trace_id for r in v2_rows]
+                v2_ids = set(trace_ids)
+
+                # Batch-load scores and observations — eliminates N+1 per trace
+                all_scores = self.db.query(Score).filter(Score.trace_id.in_(trace_ids)).all()
+                scores_by_trace: dict[str, list] = {}
+                for s in all_scores:
+                    if s.trace_id:
+                        scores_by_trace.setdefault(s.trace_id, []).append(s)
+
+                all_obs = self.db.query(Observation).filter(Observation.trace_id.in_(trace_ids)).all()
+                obs_by_trace: dict[str, list] = {}
+                for o in all_obs:
+                    obs_by_trace.setdefault(o.trace_id, []).append(o)
+
+                cleaned = {k: _clean(v) if isinstance(v, str) else v for k, v in filters.items()}
+                for row in v2_rows:
+                    payload = _build_v2_payload(
+                        row,
+                        scores_by_trace.get(row.trace_id, []),
+                        obs_by_trace.get(row.trace_id, []),
+                        include_raw=include_raw,
+                        include_display=include_display,
+                    )
+                    if filters.get("level"):
+                        lvl_list = [l.strip() for l in str(filters["level"]).split(",") if l.strip()]
+                        if lvl_list and (payload.get("level") or "DEFAULT") not in lvl_list:
+                            continue
+                    if cleaned.get("min_latency") is not None and (payload["latency"] or 0) < float(cleaned["min_latency"]):
+                        continue
+                    if cleaned.get("max_quality") is not None:
+                        qs = payload["quality_score"]
+                        if qs is None or qs >= float(cleaned["max_quality"]):
+                            continue
+                    if cleaned.get("min_quality") is not None:
+                        qs = payload["quality_score"]
+                        if qs is None or qs < float(cleaned["min_quality"]):
+                            continue
+                    if cleaned.get("has_score") is True and payload["quality_score"] is None:
+                        continue
+                    if cleaned.get("has_score") is False and payload["quality_score"] is not None:
+                        continue
+                    if cleaned.get("level"):
+                        if payload.get("level") != cleaned["level"]:
+                            continue
+                    total_tok = (payload.get("prompt_tokens") or 0) + (payload.get("completion_tokens") or 0)
+                    if cleaned.get("min_tokens") is not None and total_tok < float(cleaned["min_tokens"]):
+                        continue
+                    if cleaned.get("max_tokens") is not None and total_tok > float(cleaned["max_tokens"]):
+                        continue
+                    if cleaned.get("min_input_tokens") is not None and (payload.get("prompt_tokens") or 0) < float(cleaned["min_input_tokens"]):
+                        continue
+                    if cleaned.get("min_output_tokens") is not None and (payload.get("completion_tokens") or 0) < float(cleaned["min_output_tokens"]):
+                        continue
+                    payloads.append(payload)
+
         legacy_rows = self._legacy_filtered(filters, limit=legacy_limit, offset=0)
         payloads.extend(
             legacy_trace_payload(row, include_raw=include_raw, include_display=include_display)
             for row in legacy_rows
-            if row.run_id not in v2_ids
+            # When v2 data exists, skip legacy child traces (task/chain runs under a router);
+            # they belong as observations, not top-level trace rows.
+            if row.run_id not in v2_ids and (not v2_ids or row.parent_run_id is None)
         )
         return payloads
 
 
     def _v2_filtered(self, filters: dict) -> list[TraceV2]:
+        """SQL + metadata-JSON filtering only. No payload building or extra queries."""
         q = self.db.query(TraceV2)
         if _clean(filters.get("environment")):
             q = q.filter(TraceV2.environment == _clean(filters.get("environment")))
-        if _clean(filters.get("user_id")):
+        if filters.get("user_ids"):
+            uid_list = [u.strip() for u in str(filters["user_ids"]).split(",") if u.strip()]
+            if uid_list:
+                q = q.filter(TraceV2.user_id.in_(uid_list))
+        elif _clean(filters.get("user_id")):
             q = q.filter(TraceV2.user_id == _clean(filters.get("user_id")))
+        if filters.get("names"):
+            name_list = [n.strip() for n in str(filters["names"]).split(",") if n.strip()]
+            if name_list:
+                q = q.filter(TraceV2.name.in_(name_list))
+        elif _clean(filters.get("name")):
+            q = q.filter(TraceV2.name == _clean(filters.get("name")))
+        if filters.get("tags"):
+            tag_list = [t.strip() for t in str(filters["tags"]).split(",") if t.strip()]
+            if tag_list:
+                from sqlalchemy import or_ as _or_tags
+                q = q.filter(_or_tags(*[TraceV2.tags.contains(f'"{t}"') for t in tag_list]))
         for key, op in [("date_from", ">="), ("date_to", "<=")]:
             if filters.get(key):
                 try:
@@ -62,33 +132,18 @@ class _TraceReadCore:
                     q = q.filter(TraceV2.start_time >= dt) if op == ">=" else q.filter(TraceV2.start_time <= dt)
                 except ValueError:
                     pass
-        rows = q.all()
+        rows = q.order_by(TraceV2.start_time.desc()).all()
+        if not rows:
+            return []
         cleaned = {k: _clean(v) if isinstance(v, str) else v for k, v in filters.items()}
+        meta_keys = {"task_type", "route_intent", "prompt_name", "prompt_version", "original_intent", "resolved_intent"}
+        active_meta = {k: cleaned[k] for k in meta_keys if cleaned.get(k)}
+        if not active_meta:
+            return rows
         result = []
         for trace in rows:
             meta = _metadata(trace)
-            payload = _v2_trace_payload(self.db, trace, include_raw=True, include_display=False)
-            checks = {
-                "task_type": meta.get("task_type"),
-                "route_intent": meta.get("route_intent"),
-                "prompt_name": meta.get("prompt_name"),
-                "prompt_version": meta.get("prompt_version"),
-                "original_intent": meta.get("original_intent"),
-                "resolved_intent": meta.get("resolved_intent"),
-            }
-            if any(cleaned.get(k) and (checks.get(k) or "unknown") != cleaned[k] for k in checks):
-                continue
-            if cleaned.get("status") == "error" and payload["status"] != "error":
-                continue
-            if cleaned.get("status") == "success" and payload["status"] != "success":
-                continue
-            if cleaned.get("min_latency") is not None and (payload["latency"] or 0) < float(cleaned["min_latency"]):
-                continue
-            if cleaned.get("max_quality") is not None and not (payload["quality_score"] is not None and payload["quality_score"] < cleaned["max_quality"]):
-                continue
-            if cleaned.get("has_score") is True and payload["quality_score"] is None:
-                continue
-            if cleaned.get("has_score") is False and payload["quality_score"] is not None:
+            if any((meta.get(k) or "unknown") != v for k, v in active_meta.items()):
                 continue
             result.append(trace)
         return result
@@ -107,16 +162,41 @@ class _TraceReadCore:
             "agent_name": Trace.agent_name,
             "environment": Trace.environment,
             "user_id": Trace.user_id,
+            "name": Trace.name,
         }
         for key, col in mapping.items():
             if cleaned.get(key):
                 q = q.filter(col == cleaned[key])
-        if cleaned.get("status") == "error":
-            q = q.filter(Trace.error.isnot(None))
-        elif cleaned.get("status") == "success":
-            q = q.filter(Trace.error.is_(None))
+        if filters.get("names"):
+            name_list = [n.strip() for n in str(filters["names"]).split(",") if n.strip()]
+            if name_list:
+                q = q.filter(Trace.name.in_(name_list))
+        if filters.get("user_ids"):
+            uid_list = [u.strip() for u in str(filters["user_ids"]).split(",") if u.strip()]
+            if uid_list:
+                q = q.filter(Trace.user_id.in_(uid_list))
+        if filters.get("level"):
+            lvl_list = [l.strip() for l in str(filters["level"]).split(",") if l.strip()]
+            has_error = "ERROR" in lvl_list
+            has_ok = bool(set(lvl_list) - {"ERROR"})
+            if has_error and not has_ok:
+                q = q.filter(Trace.error.isnot(None))
+            elif has_ok and not has_error:
+                q = q.filter(Trace.error.is_(None))
         if cleaned.get("max_quality") is not None:
             q = q.filter(Trace.quality_score.isnot(None), Trace.quality_score < cleaned["max_quality"])
+        if cleaned.get("min_quality") is not None:
+            q = q.filter(Trace.quality_score.isnot(None), Trace.quality_score >= cleaned["min_quality"])
+        if cleaned.get("min_tokens") is not None:
+            min_tok = float(cleaned["min_tokens"])
+            q = q.filter((Trace.prompt_tokens + Trace.completion_tokens) >= min_tok)
+        if cleaned.get("max_tokens") is not None:
+            max_tok = float(cleaned["max_tokens"])
+            q = q.filter((Trace.prompt_tokens + Trace.completion_tokens) <= max_tok)
+        if cleaned.get("min_input_tokens") is not None:
+            q = q.filter(Trace.prompt_tokens >= float(cleaned["min_input_tokens"]))
+        if cleaned.get("min_output_tokens") is not None:
+            q = q.filter(Trace.completion_tokens >= float(cleaned["min_output_tokens"]))
         if cleaned.get("has_score") is True:
             q = q.filter(Trace.quality_score.isnot(None))
         elif cleaned.get("has_score") is False:
@@ -273,7 +353,9 @@ class _TraceReadCore:
     def _sessions_from_payloads(self, payloads: list[dict]) -> list[dict]:
         sessions: dict[str, dict] = {}
         for p in payloads:
-            tid = p.get("thread_id") or p.get("id")
+            tid = p.get("thread_id")
+            if not tid:
+                continue  # traces without a thread_id don't belong to any session
             s = sessions.setdefault(tid, {"thread_id": tid, "_route_intents": [], "created_at": p.get("start_time"), "ended_at": p.get("end_time"), "trace_count": 0, "input_tokens": 0, "output_tokens": 0, "_quality_scores": [], "_user_ids": set()})
             s["trace_count"] += 1
             s["input_tokens"] += p.get("prompt_tokens") or 0

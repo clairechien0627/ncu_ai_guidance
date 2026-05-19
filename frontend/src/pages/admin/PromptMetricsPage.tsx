@@ -326,7 +326,7 @@ export default function PromptMetricsPage() {
               </thead>
               <tbody>
                 {recentTraces.map((t: TraceItem) => {
-                  const isErr = t.status === 'error'
+                  const isErr = t.level === 'ERROR'
                   const score = t.quality_score
                   const scoreCls = score == null ? '' : score >= 4 ? 'high' : score >= 3 ? 'mid' : 'low'
                   return (

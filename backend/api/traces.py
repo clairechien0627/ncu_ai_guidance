@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import or_, and_, select
 from sqlalchemy.orm import Session
 
-from db import get_db, Trace, Observation, Score
+from db import get_db, Trace, Observation, Score, TraceV2
 from services.datasets import DatasetService
 from services.evaluation_analytics import EvaluationAnalyticsService
 from services.evaluation_reports import EvaluationReportService
@@ -292,9 +292,57 @@ def batch_delete_traces(
         return {"deleted": 0}
     db.query(Score).filter(Score.trace_id.in_(run_ids)).delete(synchronize_session=False)
     db.query(Observation).filter(Observation.trace_id.in_(run_ids)).delete(synchronize_session=False)
+    db.query(TraceV2).filter(TraceV2.trace_id.in_(run_ids)).delete(synchronize_session=False)
     deleted = db.query(Trace).filter(Trace.run_id.in_(run_ids)).delete(synchronize_session=False)
     db.commit()
     return {"deleted": deleted}
+
+
+@router.get("/api/traces/names")
+def list_trace_names(db: Session = Depends(get_db)):
+    """Return unique trace names with counts, sorted by count desc."""
+    from sqlalchemy import func as _func
+    rows = (
+        db.query(TraceV2.name, _func.count(TraceV2.id).label("cnt"))
+        .group_by(TraceV2.name)
+        .order_by(_func.count(TraceV2.id).desc())
+        .all()
+    )
+    return [{"name": name, "count": cnt} for name, cnt in rows if name]
+
+
+@router.get("/api/traces/user-ids")
+def list_trace_user_ids(db: Session = Depends(get_db)):
+    """Return unique user_ids with counts."""
+    from sqlalchemy import func as _func
+    rows = (
+        db.query(TraceV2.user_id, _func.count(TraceV2.id).label("cnt"))
+        .filter(TraceV2.user_id.isnot(None))
+        .group_by(TraceV2.user_id)
+        .order_by(_func.count(TraceV2.id).desc())
+        .all()
+    )
+    return [{"user_id": uid, "count": cnt} for uid, cnt in rows]
+
+
+@router.get("/api/traces/tags")
+def list_trace_tags(db: Session = Depends(get_db)):
+    """Return sorted unique tag values across all traces_v2."""
+    import json as _json
+    rows = db.query(TraceV2.tags).filter(TraceV2.tags.isnot(None)).all()
+    tags: set[str] = set()
+    for (tag_json,) in rows:
+        if not tag_json:
+            continue
+        try:
+            parsed = _json.loads(tag_json) if isinstance(tag_json, str) else tag_json
+        except Exception:
+            continue
+        if isinstance(parsed, list):
+            for t in parsed:
+                if t and isinstance(t, str):
+                    tags.add(t)
+    return sorted(tags)
 
 
 @router.get("/api/traces")
@@ -315,6 +363,18 @@ def list_traces(
     environment: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    tag: str | None = None,
+    tags: str | None = None,
+    name: str | None = None,
+    names: str | None = None,
+    user_id: str | None = None,
+    user_ids: str | None = None,
+    level: str | None = None,
+    min_quality: float | None = None,
+    min_tokens: int | None = None,
+    max_tokens: int | None = None,
+    min_input_tokens: int | None = None,
+    min_output_tokens: int | None = None,
     db: Session = Depends(get_db),
 ):
     return TraceReadService(db).list_traces(
@@ -327,6 +387,7 @@ def list_traces(
         status=status,
         min_latency=min_latency,
         max_quality=max_quality,
+        min_quality=min_quality,
         has_score=has_score,
         original_intent=original_intent,
         resolved_intent=resolved_intent,
@@ -334,6 +395,17 @@ def list_traces(
         environment=environment,
         date_from=date_from,
         date_to=date_to,
+        tag=tag,
+        tags=tags,
+        name=name,
+        names=names,
+        user_id=user_id,
+        user_ids=user_ids,
+        level=level,
+        min_tokens=min_tokens,
+        max_tokens=max_tokens,
+        min_input_tokens=min_input_tokens,
+        min_output_tokens=min_output_tokens,
     )
 
 
@@ -588,6 +660,16 @@ def get_evaluation_run_score_stats(eval_run_id: str, db: Session = Depends(get_d
 @router.get("/api/evaluations/runs/{eval_run_id}")
 def get_evaluation_run(eval_run_id: str, db: Session = Depends(get_db)):
     return EvaluationRunService.get_run_detail(db, eval_run_id)
+
+
+@router.post("/api/evaluations/runs/{eval_run_id}/retry")
+async def retry_evaluation_run(eval_run_id: str, db: Session = Depends(get_db)):
+    """把指定 eval run 裡的 failed items 重設為 pending 並觸發 worker。"""
+    retried = EvaluationRunService.retry_failed_items(db, eval_run_id)
+    if retried == 0:
+        return {"retried": 0, "message": "沒有可重試的失敗項目。"}
+    await EvaluationWorker.wakeup(retried)
+    return {"retried": retried, "message": f"已重排 {retried} 個失敗項目。"}
 
 
 @router.post("/api/experiments/dataset-replays")

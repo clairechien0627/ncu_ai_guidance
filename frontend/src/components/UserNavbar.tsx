@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { createPortal } from 'react-dom'
-import { Menu, X } from 'lucide-react'
+import { Menu, X, LogIn, LogOut, User } from 'lucide-react'
 import ncuLogo from '../assets/NCULogo.png'
+import { useAuthStore } from '../stores/authStore'
 import './UserNavbar.css'
 
 const NAV_ITEMS = [
@@ -43,6 +44,54 @@ function MobileOverlay({ pathname, onClose }: { pathname: string; onClose: () =>
   )
 }
 
+function UserMenu() {
+  const navigate = useNavigate()
+  const user = useAuthStore(s => s.user)
+  const logout = useAuthStore(s => s.logout)
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  if (!user) {
+    return (
+      <Link to="/login" className="unav-login-btn">
+        <LogIn size={15} />
+        登入
+      </Link>
+    )
+  }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button className="unav-user-btn" onClick={() => setOpen(o => !o)}>
+        <User size={15} />
+        {user.display_name || user.username}
+      </button>
+      {open && (
+        <div className="unav-user-menu">
+          <div className="unav-user-menu-name">{user.email}</div>
+          <div className="unav-user-menu-role">{user.role === 'admin' ? '管理員' : '使用者'}</div>
+          {user.role === 'admin' && (
+            <button className="unav-user-menu-item" onClick={() => { setOpen(false); navigate('/admin') }}>
+              後台管理
+            </button>
+          )}
+          <button className="unav-user-menu-item unav-user-menu-item--danger" onClick={() => { logout(); setOpen(false) }}>
+            <LogOut size={13} /> 登出
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function UserNavbar() {
   const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -78,6 +127,7 @@ export default function UserNavbar() {
                 {item.label}
               </Link>
             ))}
+            <UserMenu />
           </div>
 
           <button

@@ -49,6 +49,35 @@ def _write_trace(
     output: dict | None = None,
     error: str | None = None,
 ) -> None:
+    import os
+    # Write observation to v2 when this run is a child of a router trace
+    if parent_run_id:
+        try:
+            from services.trace_ingestion import TraceEventIngestor
+            from datetime import datetime, timezone
+            now_iso = datetime.now(timezone.utc).isoformat()
+            TraceEventIngestor.enqueue_sync([{
+                "event_type": "observation-create",
+                "body": {
+                    "observation_id": run_id,
+                    "trace_id": parent_run_id,
+                    "type": "SPAN",
+                    "name": name,
+                    "start_time": now_iso,
+                    "end_time": now_iso if (output or error) else None,
+                    "input": inputs,
+                    "output": output,
+                    "level": "ERROR" if error else "DEFAULT",
+                    "status_message": error,
+                    "metadata": {k: metadata[k] for k in ("agent_name", "task_type", "route_intent", "prompt_name") if k in metadata and metadata[k]},
+                },
+            }])
+        except Exception:
+            pass
+
+    if os.environ.get("LEGACY_TRACE_WRITE", "true").lower() in ("0", "false", "no"):
+        return
+
     from db import db_session, Trace
 
     db = None

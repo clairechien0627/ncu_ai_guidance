@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from db import Observation, Score, ScoreConfig, Trace, TraceV2
@@ -78,12 +79,45 @@ DEFAULT_SCORE_CONFIGS: dict[str, dict[str, Any]] = {
     "uncertainty_honesty": {"data_type": "NUMERIC", "min_value": 0.0, "max_value": 5.0, "description": "Appropriate uncertainty and caveats."},
     "format_fit": {"data_type": "NUMERIC", "min_value": 0.0, "max_value": 5.0, "description": "Fit to requested output format."},
     "verdict": {
-        "data_type": "CATEGORICAL",
-        "categories": ["可用", "需修正", "不可用", "pass", "fail", "excellent", "good", "fair", "poor"],
-        "description": "Human-readable quality verdict.",
+        "data_type": "TEXT",
+        "description": "Free-text quality verdict from evaluator.",
     },
     "feedback": {"data_type": "TEXT", "description": "Free-form evaluator or annotator feedback."},
 }
+
+
+# USD per 1M tokens — update when pricing changes
+# Keys are substrings matched against the deployment/model name (case-insensitive, longest match wins)
+_MODEL_PRICING: dict[str, tuple[float, float]] = {
+    # (input $/1M, output $/1M)
+    "o3-mini":           (1.10,   4.40),
+    "o1-mini":           (3.00,  12.00),
+    "o1":                (15.00, 60.00),
+    "gpt-4o-mini":       (0.15,   0.60),
+    "gpt-4o":            (2.50,  10.00),
+    "gpt-4-turbo":       (10.00, 30.00),
+    "gpt-4-32k":         (60.00, 120.00),
+    "gpt-4":             (30.00, 60.00),
+    "gpt-35-turbo-16k":  (3.00,   4.00),
+    "gpt-35-turbo":      (0.50,   1.50),
+    "gpt-3.5-turbo":     (0.50,   1.50),
+    "text-embedding-3-large": (0.13, 0.13),
+    "text-embedding-3-small": (0.02, 0.02),
+    "text-embedding-ada": (0.10, 0.10),
+}
+
+
+def _lookup_price(model: str | None) -> tuple[float, float] | None:
+    if not model:
+        return None
+    lower = model.lower()
+    # Longest matching key wins (more specific models take precedence)
+    best = max(
+        ((k, v) for k, v in _MODEL_PRICING.items() if k in lower),
+        key=lambda kv: len(kv[0]),
+        default=None,
+    )
+    return best[1] if best else None
 
 
 def _normalize_observation_type(value: Any) -> str:
@@ -115,8 +149,11 @@ class TraceRepository:
         row.session_id = body.get("session_id") or body.get("thread_id")
         row.user_id = body.get("user_id")
         row.environment = body.get("environment") or "default"
-        row.input = _json_text(body.get("input"))
-        row.output = _json_text(body.get("output"))
+        # Only overwrite input/output if explicitly provided — preserves values from earlier upsert
+        if body.get("input") is not None:
+            row.input = _json_text(body["input"])
+        if body.get("output") is not None:
+            row.output = _json_text(body["output"])
         row.metadata_json = _json_text(body.get("metadata"))
         row.tags = _json_text(body.get("tags") or [])
         row.start_time = _dt(body.get("start_time")) or row.start_time or _utcnow()
@@ -172,6 +209,14 @@ class ObservationRepository:
             if row.input_cost is not None or row.output_cost is not None
             else None,
         )
+        # Auto-compute cost from pricing table if not provided and tokens + model are available
+        if row.input_cost is None and row.output_cost is None:
+            pricing = _lookup_price(row.model)
+            if pricing and (row.prompt_tokens or row.completion_tokens):
+                in_price, out_price = pricing
+                row.input_cost = round((row.prompt_tokens or 0) * in_price / 1_000_000, 8)
+                row.output_cost = round((row.completion_tokens or 0) * out_price / 1_000_000, 8)
+                row.total_cost = round(row.input_cost + row.output_cost, 8)
         row.prompt_name = body.get("prompt_name")
         row.prompt_version = body.get("prompt_version")
         row.input = _json_text(body.get("input"))
@@ -206,32 +251,49 @@ class ObservationRepository:
 class ScoreRepository:
     @staticmethod
     def ensure_config(db: Session, *, name: str, data_type: str = "NUMERIC") -> ScoreConfig:
-        row = db.query(ScoreConfig).filter(ScoreConfig.name == name).first()
-        if row is not None and not hasattr(row, "data_type"):
-            row = None
-        default = DEFAULT_SCORE_CONFIGS.get(name)
-        if row is None:
-            spec = default or {"data_type": data_type}
-            row = ScoreConfig(
-                name=name,
-                data_type=spec.get("data_type") or data_type,
-                min_value=spec.get("min_value"),
-                max_value=spec.get("max_value"),
-                categories=_json_text(spec.get("categories")) if spec.get("categories") is not None else None,
-                description=spec.get("description"),
-            )
-            if hasattr(db, "add"):
-                db.add(row)
-        elif default:
+        def _apply_defaults(row: ScoreConfig, default: dict | None) -> None:
+            if not default:
+                return
             row.data_type = default["data_type"]
             if row.min_value is None and default.get("min_value") is not None:
                 row.min_value = default["min_value"]
             if row.max_value is None and default.get("max_value") is not None:
                 row.max_value = default["max_value"]
-            if row.categories is None and default.get("categories") is not None:
+            # Only set categories if defined in default; clear if default has none (e.g. TEXT type)
+            if default.get("categories") is not None:
                 row.categories = _json_text(default["categories"])
+            elif default.get("data_type") in ("TEXT", "NUMERIC", "BOOLEAN"):
+                row.categories = None
             if not row.description and default.get("description"):
                 row.description = default["description"]
+
+        row = db.query(ScoreConfig).filter(ScoreConfig.name == name).first()
+        if row is not None and not isinstance(row, ScoreConfig):
+            row = None
+        default = DEFAULT_SCORE_CONFIGS.get(name)
+
+        if row is not None:
+            _apply_defaults(row, default)
+            return row
+
+        spec = default or {"data_type": data_type}
+        row = ScoreConfig(
+            name=name,
+            data_type=spec.get("data_type") or data_type,
+            min_value=spec.get("min_value"),
+            max_value=spec.get("max_value"),
+            categories=_json_text(spec.get("categories")) if spec.get("categories") is not None else None,
+            description=spec.get("description"),
+        )
+        if hasattr(db, "add"):
+            try:
+                db.add(row)
+                db.flush()
+            except IntegrityError:
+                # Concurrent worker already inserted this config; re-fetch and apply defaults
+                db.rollback()
+                row = db.query(ScoreConfig).filter(ScoreConfig.name == name).first()
+                _apply_defaults(row, default)
         return row
 
     @staticmethod
@@ -294,7 +356,7 @@ class ScoreRepository:
 
         score_id = body.get("score_id") or str(uuid.uuid4())
         row = db.query(Score).filter(Score.score_id == score_id).first()
-        if row is not None and not hasattr(row, "score_id"):
+        if not isinstance(row, Score):
             row = None
         if row is None:
             row = Score(score_id=score_id, name=name)
@@ -412,7 +474,7 @@ def observation_to_trace_payload(obs: Observation) -> dict:
         "id": obs.observation_id,
         "run_type": obs.type,
         "name": obs.name,
-        "parent_run_id": obs.trace_id,
+        "parent_run_id": obs.parent_observation_id or obs.trace_id,
         "thread_id": None,
         "start_time": obs.start_time.isoformat() + "Z" if obs.start_time else None,
         "end_time": obs.end_time.isoformat() + "Z" if obs.end_time else None,

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { X, RefreshCw, ExternalLink, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { X, RefreshCw, ExternalLink, Clock, OctagonX, TriangleAlert, CircleCheck, SquareTerminal } from 'lucide-react'
 import { getTraces } from '../../api'
 import type { TraceItem } from '../../api'
 
@@ -31,7 +31,7 @@ export default function TraceViewer({ onClose }: Props) {
     <div style={S.overlay}>
       <div style={S.panel}>
         <div style={S.header}>
-          <span style={S.title}>LangSmith 追蹤紀錄</span>
+          <span style={S.title}>Trace 追蹤紀錄</span>
           <div style={S.headerRight}>
             <button style={S.iconBtn} onClick={load} title="重新整理">
               <RefreshCw size={14} />
@@ -52,7 +52,7 @@ export default function TraceViewer({ onClose }: Props) {
           ) : traces.map(t => (
             <div key={t.id} style={S.row}>
               <div style={S.rowTop} onClick={() => setExpanded(v => v === t.id ? null : t.id)}>
-                <StatusIcon status={t.status} />
+                <StatusIcon status={t.level} />
                 <span style={S.name}>{t.name}</span>
                 {t.latency != null && (
                   <span style={S.latency}><Clock size={11} style={{ marginRight: 2 }} />{t.latency}s</span>
@@ -91,10 +91,11 @@ export default function TraceViewer({ onClose }: Props) {
   )
 }
 
-function StatusIcon({ status }: { status: string }) {
-  if (status === 'success') return <CheckCircle size={13} style={{ color: '#16a34a', flexShrink: 0 }} />
-  if (status === 'error') return <XCircle size={13} style={{ color: '#dc2626', flexShrink: 0 }} />
-  return <Clock size={13} style={{ color: '#d97706', flexShrink: 0 }} />
+function StatusIcon({ status }: { status: string | undefined }) {
+  if (status === 'ERROR')   return <OctagonX size={13} style={{ color: '#dc2626', flexShrink: 0 }} />
+  if (status === 'WARNING') return <TriangleAlert size={13} style={{ color: '#d97706', flexShrink: 0 }} />
+  if (status === 'DEBUG')   return <SquareTerminal size={13} style={{ color: '#94a3b8', flexShrink: 0 }} />
+  return <CircleCheck size={13} style={{ color: '#16a34a', flexShrink: 0 }} />
 }
 
 const S: Record<string, React.CSSProperties> = {

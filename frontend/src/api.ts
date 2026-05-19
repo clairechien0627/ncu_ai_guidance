@@ -3,6 +3,18 @@ import axios from 'axios'
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 const api = axios.create({ baseURL: `${API_BASE}/api` })
 
+// Attach JWT to every request
+api.interceptors.request.use(config => {
+  try {
+    const stored = localStorage.getItem('auth-store')
+    if (stored) {
+      const token = JSON.parse(stored)?.state?.token
+      if (token) config.headers['Authorization'] = `Bearer ${token}`
+    }
+  } catch { /* ignore */ }
+  return config
+})
+
 export interface DocumentItem {
   id: number
   filename: string
@@ -233,7 +245,7 @@ export interface TraceDisplay {
 export interface TraceItem {
   id: string
   name: string
-  status: 'success' | 'error' | string
+  level: string  // ERROR | WARNING | DEFAULT
   start_time: string | null
   end_time?: string | null
   latency: number | null
@@ -242,6 +254,18 @@ export interface TraceItem {
   output?: string | null
   url: string | null
   display: TraceDisplay | null
+  tags?: string[] | null
+  total_cost?: number | null
+  input_cost?: number | null
+  output_cost?: number | null
+  thread_id?: string | null
+  environment?: string | null
+  prompt_tokens?: number | null
+  completion_tokens?: number | null
+  observation_count?: number | null
+  obs_level_counts?: Record<string, number> | null
+  metadata?: Record<string, unknown> | null
+  user_id?: string | null
   mode?: string | null
   agent_name?: string | null
   prompt_name?: string | null
@@ -325,16 +349,44 @@ export interface TraceGroupStats {
 export interface TraceFilters {
   prompt_name?: string
   prompt_version?: string
-  status?: string
+  level?: string  // comma-separated: ERROR,WARNING,DEFAULT
   min_latency?: string
   max_quality?: number
+  min_quality?: number
   has_score?: boolean
   original_intent?: string
   resolved_intent?: string
   environment?: string
   date_from?: string
   date_to?: string
+  // multi-value (comma-separated)
+  tags?: string
+  names?: string
+  user_ids?: string
+  // single-value legacy
+  tag?: string
+  name?: string
+  user_id?: string
+  min_tokens?: number
+  max_tokens?: number
+  min_input_tokens?: number
+  min_output_tokens?: number
   offset?: number
+}
+
+export const getTraceTags = async (): Promise<string[]> => {
+  const { data } = await api.get<string[]>('/traces/tags')
+  return data
+}
+
+export const getTraceNames = async (): Promise<{ name: string; count: number }[]> => {
+  const { data } = await api.get<{ name: string; count: number }[]>('/traces/names')
+  return data
+}
+
+export const getTraceUserIds = async (): Promise<{ user_id: string; count: number }[]> => {
+  const { data } = await api.get<{ user_id: string; count: number }[]>('/traces/user-ids')
+  return data
 }
 
 export const getTraces = async (limit = 40, filters: TraceFilters = {}): Promise<TraceItem[]> => {
@@ -953,6 +1005,34 @@ export const exportDocument = async (docId: number, filename: string): Promise<v
   URL.revokeObjectURL(url)
 }
 
+export const sendChat = async (body: { message: string; thread_id?: string; document_ids?: number[] }) => {
+  const { data } = await api.post<any>('/chat', body)
+  return data
+}
+
+export const getHealth = async () => {
+  const { data } = await axios.get<any>(`${API_BASE}/health`)
+  return data
+}
+
+export interface QueueStatus {
+  outbox: { pending: number; processing: number; failed: number; processed: number }
+  evaluation: { active_runs: number; items_pending: number; items_running: number; items_failed: number; items_completed: number; worker_running: boolean | null }
+}
+export const getQueueStatus = async (): Promise<QueueStatus> => {
+  const { data } = await api.get<QueueStatus>('/system/queue-status')
+  return data
+}
+
+export interface BackfillResult {
+  ok: boolean; error?: string
+  dry_run?: boolean; roots_seen?: number; traces_written?: number; observations_written?: number; scores_written?: number
+}
+export const runBackfill = async (params: { dry_run?: boolean; limit?: number } = {}): Promise<BackfillResult> => {
+  const { data } = await api.post<BackfillResult>('/system/backfill', null, { params })
+  return data
+}
+
 export const sendMessageStream = async (
   message: string,
   conversationId: number | null,
@@ -965,9 +1045,13 @@ export const sendMessageStream = async (
   onStage?: (stage: string) => void,
   onClear?: () => void,
 ): Promise<void> => {
+  const _authToken = (() => { try { const s = localStorage.getItem('auth-store'); return s ? JSON.parse(s)?.state?.token : null } catch { return null } })()
   const response = await fetch(`${API_BASE}/api/chat/stream`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(_authToken ? { 'Authorization': `Bearer ${_authToken}` } : {}),
+    },
     body: JSON.stringify({
       message,
       conversation_id: conversationId,

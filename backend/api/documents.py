@@ -444,7 +444,7 @@ def export_document(doc_id: int, db: Session = Depends(get_db)):
     if not traces_raw:
         candidates = (
             db.query(Trace)
-            .filter(Trace.agent_name != "router_agent", Trace.document_ids.isnot(None), Trace.display.isnot(None))
+            .filter(Trace.document_ids.isnot(None), Trace.display.isnot(None))
             .order_by(Trace.start_time.desc()).limit(200).all()
         )
         for t in candidates:

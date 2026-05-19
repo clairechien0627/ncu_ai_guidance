@@ -466,7 +466,8 @@ async def writer_node(state: ResearchGraphState, config: RunnableConfig) -> dict
             "writer_node: quality gate failed (%d chars), retrying: %s",
             len(writeup.answer or ""), feedback,
         )
-        writeup = await write_summary(llm, rs, feedback=feedback)
+        # Quality gate failure → level=WARNING for the retry attempt
+        writeup = await write_summary(llm, rs, feedback=feedback, level="WARNING")
         llm_calls = 2
         if not _answer_ok(writeup):
             logger.warning("writer_node: retry also failed, using evidence fallback")

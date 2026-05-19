@@ -40,42 +40,79 @@ def _write_router_trace(
     document_ids: list[int] | None,
     route: AgentRoute,
     *,
+    user_message: str | None = None,
+    output: str | None = None,
     end_time: datetime | None = None,
     error: str | None = None,
     user_id: str | None = None,
 ) -> None:
     """Write or update a thin router-level trace entry (parent_run_id=None)."""
+    import os
     from db import db_session, Trace
     from observability.tracer import _get_default_environment
+    from services.trace_ingestion import TraceEventIngestor
+
+    now = datetime.now(timezone.utc)
+    env = _get_default_environment()
+
+    # v2 trace-create/update (always) — upsert semantics via outbox
     try:
-        with db_session() as db:
-            existing = db.query(Trace).filter(Trace.run_id == run_id).first()
-            now = datetime.now(timezone.utc)
-            if existing is None:
-                db.add(Trace(
-                    run_id=run_id,
-                    parent_run_id=None,
-                    run_type="chain",
-                    name="router_agent",
-                    start_time=now,
-                    thread_id=thread_id,
-                    document_ids=json.dumps(document_ids) if document_ids else None,
-                    task_type="routing",
-                    route_intent=route.resolved_intent or _normalise_intent(route.intent),
-                    agent_name="router_agent",
-                    original_intent=route.original_intent,
-                    resolved_intent=route.resolved_intent,
-                    environment=_get_default_environment(),
-                    user_id=user_id,
-                ))
-            else:
-                if end_time:
-                    existing.end_time = end_time
-                if error:
-                    existing.error = error
-            db.commit()
+        v2_body: dict = {
+            "trace_id": run_id,
+            "name": "router_agent",
+            "session_id": thread_id,
+            "user_id": user_id,
+            "environment": env,
+            "start_time": now.isoformat(),
+            "metadata": {
+                "route": route.resolved_intent or _normalise_intent(route.intent),
+                "document_ids": document_ids,
+                "original_intent": route.original_intent,
+                "resolved_intent": route.resolved_intent,
+            },
+        }
+        if user_message:
+            v2_body["input"] = {"messages": [{"role": "user", "content": user_message}]}
+        if output:
+            v2_body["output"] = {"answer": output}
+        if end_time:
+            v2_body["end_time"] = end_time.isoformat()
+        if error:
+            v2_body["level"] = "ERROR"
+        TraceEventIngestor.enqueue_sync([{"event_type": "trace-create", "body": v2_body}])
     except Exception as exc:
-        logger.warning("Router trace write failed: %s", exc)
+        logger.warning("Router v2 trace enqueue failed: %s", exc)
+
+    # legacy write — kept for rollback; disable by setting LEGACY_TRACE_WRITE=false
+    if os.environ.get("LEGACY_TRACE_WRITE", "true").lower() not in ("0", "false", "no"):
+        try:
+            with db_session() as db:
+                existing = db.query(Trace).filter(Trace.run_id == run_id).first()
+                if existing is None:
+                    db.add(Trace(
+                        run_id=run_id,
+                        parent_run_id=None,
+                        run_type="chain",
+                        name="router_agent",
+                        start_time=now,
+                        thread_id=thread_id,
+                        document_ids=json.dumps(document_ids) if document_ids else None,
+                        task_type="routing",
+                        route_intent=route.resolved_intent or _normalise_intent(route.intent),
+                        agent_name="router_agent",
+                        original_intent=route.original_intent,
+                        resolved_intent=route.resolved_intent,
+                        environment=env,
+                        user_id=user_id,
+                    ))
+                else:
+                    if end_time:
+                        existing.end_time = end_time
+                    if error:
+                        existing.error = error
+                db.commit()
+        except Exception as exc:
+            logger.warning("Router legacy trace write failed: %s", exc)
 
 ROUTER_PROMPT_NAME = "route_coordinator"
 VALID_INTENTS = {"chat", "retrieval", "research", "summary", "question", "evaluation"}
@@ -622,7 +659,8 @@ async def route_agent_message(
         )
         step = plan.target_step
         route_intent = _normalise_intent(route.intent)
-        await asyncio.to_thread(_write_router_trace, router_run_id, thread_id, document_ids, route, user_id=get_user_id())
+        await asyncio.to_thread(_write_router_trace, router_run_id, thread_id, document_ids, route,
+                                user_message=user_message, user_id=get_user_id())
 
         try:
             if route_intent == "evaluation":
@@ -715,6 +753,7 @@ async def route_agent_message(
 
         await asyncio.to_thread(
             _write_router_trace, router_run_id, thread_id, document_ids, route,
+            output=result.response if result else None,
             end_time=datetime.now(timezone.utc), user_id=get_user_id(),
         )
 

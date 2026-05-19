@@ -25,13 +25,13 @@ settings = Settings()
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from db import create_tables
 from agents.runner import setup_checkpointer
 from services import job_service
-from api import documents, summaries, jobs, chat, traces, health, prompts
+from api import documents, summaries, jobs, chat, traces, health, prompts, system, auth, users as users_api
 
 def _init_tracing():
     """Initialize Langfuse observability."""
@@ -111,6 +111,24 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
 )
 
+@app.middleware("http")
+async def auth_context_middleware(request: Request, call_next):
+    """Read JWT from Authorization header and set user_id in request context."""
+    from agents.request_context import set_user_id
+    from services.auth_service import decode_token
+    token = request.headers.get("Authorization", "")
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+    if token:
+        try:
+            payload = decode_token(token)
+            set_user_id(str(payload["sub"]))
+        except Exception:
+            pass
+    return await call_next(request)
+
+app.include_router(auth.router)
+app.include_router(users_api.router)
 app.include_router(documents.router)
 app.include_router(summaries.router)
 app.include_router(jobs.router)
@@ -118,3 +136,4 @@ app.include_router(chat.router)
 app.include_router(traces.router)
 app.include_router(prompts.router)
 app.include_router(health.router)
+app.include_router(system.router)

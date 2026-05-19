@@ -1,7 +1,7 @@
 /**
  * TracesPage — Langfuse-inspired layout with filter sidebar, toolbar, column visibility
  */
-import { useMemo, useReducer, useRef, useState, useEffect, useCallback } from 'react'
+import { useMemo, useReducer, useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react'
 import { useLinkedColumnResize, type ColDef } from '../../hooks/useLinkedColumnResize'
 import { useTableSort } from '../../hooks/useTableSort'
 import { useColumnVisibility } from '../../hooks/useColumnVisibility'
@@ -9,12 +9,14 @@ import { TablePagination } from '../../components/admin/TablePagination'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  AlertCircle, RefreshCw, X, PanelLeftOpen, PanelLeftClose,
+  OctagonX, TriangleAlert, CircleCheck, SquareTerminal,
+  RefreshCw, X, PanelLeftOpen, PanelLeftClose,
   Search, ChevronDown, Columns,
 } from 'lucide-react'
 import {
   getTraces, getTraceStats, getPromptList, createEvalRun,
   addTraceToDataset, getDatasets, deleteTraces,
+  getTraceTags, getTraceNames, getTraceUserIds,
   type TraceItem, type TraceFilters, type TraceStats,
   type PromptInfo, type DatasetData,
 } from '../../api'
@@ -48,18 +50,35 @@ const REFRESH_OPTIONS = [
 interface ColEntry extends ColDef { key: string; label: string; required?: boolean }
 
 const ALL_COLS: ColEntry[] = [
-  { key: 'checkbox', label: '',        required: true, width: 40,  resizable: false },
-  { key: 'time',     label: 'Time',    required: true, width: 120, resizable: false },
-  { key: 'input',    label: 'Input',                   width: 180, resizable: true  },
-  { key: 'output',   label: 'Output',                  width: 180, resizable: true  },
-  { key: 'score',    label: 'Score',                   width: 130, resizable: false },
-  { key: 'latency',  label: 'Latency',                 width: 70,  resizable: false },
-  { key: 'status',   label: 'Status',  required: true, width: 80,  resizable: false },
-  { key: 'actions',  label: '',        required: true, width: 50,  resizable: false },
+  { key: 'checkbox',    label: '',               required: true,  width: 40,  resizable: false },
+  { key: 'time',        label: 'Timestamp',      required: true,  width: 100, resizable: false },
+  { key: 'name',        label: 'Name',                            width: 120, resizable: true, minWidth: 65, maxWidth: 150  },
+  { key: 'input',       label: 'Input',                           width: 180, resizable: true, minWidth: 120, maxWidth: 600  },
+  { key: 'output',      label: 'Output',                          width: 180, resizable: true, minWidth: 120, maxWidth: 600  },
+  { key: 'obs_levels',  label: 'Obs. Levels',                     width: 100,  resizable: false },
+  { key: 'latency',     label: 'Latency',                         width: 80,  resizable: false },
+  { key: 'tokens',      label: 'Tokens',                          width: 80,  resizable: false },
+  { key: 'total_cost',  label: 'Cost',                            width: 80,  resizable: false },
+  { key: 'environment', label: 'Env',                             width: 120,  resizable: false },
+  { key: 'tags',        label: 'Tags',                            width: 140, resizable: true, minWidth: 80, maxWidth: 300 },
+  { key: 'metadata',    label: 'Metadata',                        width: 90,  resizable: false },
+  { key: 'score',       label: 'Score',                           width: 130, resizable: false },
+  { key: 'session',     label: 'Session',                         width: 120, resizable: true, minWidth: 80, maxWidth: 300  },
+  { key: 'user',        label: 'User',                            width: 100, resizable: true, minWidth: 80, maxWidth: 300  },
+  { key: 'obs_count',   label: 'Observations',                    width: 110,  resizable: false },
+  { key: 'level',       label: 'Level',                           width: 110,  resizable: false },
+  { key: 'trace_id',    label: 'Trace ID',                        width: 120, resizable: true, minWidth: 80, maxWidth: 300  },
+  { key: 'actions',     label: '',               required: true,  width: 50,  resizable: false },
 ]
 
 const COL_DEFAULTS: Record<string, boolean> = {
-  time: true, input: true, output: true, score: true, latency: true, status: true,
+  // Langfuse defaults ON
+  time: true, name: true, input: true, output: true,
+  obs_levels: true, latency: true, tokens: true, total_cost: true,
+  environment: true, tags: true, metadata: true,
+  // Langfuse defaults OFF
+  score: false, session: false, user: false,
+  obs_count: false, level: false, trace_id: false,
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -85,18 +104,26 @@ function dateAgo(days: number): string {
 // ── Filter state ──────────────────────────────────────────────────────────────
 
 type FilterState = {
-  statuses: string[]
+  levels: string[]
+  tags: string[]
+  names: string[]
+  user_ids: string[]
   prompt: string
   latency: string
+  min_quality: string
+  max_quality: string
+  min_tokens: string
+  max_tokens: string
   search: string
   date_from: string
   date_to: string
-  datePreset: number | null  // days, null = custom
+  datePreset: number | null
 }
 
 const FILTER_DEFAULT: FilterState = {
-  statuses: [], prompt: 'all', latency: '',
-  search: '', date_from: '', date_to: '', datePreset: 14,
+  levels: [], tags: [], names: [], user_ids: [],
+  prompt: 'all', latency: '', min_quality: '', max_quality: '',
+  min_tokens: '', max_tokens: '', search: '', date_from: '', date_to: '', datePreset: 14,
 }
 
 function filterReducer(s: FilterState, a: Partial<FilterState> | 'reset'): FilterState {
@@ -273,19 +300,80 @@ export default function TracesPage() {
   )
   const { widths, div } = useLinkedColumnResize(visibleCols as ColDef[], 'adm-traces-col-widths')
 
+  // ── Distribute extra container space to resizable columns only ───────────
+  const tableWrapRef = useRef<HTMLDivElement>(null)
+  const [wrapWidth, setWrapWidth] = useState(0)
+
+  useLayoutEffect(() => {
+    const el = tableWrapRef.current
+    if (!el) return
+    setWrapWidth(el.clientWidth)
+    const ro = new ResizeObserver(([entry]) => setWrapWidth(entry.contentRect.width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const displayWidths = useMemo(() => {
+    if (wrapWidth <= 0) return widths
+    const total = widths.reduce((a, b) => a + b, 0)
+    const extra = wrapWidth - total
+    if (extra <= 0) return widths  // table is wider than container, scroll normally
+    const resizableIdxs = visibleCols
+      .map((c, i) => (c as ColDef & { resizable: boolean }).resizable ? i : -1)
+      .filter(i => i !== -1)
+    if (resizableIdxs.length === 0) return widths
+    const result = [...widths]
+    let remaining = extra
+    let available = resizableIdxs.filter(i => {
+      const col = visibleCols[i] as ColEntry
+      return result[i] < (col.maxWidth ?? 600)
+    })
+    while (remaining > 0.5 && available.length > 0) {
+      const addEach = remaining / available.length
+      let overflow = 0
+      const stillAvail: number[] = []
+      for (const i of available) {
+        const col = visibleCols[i] as ColEntry
+        const maxW = col.maxWidth ?? 600
+        const proposed = result[i] + addEach
+        if (proposed >= maxW) {
+          overflow += proposed - maxW
+          result[i] = maxW
+        } else {
+          result[i] = proposed
+          stillAvail.push(i)
+        }
+      }
+      if (stillAvail.length === available.length) break
+      remaining = overflow
+      available = stillAvail
+    }
+    return result
+  }, [widths, wrapWidth, visibleCols])
+
   const colIdx = useCallback((key: string) => visibleCols.findIndex(c => c.key === key), [visibleCols])
 
   // ── Queries ──────────────────────────────────────────────────────────────────
 
-  const { data: promptList = [] } = useQuery<PromptInfo[]>({ queryKey: ['prompt-list'], queryFn: getPromptList })
+  const { data: promptList = [] }  = useQuery<PromptInfo[]>({ queryKey: ['prompt-list'], queryFn: getPromptList })
+  const { data: tagList = [] }     = useQuery<string[]>({ queryKey: ['trace-tags'], queryFn: getTraceTags })
+  const { data: nameList = [] }    = useQuery<{ name: string; count: number }[]>({ queryKey: ['trace-names'], queryFn: getTraceNames })
+  const { data: userIdList = [] }  = useQuery<{ user_id: string; count: number }[]>({ queryKey: ['trace-user-ids'], queryFn: getTraceUserIds })
 
   const traceFilters: TraceFilters = useMemo(() => ({
-    status:          filters.statuses.length === 1 ? filters.statuses[0] : undefined,
-    prompt_name:     filters.prompt !== 'all' ? filters.prompt : undefined,
-    min_latency:     filters.latency.trim() || undefined,
-    date_from:       filters.date_from || undefined,
-    date_to:         filters.date_to || undefined,
-    environment:     environment ?? undefined,
+    level:       filters.levels.length > 0 ? filters.levels.join(',') : undefined,
+    tags:        filters.tags.length > 0 ? filters.tags.join(',') : undefined,
+    names:       filters.names.length > 0 ? filters.names.join(',') : undefined,
+    user_ids:    filters.user_ids.length > 0 ? filters.user_ids.join(',') : undefined,
+    prompt_name: filters.prompt !== 'all' ? filters.prompt : undefined,
+    min_latency: filters.latency.trim() || undefined,
+    min_quality: filters.min_quality ? parseFloat(filters.min_quality) : undefined,
+    max_quality: filters.max_quality ? parseFloat(filters.max_quality) : undefined,
+    min_tokens:  filters.min_tokens ? parseInt(filters.min_tokens) : undefined,
+    max_tokens:  filters.max_tokens ? parseInt(filters.max_tokens) : undefined,
+    date_from:   filters.date_from || undefined,
+    date_to:     filters.date_to || undefined,
+    environment: environment ?? undefined,
   }), [filters, environment])
 
   const { data: baseTraces = [], isFetching, refetch } = useQuery({
@@ -375,23 +463,59 @@ export default function TracesPage() {
         <div className="adm-filter-sidebar-header">
           <span>Filters</span>
           {/* clear all */}
-          {(filters.statuses.length > 0 || filters.prompt !== 'all' || filters.latency) && (
+          {(filters.levels.length > 0 || filters.tags.length > 0 || filters.names.length > 0 ||
+            filters.user_ids.length > 0 || filters.prompt !== 'all' || filters.latency ||
+            filters.min_quality || filters.max_quality || filters.min_tokens || filters.max_tokens) && (
             <button className="adm-btn adm-btn-ghost adm-btn-sm" style={{ fontSize: 11, padding: '1px 6px' }}
               onClick={() => { dispatch('reset'); setPage(1) }}>Clear</button>
           )}
         </div>
         <div className="adm-filter-sidebar-body">
 
-          {/* Status */}
-          <FilterSection title="Status">
-            {STATUS_OPTIONS.map(s => (
-              <CheckItem key={s} label={s}
-                checked={filters.statuses.includes(s)}
+          {/* Trace Name — multi-select */}
+          {nameList.length > 0 && (
+            <FilterSection title="Trace Name" defaultOpen={false}>
+              {nameList.slice(0, 20).map(({ name, count }) => (
+                <CheckItem key={name} label={name} count={count}
+                  checked={filters.names.includes(name)}
+                  onChange={() => {
+                    const next = filters.names.includes(name)
+                      ? filters.names.filter(x => x !== name)
+                      : [...filters.names, name]
+                    dispatch({ names: next }); setPage(1)
+                  }}
+                />
+              ))}
+            </FilterSection>
+          )}
+
+          {/* User ID — multi-select */}
+          {userIdList.length > 0 && (
+            <FilterSection title="User ID" defaultOpen={false}>
+              {userIdList.slice(0, 15).map(({ user_id, count }) => (
+                <CheckItem key={user_id} label={user_id} count={count}
+                  checked={filters.user_ids.includes(user_id)}
+                  onChange={() => {
+                    const next = filters.user_ids.includes(user_id)
+                      ? filters.user_ids.filter(x => x !== user_id)
+                      : [...filters.user_ids, user_id]
+                    dispatch({ user_ids: next }); setPage(1)
+                  }}
+                />
+              ))}
+            </FilterSection>
+          )}
+
+          {/* Level — multi-select */}
+          <FilterSection title="Level">
+            {(['DEFAULT', 'WARNING', 'ERROR'] as const).map(lvl => (
+              <CheckItem key={lvl} label={lvl}
+                checked={filters.levels.includes(lvl)}
                 onChange={() => {
-                  const next = filters.statuses.includes(s)
-                    ? filters.statuses.filter(x => x !== s)
-                    : [...filters.statuses, s]
-                  dispatch({ statuses: next }); setPage(1)
+                  const next = filters.levels.includes(lvl)
+                    ? filters.levels.filter(x => x !== lvl)
+                    : [...filters.levels, lvl]
+                  dispatch({ levels: next }); setPage(1)
                 }}
               />
             ))}
@@ -404,6 +528,47 @@ export default function TracesPage() {
               options={promptNames}
               onChange={v => { dispatch({ prompt: v }); setPage(1) }}
             />
+          </FilterSection>
+
+          {/* Tags — multi-select */}
+          {tagList.length > 0 && (
+            <FilterSection title="Tags" defaultOpen={false}>
+              {tagList.map(t => (
+                <CheckItem key={t} label={t}
+                  checked={filters.tags.includes(t)}
+                  onChange={() => {
+                    const next = filters.tags.includes(t)
+                      ? filters.tags.filter(x => x !== t)
+                      : [...filters.tags, t]
+                    dispatch({ tags: next }); setPage(1)
+                  }}
+                />
+              ))}
+            </FilterSection>
+          )}
+
+          {/* Score Range */}
+          <FilterSection title="Score" defaultOpen={false}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input className="adm-tb-input" placeholder="Min (0)" style={{ flex: 1 }}
+                value={filters.min_quality}
+                onChange={e => { dispatch({ min_quality: e.target.value }); setPage(1) }} />
+              <input className="adm-tb-input" placeholder="Max (5)" style={{ flex: 1 }}
+                value={filters.max_quality}
+                onChange={e => { dispatch({ max_quality: e.target.value }); setPage(1) }} />
+            </div>
+          </FilterSection>
+
+          {/* Token Range */}
+          <FilterSection title="Total Tokens" defaultOpen={false}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input className="adm-tb-input" placeholder="Min" style={{ flex: 1 }}
+                value={filters.min_tokens}
+                onChange={e => { dispatch({ min_tokens: e.target.value }); setPage(1) }} />
+              <input className="adm-tb-input" placeholder="Max" style={{ flex: 1 }}
+                value={filters.max_tokens}
+                onChange={e => { dispatch({ max_tokens: e.target.value }); setPage(1) }} />
+            </div>
           </FilterSection>
 
           {/* Latency */}
@@ -506,9 +671,9 @@ export default function TracesPage() {
         )}
 
         {/* Table */}
-        <div className="adm-table-wrap">
-          <table className="adm-table" style={{ tableLayout: 'fixed', minWidth: 400 }}>
-            <colgroup>{widths.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
+        <div className="adm-table-wrap" ref={tableWrapRef}>
+          <table className="adm-table" style={{ tableLayout: 'fixed', width: Math.max(displayWidths.reduce((a, b) => a + b, 0), wrapWidth || 0), minWidth: 400 }}>
+            <colgroup>{displayWidths.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
             <thead>
               <tr>
                 {visibleCols.map((c, i) => {
@@ -518,13 +683,26 @@ export default function TracesPage() {
                       <input type="checkbox" className="adm-checkbox" checked={allSelected} onChange={toggleAll} />
                     </th>
                   )
-                  if (c.key === 'time') return <th key="time" {...sort.th('start_time')}>Time{sort.ind('start_time')}{!isLast && <span {...div(i)} />}</th>
-                  if (c.key === 'input') return <th key="input">Input{!isLast && <span {...div(i)} />}</th>
-                  if (c.key === 'output') return <th key="output">Output{!isLast && <span {...div(i)} />}</th>
-                  if (c.key === 'score') return <th key="score" {...sort.th('quality_score')}>Score{sort.ind('quality_score')}{!isLast && <span {...div(i)} />}</th>
-                  if (c.key === 'latency') return <th key="latency" {...sort.th('latency')}>Latency{sort.ind('latency')}{!isLast && <span {...div(i)} />}</th>
-                  if (c.key === 'status') return <th key="status">Status</th>
-                  if (c.key === 'actions') return <th key="actions" />
+                  const D = !isLast && <span {...div(i)} />
+                  if (c.key === 'time')        return <th key="time" {...sort.th('start_time')}>Timestamp{sort.ind('start_time')}{D}</th>
+                  if (c.key === 'name')        return <th key="name">Name{D}</th>
+                  if (c.key === 'input')       return <th key="input">Input{D}</th>
+                  if (c.key === 'output')      return <th key="output">Output{D}</th>
+                  if (c.key === 'obs_levels')  return <th key="obs_levels">Obs. Levels{D}</th>
+                  if (c.key === 'latency')     return <th key="latency" {...sort.th('latency')}>Latency{sort.ind('latency')}{D}</th>
+                  if (c.key === 'tokens')      return <th key="tokens">Tokens{D}</th>
+                  if (c.key === 'total_cost')  return <th key="total_cost">Cost{D}</th>
+                  if (c.key === 'environment') return <th key="environment">Env{D}</th>
+                  if (c.key === 'tags')        return <th key="tags">Tags{D}</th>
+                  if (c.key === 'metadata')    return <th key="metadata">Metadata{D}</th>
+                  if (c.key === 'score')       return <th key="score" {...sort.th('quality_score')}>Score{sort.ind('quality_score')}{D}</th>
+                  if (c.key === 'session')     return <th key="session">Session{D}</th>
+                  if (c.key === 'user')        return <th key="user">User{D}</th>
+                  if (c.key === 'obs_count')   return <th key="obs_count">Observations{D}</th>
+                  if (c.key === 'level')       return <th key="level">Level{D}</th>
+                  if (c.key === 'trace_id')    return <th key="trace_id">Trace ID{D}</th>
+                  if (c.key === 'status')      return <th key="status">Level</th>
+                  if (c.key === 'actions')     return <th key="actions" />
                   return <th key={c.key}>{c.label}</th>
                 })}
               </tr>
@@ -535,7 +713,7 @@ export default function TracesPage() {
               ) : traces.length === 0 ? (
                 <tr><td colSpan={visibleCols.length} className="adm-table-empty">沒有符合條件的 trace</td></tr>
               ) : sort.apply(traces).map(trace => {
-                const isErr = trace.status === 'error'
+                const isErr = trace.level === 'ERROR'
                 const isSel = selected.has(trace.id)
                 const inP   = inputPreview(trace)
                 const outP  = outputPreview(trace)
@@ -552,6 +730,7 @@ export default function TracesPage() {
                         </td>
                       )
                       if (c.key === 'time') return <td key="time" className="adm-cell-mono" style={{ fontSize: 11 }}>{fmtTime(trace.start_time)}</td>
+                      if (c.key === 'name') return <td key="name" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis' }}>{trace.name || '—'}</td>
                       if (c.key === 'input') return <td key="input" style={{ fontSize: 11, color: 'var(--adm-text-2)', overflow: 'hidden', textOverflow: 'ellipsis' }} title={inP}>{inP || '—'}</td>
                       if (c.key === 'output') return (
                         <td key="output" style={{ fontSize: 11, color: isErr ? 'var(--adm-red)' : 'var(--adm-text-2)', overflow: 'hidden', textOverflow: 'ellipsis' }}
@@ -559,13 +738,116 @@ export default function TracesPage() {
                           {isErr ? (trace.error?.slice(0, 80) ?? 'Error') : (outP || '—')}
                         </td>
                       )
-                      if (c.key === 'score') return <td key="score"><ScoreBar value={trace.quality_score} /></td>
+                      if (c.key === 'obs_levels') return (
+                        <td key="obs_levels">
+                          {trace.obs_level_counts
+                            ? <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {Object.entries(trace.obs_level_counts).map(([lvl, n]) => (
+                                  <span key={lvl} style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 2,
+                                    fontSize: 10, fontWeight: 600,
+                                    color: lvl === 'ERROR' ? 'var(--adm-red)' : 'var(--adm-amber)',
+                                  }}>
+                                    {lvl === 'ERROR'
+                                      ? <OctagonX size={11} />
+                                      : lvl === 'WARNING'
+                                      ? <TriangleAlert size={11} />
+                                      : <SquareTerminal size={11} />}
+                                    {n}
+                                  </span>
+                                ))}
+                              </div>
+                            : <span style={{ fontSize: 10, color: 'var(--adm-text-3)' }}>—</span>}
+                        </td>
+                      )
                       if (c.key === 'latency') return <td key="latency" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>{trace.latency != null ? `${trace.latency.toFixed(1)}s` : '—'}</td>
+                      if (c.key === 'tokens') return (
+                        <td key="tokens" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>
+                          {((trace.prompt_tokens ?? 0) + (trace.completion_tokens ?? 0)) || '—'}
+                        </td>
+                      )
+                      if (c.key === 'total_cost') return (
+                        <td key="total_cost" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>
+                          {trace.total_cost != null ? `$${trace.total_cost.toFixed(4)}` : '—'}
+                        </td>
+                      )
+                      if (c.key === 'environment') return (
+                        <td key="environment">
+                          {trace.environment
+                            ? <span className="adm-badge adm-badge--neutral" style={{ fontSize: 10 }}>{trace.environment}</span>
+                            : <span style={{ fontSize: 11, color: 'var(--adm-text-3)' }}>—</span>}
+                        </td>
+                      )
+                      if (c.key === 'tags') return (
+                        <td key="tags" style={{ overflow: 'hidden' }}>
+                          {trace.tags?.length
+                            ? <div style={{ display: 'flex', gap: 3, flexWrap: 'nowrap', overflow: 'hidden' }}>
+                                {trace.tags.slice(0, 3).map(t => (
+                                  <span key={t} className="adm-badge adm-badge--info" style={{ fontSize: 10, whiteSpace: 'nowrap' }}>{t}</span>
+                                ))}
+                              </div>
+                            : <span style={{ fontSize: 11, color: 'var(--adm-text-3)' }}>—</span>}
+                        </td>
+                      )
+                      if (c.key === 'metadata') return (
+                        <td key="metadata" style={{ fontSize: 11, color: 'var(--adm-text-3)' }}>
+                          {trace.metadata
+                            ? `{${Object.keys(trace.metadata).length} keys}`
+                            : '—'}
+                        </td>
+                      )
+                      if (c.key === 'score') return <td key="score"><ScoreBar value={trace.quality_score} /></td>
+                      if (c.key === 'session') return (
+                        <td key="session" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--adm-text-2)' }}>
+                          {trace.thread_id ? trace.thread_id.slice(-8) : '—'}
+                        </td>
+                      )
+                      if (c.key === 'user') return (
+                        <td key="user" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--adm-text-2)' }}>
+                          {trace.user_id || '—'}
+                        </td>
+                      )
+                      if (c.key === 'obs_count') return (
+                        <td key="obs_count" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>
+                          {trace.observation_count ?? '—'}
+                        </td>
+                      )
+                      if (c.key === 'level') {
+                        const lvlColor = trace.level === 'ERROR' ? 'var(--adm-red)'
+                          : trace.level === 'WARNING' ? 'var(--adm-amber)'
+                          : trace.level === 'DEBUG'   ? 'var(--adm-text-3)'
+                          : 'var(--adm-green)'
+                        const lvlLabel = trace.level === 'ERROR' ? 'Error'
+                          : trace.level === 'WARNING' ? 'Warning'
+                          : trace.level === 'DEBUG'   ? 'Debug'
+                          : 'Default'
+                        return (
+                          <td key="level">
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: lvlColor, fontSize: 11, fontWeight: 500 }}>
+                              {trace.level === 'ERROR'   ? <OctagonX size={12} />
+                               : trace.level === 'WARNING' ? <TriangleAlert size={12} />
+                               : trace.level === 'DEBUG'   ? <SquareTerminal size={12} />
+                               : <CircleCheck size={12} />}
+                              {lvlLabel}
+                            </span>
+                          </td>
+                        )
+                      }
+                      if (c.key === 'trace_id') return (
+                        <td key="trace_id" className="adm-cell-mono" style={{ fontSize: 10, color: 'var(--adm-text-3)', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                          title={trace.id}>
+                          {trace.id.slice(-12)}
+                        </td>
+                      )
                       if (c.key === 'status') return (
                         <td key="status">
-                          {isErr
-                            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: 'var(--adm-red)' }}><AlertCircle size={12} /> Error</span>
-                            : <span style={{ fontSize: 11, color: 'var(--adm-green)', fontWeight: 500 }}>✓</span>}
+                          {trace.level === 'ERROR'
+                            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 600, color: 'var(--adm-red)' }}><OctagonX size={12} /> ERROR</span>
+                            : trace.level === 'WARNING'
+                            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 600, color: 'var(--adm-amber)' }}><TriangleAlert size={12} /> WARNING</span>
+                            : trace.level === 'DEBUG'
+                            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color: 'var(--adm-text-3)' }}><SquareTerminal size={12} /> DEBUG</span>
+                            : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color: 'var(--adm-green)', fontWeight: 500 }}><CircleCheck size={12} /> DEFAULT</span>}
                         </td>
                       )
                       if (c.key === 'actions') return (

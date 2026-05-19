@@ -16,10 +16,50 @@ class TraceListReadService:
 
 
     def document_traces(self, doc_id: int, *, limit: int = 10) -> list[dict]:
+        # Use text-contains pre-filter on document_ids JSON column to avoid full table scan.
+        # Exact membership is validated in Python via _payload_has_document.
+        doc_str = str(doc_id)
+        legacy_candidates = (
+            self.core.db.query(Trace)
+            .filter(
+                Trace.document_ids.isnot(None),
+                Trace.display.isnot(None),
+                Trace.document_ids.contains(doc_str),
+            )
+            .order_by(Trace.start_time.desc())
+            .limit(limit * 5)
+            .all()
+        )
         payloads = [
-            p for p in self.core._merged_payloads({}, include_raw=True, include_display=True)
-            if self.core._payload_has_document(p, doc_id)
+            legacy_trace_payload(t, include_raw=True, include_display=True)
+            for t in legacy_candidates
+            if self.core._payload_has_document(
+                legacy_trace_payload(t, include_raw=True, include_display=False), doc_id
+            )
         ]
+
+        # Also check v2 traces (document_ids stored in metadata_json)
+        v2_candidates = self.core._v2_filtered({})
+        v2_ids_already = {p["id"] for p in payloads}
+        if v2_candidates:
+            trace_ids = [r.trace_id for r in v2_candidates]
+            all_scores = self.core.db.query(Score).filter(Score.trace_id.in_(trace_ids)).all()
+            all_obs = self.core.db.query(Observation).filter(Observation.trace_id.in_(trace_ids)).all()
+            scores_by = {s.trace_id: [] for s in all_scores}
+            for s in all_scores:
+                if s.trace_id:
+                    scores_by.setdefault(s.trace_id, []).append(s)
+            obs_by = {}
+            for o in all_obs:
+                obs_by.setdefault(o.trace_id, []).append(o)
+            for row in v2_candidates:
+                if row.trace_id in v2_ids_already:
+                    continue
+                p = _build_v2_payload(row, scores_by.get(row.trace_id, []), obs_by.get(row.trace_id, []),
+                                      include_raw=True, include_display=True)
+                if self.core._payload_has_document(p, doc_id):
+                    payloads.append(p)
+
         payloads.sort(key=lambda p: p.get("start_time") or "", reverse=True)
 
         extract_traces = [
