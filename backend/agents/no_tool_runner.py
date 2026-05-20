@@ -1,7 +1,7 @@
 """No-tool LLM execution for agents that must not call retrieval tools."""
 
 from __future__ import annotations
-from ids import new_id
+from utils import new_id
 
 from datetime import datetime, timezone
 import contextlib

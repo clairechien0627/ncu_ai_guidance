@@ -1,4 +1,4 @@
-from ids import new_id
+from utils import new_id
 """Extract structured summaries: agent handles RAG, then a second LLM call structures the output."""
 import asyncio
 import uuid

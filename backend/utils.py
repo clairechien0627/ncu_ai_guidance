@@ -6,7 +6,7 @@ All system IDs (trace_id, observation_id, thread_id, etc.) use UUID7:
 - Embeds creation timestamp in the UUID itself
 
 Usage:
-    from ids import new_id
+    from utils import new_id
     trace_id = new_id()
 """
 

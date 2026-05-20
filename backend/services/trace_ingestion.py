@@ -4,7 +4,7 @@ Events are first persisted in Postgres outbox rows. Redis is only used as a
 wakeup queue so traces remain recoverable when Redis is disabled or restarted.
 """
 from __future__ import annotations
-from ids import new_id
+from utils import new_id
 
 import asyncio
 import json

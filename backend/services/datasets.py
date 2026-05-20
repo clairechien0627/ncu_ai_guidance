@@ -1,6 +1,6 @@
 """Dataset services for repeatable trace evaluations."""
 from __future__ import annotations
-from ids import new_id
+from utils import new_id
 
 import json
 import uuid
