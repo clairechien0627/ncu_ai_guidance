@@ -71,7 +71,11 @@ def test_prompt_ab_selects_configured_variant(monkeypatch):
 
 
 def test_router_reports_research_runtime_prompt(monkeypatch):
+    from agents.router_agent import RouterDecision
     monkeypatch.setenv("PROMPT_AB_TESTS", '{"question_task":["question_generator"]}')
+    async def fake_orchestrate(*args, **kwargs):
+        return RouterDecision(agent_name="research_agent", evaluate_after=False, reason="test")
+    monkeypatch.setattr("agents.router_agent._orchestrate", fake_orchestrate)
 
     route = asyncio.run(classify_intent("summary this document", [1], thread_id="thread-1"))
 
@@ -81,7 +85,11 @@ def test_router_reports_research_runtime_prompt(monkeypatch):
 
 
 def test_prompt_ab_test_no_longer_changes_research_runtime_route(monkeypatch):
+    from agents.router_agent import RouterDecision
     monkeypatch.setenv("PROMPT_AB_TESTS", '{"question_task":["question_generator"]}')
+    async def fake_orchestrate(*args, **kwargs):
+        return RouterDecision(agent_name="research_agent", evaluate_after=False, reason="test")
+    monkeypatch.setattr("agents.router_agent._orchestrate", fake_orchestrate)
 
     route = asyncio.run(classify_intent("summary this document", [1], thread_id="thread-1"))
 

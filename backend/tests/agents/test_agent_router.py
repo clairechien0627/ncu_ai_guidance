@@ -7,162 +7,189 @@ from agents.router_agent import (
     RouterDecision,
     _allows_background_evaluation,
     _build_execution_plan,
-    _keyword_classify,
     _normalise_decision,
     classify_intent,
 )
 from agents.types import AgentRoute
 
 
-# ── Keyword fast-path ─────────────────────────────────────────────────────────
+# ── Orchestrator routes (mocked _orchestrate) ────────────────────────────────
 
-def test_router_detects_research_with_documents():
+def _fake_orchestrate(agent_name: str, evaluate_after: bool = False):
+    async def _inner(*args, **kwargs):
+        return RouterDecision(agent_name=agent_name, evaluate_after=evaluate_after, reason="test")
+    return _inner
+
+
+def test_router_routes_to_research_agent(monkeypatch):
+    monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("research_agent"))
     route = asyncio.run(classify_intent("請整理研究動機、研究方法、研究成果與限制", [1]))
-    assert route.intent == "research"
     assert route.agent_name == "research_agent"
+    assert route.intent == "research"
     assert route.prompt_name == "research_writer"
 
 
-def test_router_detects_question_generation_with_documents():
+def test_router_routes_to_question_agent(monkeypatch):
+    monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("question_agent"))
     route = asyncio.run(classify_intent("請出三題導讀問題給我", [1]))
-    assert route.intent == "question"
     assert route.agent_name == "question_agent"
+    assert route.intent == "question"
     assert route.prompt_name == "question_skill"
 
 
-def test_router_detects_retrieval_when_documents_are_attached():
-    route = asyncio.run(classify_intent("這篇論文的主題是什麼？", [1]))
-    assert route.intent == "retrieval"
+def test_router_routes_to_retrieval_agent(monkeypatch):
+    monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("retrieval_agent"))
+    route = asyncio.run(classify_intent("這篇論文的研究方法細節？", [1]))
     assert route.agent_name == "retrieval_agent"
+    assert route.intent == "retrieval"
 
 
-def test_router_defaults_to_chat_without_documents():
+def test_router_routes_to_chat_without_documents(monkeypatch):
+    monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("chat_agent"))
     route = asyncio.run(classify_intent("我想討論一個研究方向"))
-    assert route.intent == "chat"
     assert route.agent_name == "chat_agent"
+    assert route.intent == "chat"
 
 
-def test_router_keyword_fast_path_skips_llm(monkeypatch):
-    async def fail_if_called(*_args, **_kwargs):
-        raise AssertionError("LLM fallback should not run for keyword routes")
-
-    monkeypatch.setattr("agents.router_agent._llm_classify_intent", fail_if_called)
-    route = asyncio.run(classify_intent("幫我摘要這份文件", [1]))
-    assert route.intent == "research"
-
-
-# ── Evaluation intent (keyword path) ─────────────────────────────────────────
-
-def test_router_detects_evaluation_keyword_no_docs():
-    intent = _keyword_classify("評估一下剛才的回答好不好", has_docs=False)
-    assert intent == "evaluation"
+def test_router_routes_meta_question_to_chat(monkeypatch):
+    """Meta questions answerable from abstract should go to chat_agent."""
+    monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("chat_agent"))
+    route = asyncio.run(classify_intent("這是關於什麼領域的", [1]))
+    assert route.agent_name == "chat_agent"
+    assert route.intent == "chat"
 
 
-def test_router_detects_evaluation_keyword_with_docs():
-    intent = _keyword_classify("check quality", has_docs=True)
-    assert intent == "evaluation"
-
-
-def test_router_evaluation_route_has_correct_agent():
+def test_router_routes_to_evaluation_agent(monkeypatch):
+    monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("evaluation_agent"))
     route = asyncio.run(classify_intent("評估一下剛才的回答好不好"))
-    assert route.intent == "evaluation"
     assert route.agent_name == "evaluation_agent"
+    assert route.intent == "evaluation"
     assert route.evaluate_after is False
 
 
-# ── LLM fallback returns RouterDecision ──────────────────────────────────────
+# ── Orchestrator always called (no keyword fast-path) ────────────────────────
 
-def test_router_uncertain_uses_llm_once(monkeypatch):
+def test_orchestrate_is_always_called(monkeypatch):
+    """Every classify_intent call goes through _orchestrate — no keyword bypass."""
     calls = 0
 
-    async def fake_llm(message: str, has_docs: bool) -> RouterDecision:
+    async def counting_orchestrate(*args, **kwargs):
         nonlocal calls
         calls += 1
-        assert message == "幫我處理一下"
-        assert has_docs is True
-        return RouterDecision(intent="research", evaluate_after=False, reason="test")
+        return RouterDecision(agent_name="chat_agent", evaluate_after=False, reason="test")
 
-    monkeypatch.setattr("agents.router_agent._llm_classify_intent", fake_llm)
-    route = asyncio.run(classify_intent("幫我處理一下", [1]))
-
+    monkeypatch.setattr("agents.router_agent._orchestrate", counting_orchestrate)
+    asyncio.run(classify_intent("幫我摘要這份文件", [1]))
     assert calls == 1
-    assert route.intent == "research"
-    assert route.evaluate_after is False
 
 
-def test_router_llm_evaluate_after_propagates_to_route(monkeypatch):
-    async def fake_llm(message: str, has_docs: bool) -> RouterDecision:
-        return RouterDecision(intent="research", evaluate_after=True, reason="user asked")
+def test_orchestrate_receives_document_context_when_has_docs(monkeypatch):
+    """_orchestrate receives document_ids so it can fetch abstracts."""
+    captured = {}
 
-    monkeypatch.setattr("agents.router_agent._llm_classify_intent", fake_llm)
+    async def spy_orchestrate(message, has_docs, document_ids=None, **kwargs):
+        captured["document_ids"] = document_ids
+        captured["has_docs"] = has_docs
+        return RouterDecision(agent_name="retrieval_agent", evaluate_after=False, reason="test")
+
+    monkeypatch.setattr("agents.router_agent._orchestrate", spy_orchestrate)
+    asyncio.run(classify_intent("研究方法是什麼", [42, 99]))
+    assert captured["has_docs"] is True
+    assert captured["document_ids"] == [42, 99]
+
+
+def test_orchestrate_receives_is_followup_signal(monkeypatch):
+    """Short follow-up messages should have is_followup_signal=True."""
+    captured = {}
+
+    async def spy_orchestrate(message, has_docs, document_ids=None,
+                               previous_agent=None, is_followup=False):
+        captured["is_followup"] = is_followup
+        return RouterDecision(agent_name="retrieval_agent", evaluate_after=False, reason="test")
+
+    monkeypatch.setattr("agents.router_agent._orchestrate", spy_orchestrate)
+    asyncio.run(classify_intent("還有呢", [1], previous_intent="retrieval"))
+    assert captured["is_followup"] is True
+
+
+def test_evaluate_after_propagates_to_route(monkeypatch):
+    monkeypatch.setattr("agents.router_agent._orchestrate",
+                        _fake_orchestrate("research_agent", evaluate_after=True))
     route = asyncio.run(classify_intent("幫我分析完之後確認有沒有漏掉重點", [1]))
-
-    assert route.intent == "research"
+    assert route.agent_name == "research_agent"
     assert route.evaluate_after is True
 
 
 # ── RouterDecision model ──────────────────────────────────────────────────────
 
 def test_router_decision_default_fields():
-    d = RouterDecision(intent="chat")
+    d = RouterDecision(agent_name="chat_agent")
     assert d.evaluate_after is False
     assert d.reason == ""
 
 
 def test_router_decision_all_fields():
-    d = RouterDecision(intent="research", evaluate_after=True, reason="user said so")
-    assert d.intent == "research"
+    d = RouterDecision(agent_name="research_agent", evaluate_after=True, reason="user said so")
+    assert d.agent_name == "research_agent"
     assert d.evaluate_after is True
     assert d.reason == "user said so"
 
 
 def test_normalise_decision_clears_evaluate_after_for_chat():
-    d = RouterDecision(intent="chat", evaluate_after=True)
+    d = RouterDecision(agent_name="chat_agent", evaluate_after=True)
     result = _normalise_decision(d, has_docs=True)
     assert result.evaluate_after is False
 
 
 def test_normalise_decision_clears_evaluate_after_for_evaluation():
-    d = RouterDecision(intent="evaluation", evaluate_after=True)
+    d = RouterDecision(agent_name="evaluation_agent", evaluate_after=True)
     result = _normalise_decision(d, has_docs=False)
     assert result.evaluate_after is False
 
 
 def test_normalise_decision_preserves_evaluate_after_for_research():
-    d = RouterDecision(intent="research", evaluate_after=True, reason="ok")
+    d = RouterDecision(agent_name="research_agent", evaluate_after=True, reason="ok")
     result = _normalise_decision(d, has_docs=True)
     assert result.evaluate_after is True
 
 
-def test_normalise_decision_preserves_evaluate_after_for_document_question():
-    d = RouterDecision(intent="question", evaluate_after=True, reason="ok")
+def test_normalise_decision_preserves_evaluate_after_for_question():
+    d = RouterDecision(agent_name="question_agent", evaluate_after=True, reason="ok")
     result = _normalise_decision(d, has_docs=True)
     assert result.evaluate_after is True
 
 
-def test_normalise_decision_preserves_evaluate_after_for_document_retrieval():
-    d = RouterDecision(intent="retrieval", evaluate_after=True, reason="ok")
+def test_normalise_decision_preserves_evaluate_after_for_retrieval():
+    d = RouterDecision(agent_name="retrieval_agent", evaluate_after=True, reason="ok")
     result = _normalise_decision(d, has_docs=True)
     assert result.evaluate_after is True
 
 
 def test_normalise_decision_gates_research_on_docs():
-    d = RouterDecision(intent="research", evaluate_after=True)
+    d = RouterDecision(agent_name="research_agent", evaluate_after=True)
     result = _normalise_decision(d, has_docs=False)
-    assert result.intent == "chat"
+    assert result.agent_name == "chat_agent"
     assert result.evaluate_after is False
 
 
+def test_normalise_decision_falls_back_for_unknown_agent():
+    d = RouterDecision(agent_name="nonexistent_agent", evaluate_after=False)
+    result = _normalise_decision(d, has_docs=True)
+    assert result.agent_name == "chat_agent"
+
+
+# ── _allows_background_evaluation ────────────────────────────────────────────
+
 def test_background_evaluation_policy_is_document_grounded_only():
-    assert _allows_background_evaluation("research", has_docs=True) is True
-    assert _allows_background_evaluation("retrieval", has_docs=True) is True
-    assert _allows_background_evaluation("question", has_docs=True) is True
-    assert _allows_background_evaluation("chat", has_docs=True) is False
-    assert _allows_background_evaluation("evaluation", has_docs=True) is False
-    assert _allows_background_evaluation("research", has_docs=False) is False
+    assert _allows_background_evaluation("research_agent", has_docs=True) is True
+    assert _allows_background_evaluation("retrieval_agent", has_docs=True) is True
+    assert _allows_background_evaluation("question_agent", has_docs=True) is True
+    assert _allows_background_evaluation("chat_agent", has_docs=True) is False
+    assert _allows_background_evaluation("evaluation_agent", has_docs=True) is False
+    assert _allows_background_evaluation("research_agent", has_docs=False) is False
 
 
-# ── AgentRoute has evaluate_after field ──────────────────────────────────────
+# ── AgentRoute evaluate_after ─────────────────────────────────────────────────
 
 def test_agent_route_evaluate_after_defaults_false():
     r = AgentRoute(intent="retrieval", agent_name="retrieval_agent",
@@ -175,6 +202,8 @@ def test_agent_route_evaluate_after_can_be_set():
                    prompt_name="research_writer", evaluate_after=True)
     assert r.evaluate_after is True
 
+
+# ── ExecutionPlan ─────────────────────────────────────────────────────────────
 
 def test_execution_plan_can_include_final_composition():
     route = AgentRoute(
@@ -229,15 +258,11 @@ def test_execution_plan_collects_evidence_for_document_questions():
     assert plan.target_step.observation_id == "question-obs"
 
 
-def test_keyword_routes_always_have_evaluate_after_false():
-    for message, doc_ids in [
-        ("幫我摘要", [1]),
-        ("出題", [1]),
-        ("這篇的主題", [1]),
-        ("你好", []),
-    ]:
-        route = asyncio.run(classify_intent(message, doc_ids))
-        assert route.evaluate_after is False, f"expected False for: {message!r}"
+def test_routes_always_have_evaluate_after_false_by_default(monkeypatch):
+    for agent_name in ["chat_agent", "question_agent", "retrieval_agent"]:
+        monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate(agent_name))
+        route = asyncio.run(classify_intent("message", [1]))
+        assert route.evaluate_after is False, f"expected False for agent: {agent_name}"
 
 
 # ── question_agent uses question_default stack ────────────────────────────────
@@ -316,14 +341,14 @@ def test_chat_mode_has_no_sub_agent_tool_instructions():
         assert tool not in content, f"{tool!r} should not be in chat_mode.txt"
 
 
-# ── route_coordinator prompt exists and loads ─────────────────────────────────
+# ── route_coordinator prompt ──────────────────────────────────────────────────
 
 def test_route_coordinator_prompt_exists():
     from prompting.registry import get, exists
     assert exists("route_coordinator")
     content = get("route_coordinator")
     assert len(content) > 100
-    assert "intent" in content
+    assert "agent_name" in content
 
 
 def test_router_default_stack_loads():
@@ -332,59 +357,15 @@ def test_router_default_stack_loads():
     assert any(p.base_name == "route_coordinator" for p in stack.prompts)
 
 
-# ── agent execution root filter covers both old and new trace formats ─────────
+# ── agent execution root filter ───────────────────────────────────────────────
 
 def test_agent_execution_root_filter_is_importable():
-    from api.traces import _agent_execution_root
+    from services.trace_read.common import _agent_execution_root
     condition = _agent_execution_root()
     assert condition is not None
 
 
-def test_chat_composition_is_no_tool_child_step(monkeypatch):
-    from agents.chat_agent import COMPOSITION_TASK_TYPE, compose_final_response
-    from agents.types import AgentResult
-
-    writes = []
-
-    def fake_write(*args, **kwargs):
-        writes.append((args, kwargs))
-
-    async def fake_generation(runnable, input_value, *, prompt_name: str, name: str = "AzureChatOpenAI", metadata=None):
-        assert prompt_name == "chat_mode"
-        assert "final-composition" in name
-        assert metadata["prompt_stack_name"] == "chat_default"
-        assert input_value[-1].type == "human"
-        return type("Response", (), {"content": "formatted answer"})()
-
-    monkeypatch.setattr("agents.chat_agent._write_composition_trace", fake_write)
-    monkeypatch.setattr("agents.chat_agent._llm", lambda use_mini=False: object())
-    monkeypatch.setattr("agents.chat_agent.ainvoke_traced_generation", fake_generation)
-    monkeypatch.setattr("agents.chat_agent.propagate_attributes", lambda **_: contextlib.nullcontext())
-
-    result = asyncio.run(compose_final_response(
-        user_message="Please format this",
-        task_result=AgentResult(
-            response="task answer",
-            sources=["paper.pdf p.3"],
-            task_type="research_task",
-            route_intent="research",
-            agent_name="research_agent",
-            prompt_name="research_writer",
-        ),
-        thread_id="thread-1",
-        document_ids=[1],
-        observation_id="composition-obs",
-        trace_id="trace-1",
-    ))
-
-    assert result.response == "formatted answer"
-    assert result.task_type == COMPOSITION_TASK_TYPE
-    assert result.route_intent == "chat"
-    assert result.observation_id == "composition-obs"
-    assert writes[0][0][0] == "composition-obs"
-    assert writes[0][1]["trace_id"] == "trace-1"
-    assert writes[-1][1]["output"]["answer"] == "formatted answer"
-
+# ── route_agent_message integration tests ────────────────────────────────────
 
 def test_router_message_can_compose_after_task_result(monkeypatch):
     from agents.router_agent import route_agent_message

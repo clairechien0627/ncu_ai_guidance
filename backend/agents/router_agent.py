@@ -136,6 +136,16 @@ def _write_router_trace(
 
 ROUTER_PROMPT_NAME = "route_coordinator"
 VALID_INTENTS = {"chat", "retrieval", "research", "summary", "question", "evaluation"}
+VALID_AGENTS = {"chat_agent", "retrieval_agent", "research_agent", "question_agent", "evaluation_agent"}
+
+_AGENT_TO_INTENT: dict[str, str] = {
+    "chat_agent":       "chat",
+    "retrieval_agent":  "retrieval",
+    "research_agent":   "research",
+    "question_agent":   "question",
+    "evaluation_agent": "evaluation",
+}
+_INTENT_TO_AGENT: dict[str, str] = {v: k for k, v in _AGENT_TO_INTENT.items()}
 
 # Maximum number of times a single request may be re-routed between agents.
 # If an agent tries to hand off more than this many times, we fall back to chat.
@@ -157,80 +167,10 @@ def _looks_like_followup(message: str) -> bool:
     return any(sig in lower for sig in _FOLLOWUP_SIGNALS)
 
 
-_RESEARCH_KEYWORDS = (
-    "研究動機",
-    "研究方法",
-    "研究成果",
-    "研究限制",
-    "方法與結果",
-    "動機方法成果",
-    "motivation",
-    "method",
-    "results",
-    "limitations",
-)
-
-_SUMMARY_KEYWORDS = (
-    "摘要",
-    "總結",
-    "重點整理",
-    "懶人包",
-    "summary",
-    "summarize",
-    "overview",
-)
-
-_QUESTION_KEYWORDS = (
-    "出題",
-    "問我",
-    "測驗",
-    "題目",
-    "導讀",
-    "帶我理解",
-    "帶我學",
-    "興趣量表",
-    "練習",
-    "question",
-    "questions",
-    "quiz",
-    "survey",
-)
-
-_RETRIEVAL_KEYWORDS = (
-    "這篇",
-    "這份",
-    "主題",
-    "在講什麼",
-    "哪一頁",
-    "引用",
-    "來源",
-    "根據文件",
-    "根據 pdf",
-    "根據pdf",
-    "這段",
-    "pdf",
-    "source",
-    "cite",
-)
-
-# Evaluation keywords are intentionally narrow: must refer to a *previous system response*,
-# not to evaluating document content. Keyword path only catches the clearest cases;
-# ambiguous phrasing falls through to LLM classification.
-_EVALUATION_KEYWORDS = (
-    "評估一下剛才",
-    "review一下剛才",
-    "review 一下剛才",
-    "剛才的回答對嗎",
-    "剛才的答案對嗎",
-    "上一次的回答",
-    "上一個答案好嗎",
-    "check quality",
-    "你剛才說的對嗎",
-)
-
-
 class RouterDecision(BaseModel):
-    intent: str = Field(description="One of: chat, retrieval, research, question, summary, evaluation")
+    agent_name: str = Field(
+        description="Exact agent to invoke: chat_agent | retrieval_agent | research_agent | question_agent | evaluation_agent"
+    )
     evaluate_after: bool = Field(default=False, description="True only when user simultaneously asks a question AND explicitly requests quality verification of the answer")
     reason: str = Field(default="", description="One sentence explaining the routing decision")
 
@@ -291,7 +231,7 @@ def _normalise_intent(intent: str) -> str:
     return value
 
 
-def _allows_background_evaluation(intent: str, has_docs: bool) -> bool:
+def _allows_background_evaluation(agent_name: str, has_docs: bool) -> bool:
     """Deterministic gate for router-triggered background evaluation.
 
     Explicit evaluation requests route directly to ``evaluation_agent``.  The
@@ -299,16 +239,16 @@ def _allows_background_evaluation(intent: str, has_docs: bool) -> bool:
     outputs where an automatic quality pass is worth the extra cost.
     Extraction quality is handled separately by ``summary_quality``.
     """
-    return has_docs and intent in {"research", "retrieval", "question"}
+    return has_docs and agent_name in {"research_agent", "retrieval_agent", "question_agent"}
 
 
 def _normalise_decision(decision: RouterDecision, has_docs: bool) -> RouterDecision:
-    """Sanitise LLM output: fix invalid intents and enforce doc-gating rules."""
-    intent = _normalise_intent(decision.intent)
-    if intent in {"research", "retrieval"} and not has_docs:
-        intent = "chat"
-    evaluate_after = bool(decision.evaluate_after and _allows_background_evaluation(intent, has_docs))
-    return RouterDecision(intent=intent, evaluate_after=evaluate_after, reason=decision.reason)
+    """Sanitise LLM output: fix invalid agent names and enforce doc-gating rules."""
+    agent_name = decision.agent_name if decision.agent_name in VALID_AGENTS else "chat_agent"
+    if agent_name in {"research_agent", "retrieval_agent"} and not has_docs:
+        agent_name = "chat_agent"
+    evaluate_after = bool(decision.evaluate_after and _allows_background_evaluation(agent_name, has_docs))
+    return RouterDecision(agent_name=agent_name, evaluate_after=evaluate_after, reason=decision.reason)
 
 
 def _primary_prompt(stack_name: str, base_name: str, thread_id: str | None, document_ids: list[int] | None):
@@ -323,76 +263,75 @@ def _route_for_intent(
     *,
     evaluate_after: bool = False,
 ) -> AgentRoute:
-    original_intent = (intent or "chat").strip().lower()
-    route_intent = _normalise_intent(intent)
-    if route_intent == "research":
+    """Map an intent string to AgentRoute. Used only for agent handoffs (next_intent)."""
+    agent_name = _INTENT_TO_AGENT.get(_normalise_intent(intent), "chat_agent")
+    return _route_for_agent(agent_name, document_ids, thread_id, evaluate_after=evaluate_after)
+
+
+def _route_for_agent(
+    agent_name: str,
+    document_ids: list[int] | None = None,
+    thread_id: str | None = None,
+    *,
+    evaluate_after: bool = False,
+) -> AgentRoute:
+    """Primary routing function: map agent_name directly to AgentRoute.
+
+    intent field in AgentRoute is kept as an observability label only.
+    """
+    if agent_name not in VALID_AGENTS:
+        agent_name = "chat_agent"
+    intent_label = _AGENT_TO_INTENT[agent_name]
+
+    if agent_name == "research_agent":
         prompt = _primary_prompt("research_runtime", "research_writer", thread_id, document_ids)
         return AgentRoute(
-            "research",
-            "research_agent",
-            prompt.name,
-            prompt.version,
-            original_intent=original_intent,
-            resolved_intent="research",
+            intent_label, agent_name, prompt.name, prompt.version,
+            original_intent=intent_label, resolved_intent=intent_label,
             evaluate_after=evaluate_after,
         )
-    if route_intent == "question":
+    if agent_name == "question_agent":
         return AgentRoute(
-            "question",
-            "question_agent",
-            "question_skill",
-            prompt_version("question_skill"),
-            original_intent=original_intent,
-            resolved_intent="question",
+            intent_label, agent_name, "question_skill", prompt_version("question_skill"),
+            original_intent=intent_label, resolved_intent=intent_label,
             evaluate_after=evaluate_after,
         )
-    if route_intent == "retrieval":
+    if agent_name == "retrieval_agent":
         return AgentRoute(
-            "retrieval",
-            "retrieval_agent",
-            "retrieval_capability",
-            prompt_version("retrieval_capability"),
-            original_intent=original_intent,
-            resolved_intent="retrieval",
+            intent_label, agent_name, "retrieval_capability", prompt_version("retrieval_capability"),
+            original_intent=intent_label, resolved_intent=intent_label,
             evaluate_after=evaluate_after,
         )
-    if route_intent == "evaluation":
+    if agent_name == "evaluation_agent":
         return AgentRoute(
-            "evaluation",
-            "evaluation_agent",
-            "evaluation_agent",
-            prompt_version("evaluation_agent"),
-            original_intent=original_intent,
-            resolved_intent="evaluation",
+            intent_label, agent_name, "evaluation_agent", prompt_version("evaluation_agent"),
+            original_intent=intent_label, resolved_intent=intent_label,
             evaluate_after=False,
         )
     return AgentRoute(
-        "chat",
-        "chat_agent",
-        "chat_mode",
-        prompt_version("chat_mode"),
-        original_intent=original_intent,
-        resolved_intent="chat",
+        intent_label, "chat_agent", "chat_mode", prompt_version("chat_mode"),
+        original_intent=intent_label, resolved_intent=intent_label,
         evaluate_after=False,
     )
 
 
-def _keyword_classify(message: str, has_docs: bool) -> str:
-    text = (message or "").lower()
-    # Evaluation doesn't require docs (reviewing a previous system response)
-    if any(k.lower() in text for k in _EVALUATION_KEYWORDS):
-        return "evaluation"
-    if not has_docs:
-        return "chat"
-    if any(k.lower() in text for k in _QUESTION_KEYWORDS):
-        return "question"
-    if any(k.lower() in text for k in _SUMMARY_KEYWORDS):
-        return "research"  # summary always routes to research; skip the normalise() detour
-    if any(k.lower() in text for k in _RESEARCH_KEYWORDS):
-        return "research"
-    if any(k.lower() in text for k in _RETRIEVAL_KEYWORDS):
-        return "retrieval"
-    return "uncertain"
+def _fetch_document_context(document_ids: list[int]) -> list[dict]:
+    """Fetch filename + abstract_text for selected docs to inform routing. Runs in thread."""
+    from db import db_session, Document as DocModel
+    with db_session() as db:
+        docs = (
+            db.query(DocModel.id, DocModel.filename, DocModel.abstract_text)
+            .filter(DocModel.id.in_(document_ids))
+            .all()
+        )
+    return [
+        {
+            "id": d.id,
+            "filename": d.filename,
+            "abstract": (d.abstract_text or "")[:600],
+        }
+        for d in docs
+    ]
 
 
 def _build_execution_plan(
@@ -403,10 +342,10 @@ def _build_execution_plan(
     collect_evidence: bool = False,
 ) -> ExecutionPlan:
     """Build the router-owned execution plan for a request."""
-    intent = _normalise_intent(route.intent)
-    agent_name = route.agent_name or _route_for_intent(intent).agent_name
+    agent_name = route.agent_name
+    intent_label = _AGENT_TO_INTENT.get(agent_name, "chat")
     steps: list[ExecutionStep] = []
-    if collect_evidence and intent == "question":
+    if collect_evidence and agent_name == "question_agent":
         steps.append(ExecutionStep(
             intent="retrieval",
             agent_name="retrieval_agent",
@@ -416,14 +355,14 @@ def _build_execution_plan(
             reason="question_requires_document_evidence",
         ))
     steps.append(ExecutionStep(
-        intent=intent,
+        intent=intent_label,
         agent_name=agent_name,
         observation_id=observation_id or new_id(),
         trace_id=trace_id,
         kind="primary",
-        reason=f"route_intent={intent}",
+        reason=f"agent={agent_name}",
     ))
-    if route.compose_after and intent not in {"chat", "evaluation"}:
+    if route.compose_after and agent_name not in {"chat_agent", "evaluation_agent"}:
         steps.append(ExecutionStep(
             intent="chat",
             agent_name="chat_agent",
@@ -457,18 +396,34 @@ def _get_router_llm():
     return _router_llm
 
 
-async def _llm_classify_intent(message: str, has_docs: bool) -> RouterDecision:
-    """Use route_coordinator for ambiguous requests. Falls back conservatively."""
+async def _orchestrate(
+    message: str,
+    has_docs: bool,
+    document_ids: list[int] | None = None,
+    previous_agent: str | None = None,
+    is_followup: bool = False,
+) -> RouterDecision:
+    """Orchestrator LLM: decides which agent to invoke with full document context."""
     from observability import ainvoke_traced_generation
 
     stack = load_stack("router_default")
     system = get_prompt(ROUTER_PROMPT_NAME)
+
+    doc_context: list[dict] = []
+    if has_docs and document_ids:
+        doc_context = await asyncio.to_thread(_fetch_document_context, document_ids)
+
     user = {
         "message": message,
-        "has_document_ids": has_docs,
-        "allowed_intents": ["chat", "retrieval", "research", "question", "evaluation"],
+        "has_documents": has_docs,
+        "document_context": doc_context,
+        "previous_agent": previous_agent,
+        "is_followup_signal": is_followup,
+        "available_agents": [
+            "chat_agent", "retrieval_agent", "research_agent", "question_agent", "evaluation_agent",
+        ],
         "response_format": {
-            "intent": "chat|retrieval|research|question|evaluation",
+            "agent_name": "chat_agent|retrieval_agent|research_agent|question_agent|evaluation_agent",
             "evaluate_after": "boolean",
             "reason": "short reason",
         },
@@ -493,9 +448,9 @@ async def _llm_classify_intent(message: str, has_docs: bool) -> RouterDecision:
         )
         return _normalise_decision(decision, has_docs)
     except Exception as exc:
-        logger.warning("LLM router failed; using conservative fallback: %s", exc)
-        fallback = "retrieval" if has_docs else "chat"
-        return RouterDecision(intent=fallback, evaluate_after=False, reason="fallback")
+        logger.warning("Orchestrator LLM failed; using conservative fallback: %s", exc)
+        fallback = "retrieval_agent" if has_docs else "chat_agent"
+        return RouterDecision(agent_name=fallback, evaluate_after=False, reason="fallback")
 
 
 async def classify_intent(
@@ -505,25 +460,24 @@ async def classify_intent(
     previous_intent: str | None = None,
 ) -> AgentRoute:
     with propagate_attributes(session_id=thread_id, user_id=get_user_id()) if thread_id else contextlib.nullcontext():
-        """Route a request with a deterministic fast path and an LLM fallback.
+        """Route a request via Orchestrator LLM with full document context.
 
-        previous_intent: the intent of the last turn in this conversation.
-        Follow-up messages in research/retrieval conversations stay in the same
-        route intent rather than falling through to chat.
+        previous_intent: the intent of the last turn (from trace DB).
+        Passed to the orchestrator as a follow-up hint.
         """
         has_docs = bool(document_ids)
-        intent = _keyword_classify(message, has_docs)
-        evaluate_after = False
-        if intent == "uncertain":
-            # Inherit previous intent for clear follow-up messages so "還有呢" or
-            # "能補充嗎" don't get misrouted to chat mid-research.
-            if previous_intent in ("research", "retrieval") and _looks_like_followup(message):
-                intent = previous_intent
-            else:
-                decision = await _llm_classify_intent(message, has_docs)
-                intent = decision.intent
-                evaluate_after = decision.evaluate_after
-        return _route_for_intent(intent, document_ids, thread_id, evaluate_after=evaluate_after)
+        previous_agent = _INTENT_TO_AGENT.get(previous_intent or "", None)
+        is_followup = _looks_like_followup(message)
+        decision = await _orchestrate(
+            message,
+            has_docs,
+            document_ids,
+            previous_agent=previous_agent,
+            is_followup=is_followup,
+        )
+        return _route_for_agent(
+            decision.agent_name, document_ids, thread_id, evaluate_after=decision.evaluate_after
+        )
 
 
 async def _update_memory(
@@ -673,21 +627,20 @@ async def route_agent_message(
         plan = _build_execution_plan(
             route,
             trace_id=trace_id,
-            collect_evidence=bool(document_ids) and _normalise_intent(route.intent) == "question",
+            collect_evidence=bool(document_ids) and route.agent_name == "question_agent",
         )
         step = plan.target_step
-        route_intent = _normalise_intent(route.intent)
         await asyncio.to_thread(_write_router_trace, trace_id, thread_id, document_ids, route,
                                 user_message=user_message, user_id=get_user_id())
 
         try:
-            if route_intent == "evaluation":
+            if route.agent_name == "evaluation_agent":
                 result = await _run_evaluation_agent(
                     thread_id,
                     observation_id=step.observation_id,
                     trace_id=step.trace_id,
                 )
-            elif route_intent == "research":
+            elif route.agent_name == "research_agent":
                 result = await run_research_agent(
                     user_message,
                     thread_id,
@@ -697,7 +650,7 @@ async def route_agent_message(
                     original_intent=route.original_intent,
                     resolved_intent=route.resolved_intent,
                 )
-            elif route_intent == "question":
+            elif route.agent_name == "question_agent":
                 evidence_context = None
                 evidence_sources: list[str] = []
                 evidence_step = plan.evidence_step
@@ -727,12 +680,12 @@ async def route_agent_message(
                     evidence_context=evidence_context,
                     evidence_sources=evidence_sources,
                 )
-            elif route_intent == "retrieval":
+            elif route.agent_name == "retrieval_agent":
                 result = await retrieval_agent.answer(
                     user_message,
                     thread_id,
                     document_ids,
-                    route_intent=route_intent,
+                    route_intent="retrieval",
                     observation_id=step.observation_id,
                     trace_id=step.trace_id,
                     use_mini=use_mini,
@@ -794,10 +747,10 @@ async def route_agent_message(
                 exclude_observation_id=result.observation_id,
             ))
 
-        # Update memory per intent policy
-        if route_intent in ("research", "summary"):
+        if route.agent_name in ("research_agent",):
             _fire_and_forget(_update_memory(
-                route_intent, thread_id, get_user_id(), document_ids, user_message, result
+                route.resolved_intent or "research", thread_id, get_user_id(),
+                document_ids, user_message, result
             ))
 
         return result
@@ -837,13 +790,12 @@ async def route_agent_stream(
             route,
             trace_id=trace_id,
             observation_id=observation_id,
-            collect_evidence=bool(document_ids) and _normalise_intent(route.intent) == "question",
+            collect_evidence=bool(document_ids) and route.agent_name == "question_agent",
         )
         step = plan.target_step
-        route_intent = _normalise_intent(route.intent)
         await asyncio.to_thread(_write_router_trace, trace_id, thread_id, document_ids, route, user_id=get_user_id())
 
-        if route_intent == "evaluation":
+        if route.agent_name == "evaluation_agent":
             result = await _run_evaluation_agent(
                 thread_id,
                 observation_id=step.observation_id,
@@ -857,7 +809,7 @@ async def route_agent_stream(
 
         last_sources: list[str] = []
 
-        if route_intent == "research":
+        if route.agent_name == "research_agent":
             result = await run_research_agent(
                 user_message,
                 thread_id,
@@ -868,11 +820,12 @@ async def route_agent_stream(
                 resolved_intent=route.resolved_intent,
             )
             _fire_and_forget(_update_memory(
-                route_intent, thread_id, get_user_id(), document_ids, user_message, result
+                route.resolved_intent or "research", thread_id, get_user_id(),
+                document_ids, user_message, result
             ))
             yield result.response, False, []
             last_sources = result.sources
-        elif route_intent == "question":
+        elif route.agent_name == "question_agent":
             evidence_context = None
             evidence_sources: list[str] = []
             evidence_step = plan.evidence_step
@@ -908,12 +861,12 @@ async def route_agent_stream(
                     last_sources = sources
                 else:
                     yield item
-        elif route_intent == "retrieval":
+        elif route.agent_name == "retrieval_agent":
             async for item in retrieval_agent.stream(
                 user_message,
                 thread_id,
                 document_ids,
-                route_intent=route_intent,
+                route_intent="retrieval",
                 observation_id=step.observation_id,
                 trace_id=step.trace_id,
                 use_mini=use_mini,
