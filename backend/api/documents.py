@@ -27,6 +27,7 @@ from rag import (
 from services import job_service, storage_service
 
 from api.dependencies import require_admin
+public_router = APIRouter()
 router = APIRouter(dependencies=[Depends(require_admin)])
 
 
@@ -121,7 +122,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
     return {"id": doc.id, "filename": doc.filename, "status": "processing", "queued": True, "duplicate": False}
 
 
-@router.get("/api/documents")
+@public_router.get("/api/documents")
 def list_documents(db: Session = Depends(get_db)):
     docs = db.query(Document).filter(Document.deleted_at.is_(None)).order_by(Document.created_at.desc()).all()
     return [
@@ -130,7 +131,7 @@ def list_documents(db: Session = Depends(get_db)):
     ]
 
 
-@router.get("/api/documents/{doc_id}/file")
+@public_router.get("/api/documents/{doc_id}/file")
 def get_document_file(doc_id: int, db: Session = Depends(get_db)):
     doc = db.query(Document).filter(Document.id == doc_id, Document.deleted_at.is_(None)).first()
     if not doc:

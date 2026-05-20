@@ -66,10 +66,8 @@ def _write_router_trace(
             "environment": env,
             "start_time": now.isoformat(),
             "metadata": {
-                "route": route.resolved_intent or _normalise_intent(route.intent),
+                "agent_name": route.agent_name,
                 "document_ids": document_ids,
-                "original_intent": route.original_intent,
-                "resolved_intent": route.resolved_intent,
             },
         }
         if user_message:
@@ -118,10 +116,8 @@ def _write_router_trace(
                         thread_id=thread_id,
                         document_ids=json.dumps(document_ids) if document_ids else None,
                         task_type="routing",
-                        route_intent=route.resolved_intent or _normalise_intent(route.intent),
+                        route_intent=route.agent_name,
                         agent_name="router_agent",
-                        original_intent=route.original_intent,
-                        resolved_intent=route.resolved_intent,
                         environment=env,
                         user_id=user_id,
                     ))
@@ -135,17 +131,7 @@ def _write_router_trace(
             logger.warning("Router legacy trace write failed: %s", exc)
 
 ROUTER_PROMPT_NAME = "route_coordinator"
-VALID_INTENTS = {"chat", "retrieval", "research", "summary", "question", "evaluation"}
 VALID_AGENTS = {"chat_agent", "retrieval_agent", "research_agent", "question_agent", "evaluation_agent"}
-
-_AGENT_TO_INTENT: dict[str, str] = {
-    "chat_agent":       "chat",
-    "retrieval_agent":  "retrieval",
-    "research_agent":   "research",
-    "question_agent":   "question",
-    "evaluation_agent": "evaluation",
-}
-_INTENT_TO_AGENT: dict[str, str] = {v: k for k, v in _AGENT_TO_INTENT.items()}
 
 # Maximum number of times a single request may be re-routed between agents.
 # If an agent tries to hand off more than this many times, we fall back to chat.
@@ -222,14 +208,6 @@ def _prompt_key(thread_id: str | None, document_ids: list[int] | None) -> str:
     return f"{thread_id or ''}:{doc_key}"
 
 
-def _normalise_intent(intent: str) -> str:
-    value = (intent or "chat").strip().lower()
-    if value == "summary":
-        return "research"
-    if value not in VALID_INTENTS:
-        return "chat"
-    return value
-
 
 def _allows_background_evaluation(agent_name: str, has_docs: bool) -> bool:
     """Deterministic gate for router-triggered background evaluation.
@@ -256,18 +234,6 @@ def _primary_prompt(stack_name: str, base_name: str, thread_id: str | None, docu
     return next((p for p in stack.prompts if p.base_name == base_name), stack.prompts[-1])
 
 
-def _route_for_intent(
-    intent: str,
-    document_ids: list[int] | None = None,
-    thread_id: str | None = None,
-    *,
-    evaluate_after: bool = False,
-) -> AgentRoute:
-    """Map an intent string to AgentRoute. Used only for agent handoffs (next_intent)."""
-    agent_name = _INTENT_TO_AGENT.get(_normalise_intent(intent), "chat_agent")
-    return _route_for_agent(agent_name, document_ids, thread_id, evaluate_after=evaluate_after)
-
-
 def _route_for_agent(
     agent_name: str,
     document_ids: list[int] | None = None,
@@ -275,44 +241,19 @@ def _route_for_agent(
     *,
     evaluate_after: bool = False,
 ) -> AgentRoute:
-    """Primary routing function: map agent_name directly to AgentRoute.
-
-    intent field in AgentRoute is kept as an observability label only.
-    """
+    """Map agent_name to AgentRoute."""
     if agent_name not in VALID_AGENTS:
         agent_name = "chat_agent"
-    intent_label = _AGENT_TO_INTENT[agent_name]
-
     if agent_name == "research_agent":
         prompt = _primary_prompt("research_runtime", "research_writer", thread_id, document_ids)
-        return AgentRoute(
-            intent_label, agent_name, prompt.name, prompt.version,
-            original_intent=intent_label, resolved_intent=intent_label,
-            evaluate_after=evaluate_after,
-        )
+        return AgentRoute(agent_name, prompt.name, prompt.version, evaluate_after=evaluate_after)
     if agent_name == "question_agent":
-        return AgentRoute(
-            intent_label, agent_name, "question_skill", prompt_version("question_skill"),
-            original_intent=intent_label, resolved_intent=intent_label,
-            evaluate_after=evaluate_after,
-        )
+        return AgentRoute(agent_name, "question_skill", prompt_version("question_skill"), evaluate_after=evaluate_after)
     if agent_name == "retrieval_agent":
-        return AgentRoute(
-            intent_label, agent_name, "retrieval_capability", prompt_version("retrieval_capability"),
-            original_intent=intent_label, resolved_intent=intent_label,
-            evaluate_after=evaluate_after,
-        )
+        return AgentRoute(agent_name, "retrieval_capability", prompt_version("retrieval_capability"), evaluate_after=evaluate_after)
     if agent_name == "evaluation_agent":
-        return AgentRoute(
-            intent_label, agent_name, "evaluation_agent", prompt_version("evaluation_agent"),
-            original_intent=intent_label, resolved_intent=intent_label,
-            evaluate_after=False,
-        )
-    return AgentRoute(
-        intent_label, "chat_agent", "chat_mode", prompt_version("chat_mode"),
-        original_intent=intent_label, resolved_intent=intent_label,
-        evaluate_after=False,
-    )
+        return AgentRoute(agent_name, "evaluation_agent", prompt_version("evaluation_agent"), evaluate_after=False)
+    return AgentRoute("chat_agent", "chat_mode", prompt_version("chat_mode"), evaluate_after=False)
 
 
 def _fetch_document_context(document_ids: list[int]) -> list[dict]:
@@ -343,7 +284,6 @@ def _build_execution_plan(
 ) -> ExecutionPlan:
     """Build the router-owned execution plan for a request."""
     agent_name = route.agent_name
-    intent_label = _AGENT_TO_INTENT.get(agent_name, "chat")
     steps: list[ExecutionStep] = []
     if collect_evidence and agent_name == "question_agent":
         steps.append(ExecutionStep(
@@ -355,7 +295,7 @@ def _build_execution_plan(
             reason="question_requires_document_evidence",
         ))
     steps.append(ExecutionStep(
-        intent=intent_label,
+        intent=agent_name,
         agent_name=agent_name,
         observation_id=observation_id or new_id(),
         trace_id=trace_id,
@@ -457,22 +397,21 @@ async def classify_intent(
     message: str,
     document_ids: list[int] | None = None,
     thread_id: str | None = None,
-    previous_intent: str | None = None,
+    previous_agent_name: str | None = None,
 ) -> AgentRoute:
     with propagate_attributes(session_id=thread_id, user_id=get_user_id()) if thread_id else contextlib.nullcontext():
         """Route a request via Orchestrator LLM with full document context.
 
-        previous_intent: the intent of the last turn (from trace DB).
+        previous_agent_name: agent_name used in the last turn (from TraceV2 metadata).
         Passed to the orchestrator as a follow-up hint.
         """
         has_docs = bool(document_ids)
-        previous_agent = _INTENT_TO_AGENT.get(previous_intent or "", None)
         is_followup = _looks_like_followup(message)
         decision = await _orchestrate(
             message,
             has_docs,
             document_ids,
-            previous_agent=previous_agent,
+            previous_agent=previous_agent_name,
             is_followup=is_followup,
         )
         return _route_for_agent(
@@ -536,8 +475,6 @@ async def run_research_agent(
     trace_id: str | None = None,
     on_stage=None,
     on_token=None,
-    original_intent: str | None = None,
-    resolved_intent: str | None = None,
     bypass_cache: bool = False,
 ) -> AgentResult:
     with propagate_attributes(session_id=thread_id, user_id=get_user_id()) if thread_id else contextlib.nullcontext():
@@ -548,8 +485,6 @@ async def run_research_agent(
             "task_type": "research_task",
             "route_intent": "research",
             "agent_name": "research_agent",
-            "original_intent": original_intent or "research",
-            "resolved_intent": resolved_intent or "research",
             **stack.metadata(),
         }
         return await run_research_task(
@@ -578,8 +513,6 @@ async def run_chat_agent(
     trace_id: str | None = None,
     on_stage=None,
     use_mini: bool = False,
-    original_intent: str | None = None,
-    resolved_intent: str | None = None,
 ) -> AgentResult:
     with propagate_attributes(session_id=thread_id, user_id=get_user_id()) if thread_id else contextlib.nullcontext():
         from .chat_agent import answer as _chat_answer
@@ -591,8 +524,6 @@ async def run_chat_agent(
             trace_id=trace_id,
             on_stage=on_stage,
             use_mini=use_mini,
-            original_intent=original_intent,
-            resolved_intent=resolved_intent,
         )
 
 
@@ -647,8 +578,6 @@ async def route_agent_message(
                     document_ids,
                     observation_id=step.observation_id,
                     trace_id=step.trace_id,
-                    original_intent=route.original_intent,
-                    resolved_intent=route.resolved_intent,
                 )
             elif route.agent_name == "question_agent":
                 evidence_context = None
@@ -663,8 +592,6 @@ async def route_agent_message(
                         observation_id=evidence_step.observation_id,
                         trace_id=evidence_step.trace_id,
                         use_mini=use_mini,
-                        original_intent=route.original_intent,
-                        resolved_intent=route.resolved_intent,
                     )
                     evidence_context = evidence.response
                     evidence_sources = evidence.sources
@@ -675,8 +602,6 @@ async def route_agent_message(
                     observation_id=step.observation_id,
                     trace_id=step.trace_id,
                     use_mini=use_mini,
-                    original_intent=route.original_intent,
-                    resolved_intent=route.resolved_intent,
                     evidence_context=evidence_context,
                     evidence_sources=evidence_sources,
                 )
@@ -689,8 +614,6 @@ async def route_agent_message(
                     observation_id=step.observation_id,
                     trace_id=step.trace_id,
                     use_mini=use_mini,
-                    original_intent=route.original_intent,
-                    resolved_intent=route.resolved_intent,
                 )
             else:
                 result = await chat_agent.answer(
@@ -700,8 +623,6 @@ async def route_agent_message(
                     observation_id=step.observation_id,
                     trace_id=step.trace_id,
                     use_mini=use_mini,
-                    original_intent=route.original_intent,
-                    resolved_intent=route.resolved_intent,
                 )
         except Exception as exc:
             await asyncio.to_thread(
@@ -710,8 +631,8 @@ async def route_agent_message(
             )
             raise
 
-        if result.next_intent and _hop_count + 1 < MAX_HANDOFFS:
-            handoff_route = _route_for_intent(result.next_intent, document_ids, thread_id)
+        if result.next_agent_name and _hop_count + 1 < MAX_HANDOFFS:
+            handoff_route = _route_for_agent(result.next_agent_name, document_ids, thread_id)
             return await route_agent_message(
                 user_message,
                 thread_id,
@@ -747,10 +668,9 @@ async def route_agent_message(
                 exclude_observation_id=result.observation_id,
             ))
 
-        if route.agent_name in ("research_agent",):
+        if route.agent_name == "research_agent":
             _fire_and_forget(_update_memory(
-                route.resolved_intent or "research", thread_id, get_user_id(),
-                document_ids, user_message, result
+                "research", thread_id, get_user_id(), document_ids, user_message, result
             ))
 
         return result
@@ -816,12 +736,9 @@ async def route_agent_stream(
                 document_ids,
                 observation_id=step.observation_id,
                 trace_id=step.trace_id,
-                original_intent=route.original_intent,
-                resolved_intent=route.resolved_intent,
             )
             _fire_and_forget(_update_memory(
-                route.resolved_intent or "research", thread_id, get_user_id(),
-                document_ids, user_message, result
+                "research", thread_id, get_user_id(), document_ids, user_message, result
             ))
             yield result.response, False, []
             last_sources = result.sources
@@ -838,8 +755,6 @@ async def route_agent_stream(
                     observation_id=evidence_step.observation_id,
                     trace_id=evidence_step.trace_id,
                     use_mini=use_mini,
-                    original_intent=route.original_intent,
-                    resolved_intent=route.resolved_intent,
                 )
                 evidence_context = evidence.response
                 evidence_sources = evidence.sources
@@ -848,8 +763,6 @@ async def route_agent_stream(
                 observation_id=step.observation_id,
                 trace_id=step.trace_id,
                 use_mini=use_mini,
-                original_intent=route.original_intent,
-                resolved_intent=route.resolved_intent,
                 evidence_context=evidence_context,
                 evidence_sources=evidence_sources,
             ):
@@ -870,8 +783,6 @@ async def route_agent_stream(
                 observation_id=step.observation_id,
                 trace_id=step.trace_id,
                 use_mini=use_mini,
-                original_intent=route.original_intent,
-                resolved_intent=route.resolved_intent,
             ):
                 token, is_done, sources = item
                 if is_done == "interrupt":
@@ -887,8 +798,6 @@ async def route_agent_stream(
                 observation_id=step.observation_id,
                 trace_id=step.trace_id,
                 use_mini=use_mini,
-                original_intent=route.original_intent,
-                resolved_intent=route.resolved_intent,
             ):
                 token, is_done, sources = item
                 if is_done == "interrupt":

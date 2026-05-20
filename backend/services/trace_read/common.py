@@ -148,7 +148,7 @@ _STANDARD_META_KEYS = {
     "base_prompt_hash", "task_prompt_hash", "quality_prompt_hash",
     "prompt_stack_name", "prompt_stack_json", "primary_prompt_json",
     "workflow_prompts_json", "prompt_stack_tokens", "tool_count", "llm_call_count",
-    "original_intent", "resolved_intent", "document_ids", "display",
+    "document_ids", "display",
 }
 
 
@@ -228,8 +228,6 @@ def _build_v2_payload(
         "llm_call_count": meta.get("llm_call_count"),
         "quality_score": quality_score,
         "user_feedback": user_feedback,
-        "original_intent": meta.get("original_intent"),
-        "resolved_intent": meta.get("resolved_intent"),
         "quality_detail": quality_detail,
         "runtime_prompt_metadata": {},
         "prompt_tokens": prompt_tokens,
@@ -318,8 +316,6 @@ def legacy_trace_payload(t: Trace, *, include_raw: bool = False, include_display
         "llm_call_count": t.llm_call_count,
         "quality_score": t.quality_score,
         "user_feedback": t.user_feedback,
-        "original_intent": t.original_intent,
-        "resolved_intent": t.resolved_intent,
         "quality_detail": _legacy_parse_quality(t.quality_detail),
         "runtime_prompt_metadata": display.get("prompt_metadata", {}) if isinstance(display, dict) else {},
         "prompt_tokens": t.prompt_tokens,

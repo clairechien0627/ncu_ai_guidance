@@ -239,8 +239,6 @@ class Trace(Base):
     quality_score = Column(Float, nullable=True)
     user_feedback = Column(Text, nullable=True)
     display = Column(JsonColumn, nullable=True)
-    original_intent = Column(String, nullable=True, index=True)
-    resolved_intent = Column(String, nullable=True, index=True)
     quality_detail = Column(JsonColumn, nullable=True)
     environment = Column(String(40), nullable=False, default="default", index=True)
     user_id = Column(String, nullable=True, index=True)

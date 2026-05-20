@@ -78,8 +78,6 @@ def _trace_metadata(trace: Trace) -> dict:
         "prompt_stack_tokens": trace.prompt_stack_tokens,
         "tool_count": trace.tool_count,
         "llm_call_count": trace.llm_call_count,
-        "original_intent": trace.original_intent,
-        "resolved_intent": trace.resolved_intent,
         "document_ids": _parse_json(trace.document_ids),
         "display": _parse_json(trace.display),
         "legacy_run_type": trace.run_type,

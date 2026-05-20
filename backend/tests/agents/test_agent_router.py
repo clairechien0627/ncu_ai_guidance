@@ -25,7 +25,6 @@ def test_router_routes_to_research_agent(monkeypatch):
     monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("research_agent"))
     route = asyncio.run(classify_intent("請整理研究動機、研究方法、研究成果與限制", [1]))
     assert route.agent_name == "research_agent"
-    assert route.intent == "research"
     assert route.prompt_name == "research_writer"
 
 
@@ -33,7 +32,6 @@ def test_router_routes_to_question_agent(monkeypatch):
     monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("question_agent"))
     route = asyncio.run(classify_intent("請出三題導讀問題給我", [1]))
     assert route.agent_name == "question_agent"
-    assert route.intent == "question"
     assert route.prompt_name == "question_skill"
 
 
@@ -41,14 +39,12 @@ def test_router_routes_to_retrieval_agent(monkeypatch):
     monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("retrieval_agent"))
     route = asyncio.run(classify_intent("這篇論文的研究方法細節？", [1]))
     assert route.agent_name == "retrieval_agent"
-    assert route.intent == "retrieval"
 
 
 def test_router_routes_to_chat_without_documents(monkeypatch):
     monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("chat_agent"))
     route = asyncio.run(classify_intent("我想討論一個研究方向"))
     assert route.agent_name == "chat_agent"
-    assert route.intent == "chat"
 
 
 def test_router_routes_meta_question_to_chat(monkeypatch):
@@ -56,14 +52,12 @@ def test_router_routes_meta_question_to_chat(monkeypatch):
     monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("chat_agent"))
     route = asyncio.run(classify_intent("這是關於什麼領域的", [1]))
     assert route.agent_name == "chat_agent"
-    assert route.intent == "chat"
 
 
 def test_router_routes_to_evaluation_agent(monkeypatch):
     monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("evaluation_agent"))
     route = asyncio.run(classify_intent("評估一下剛才的回答好不好"))
     assert route.agent_name == "evaluation_agent"
-    assert route.intent == "evaluation"
     assert route.evaluate_after is False
 
 
@@ -108,7 +102,7 @@ def test_orchestrate_receives_is_followup_signal(monkeypatch):
         return RouterDecision(agent_name="retrieval_agent", evaluate_after=False, reason="test")
 
     monkeypatch.setattr("agents.router_agent._orchestrate", spy_orchestrate)
-    asyncio.run(classify_intent("還有呢", [1], previous_intent="retrieval"))
+    asyncio.run(classify_intent("還有呢", [1], previous_agent_name="retrieval_agent"))
     assert captured["is_followup"] is True
 
 
@@ -192,26 +186,19 @@ def test_background_evaluation_policy_is_document_grounded_only():
 # ── AgentRoute evaluate_after ─────────────────────────────────────────────────
 
 def test_agent_route_evaluate_after_defaults_false():
-    r = AgentRoute(intent="retrieval", agent_name="retrieval_agent",
-                   prompt_name="retrieval_capability")
+    r = AgentRoute(agent_name="retrieval_agent", prompt_name="retrieval_capability")
     assert r.evaluate_after is False
 
 
 def test_agent_route_evaluate_after_can_be_set():
-    r = AgentRoute(intent="research", agent_name="research_agent",
-                   prompt_name="research_writer", evaluate_after=True)
+    r = AgentRoute(agent_name="research_agent", prompt_name="research_writer", evaluate_after=True)
     assert r.evaluate_after is True
 
 
 # ── ExecutionPlan ─────────────────────────────────────────────────────────────
 
 def test_execution_plan_can_include_final_composition():
-    route = AgentRoute(
-        intent="research",
-        agent_name="research_agent",
-        prompt_name="research_writer",
-        compose_after=True,
-    )
+    route = AgentRoute(agent_name="research_agent", prompt_name="research_writer", compose_after=True)
     plan = _build_execution_plan(route, trace_id="trace-1", observation_id="research-obs")
 
     assert len(plan.steps) == 2
@@ -225,12 +212,7 @@ def test_execution_plan_can_include_final_composition():
 
 
 def test_execution_plan_does_not_compose_chat_routes():
-    route = AgentRoute(
-        intent="chat",
-        agent_name="chat_agent",
-        prompt_name="chat_mode",
-        compose_after=True,
-    )
+    route = AgentRoute(agent_name="chat_agent", prompt_name="chat_mode", compose_after=True)
     plan = _build_execution_plan(route, trace_id="trace-1", observation_id="chat-obs")
 
     assert len(plan.steps) == 1
@@ -238,11 +220,7 @@ def test_execution_plan_does_not_compose_chat_routes():
 
 
 def test_execution_plan_collects_evidence_for_document_questions():
-    route = AgentRoute(
-        intent="question",
-        agent_name="question_agent",
-        prompt_name="question_skill",
-    )
+    route = AgentRoute(agent_name="question_agent", prompt_name="question_skill")
     plan = _build_execution_plan(
         route,
         trace_id="trace-1",
@@ -252,9 +230,9 @@ def test_execution_plan_collects_evidence_for_document_questions():
 
     assert len(plan.steps) == 2
     assert plan.evidence_step is not None
-    assert plan.evidence_step.intent == "retrieval"
+    assert plan.evidence_step.agent_name == "retrieval_agent"
     assert plan.evidence_step.trace_id == "trace-1"
-    assert plan.target_step.intent == "question"
+    assert plan.target_step.agent_name == "question_agent"
     assert plan.target_step.observation_id == "question-obs"
 
 
@@ -379,7 +357,6 @@ def test_router_message_can_compose_after_task_result(monkeypatch):
             response="research answer",
             sources=["paper.pdf p.4"],
             task_type="research_task",
-            route_intent="research",
             agent_name="research_agent",
             prompt_name="research_writer",
             observation_id=kwargs.get("observation_id"),
@@ -391,7 +368,6 @@ def test_router_message_can_compose_after_task_result(monkeypatch):
             response="composed answer",
             sources=kwargs["task_result"].sources,
             task_type="response_composition",
-            route_intent="chat",
             agent_name="chat_agent",
             prompt_name="chat_mode",
             observation_id=kwargs.get("observation_id"),
@@ -402,12 +378,7 @@ def test_router_message_can_compose_after_task_result(monkeypatch):
     monkeypatch.setattr("agents.chat_agent.compose_final_response", fake_compose)
     monkeypatch.setattr("agents.router_agent.propagate_attributes", lambda **_: contextlib.nullcontext())
 
-    route = AgentRoute(
-        intent="research",
-        agent_name="research_agent",
-        prompt_name="research_writer",
-        compose_after=True,
-    )
+    route = AgentRoute(agent_name="research_agent", prompt_name="research_writer", compose_after=True)
     result = asyncio.run(route_agent_message(
         "research this",
         "thread-1",
@@ -437,7 +408,6 @@ def test_router_document_question_collects_evidence_then_questions(monkeypatch):
             response="evidence bundle",
             sources=["paper.pdf p.2"],
             task_type="retrieval_qa",
-            route_intent="question",
             agent_name="retrieval_agent",
             prompt_name="retrieval_capability",
             observation_id=kwargs.get("observation_id"),
@@ -449,7 +419,6 @@ def test_router_document_question_collects_evidence_then_questions(monkeypatch):
             response="Q1? Q2?",
             sources=kwargs.get("evidence_sources") or [],
             task_type="question_generation",
-            route_intent="question",
             agent_name="question_agent",
             prompt_name="question_skill",
             observation_id=kwargs.get("observation_id"),
@@ -460,11 +429,7 @@ def test_router_document_question_collects_evidence_then_questions(monkeypatch):
     monkeypatch.setattr("agents.question_agent.answer", fake_question)
     monkeypatch.setattr("agents.router_agent.propagate_attributes", lambda **_: contextlib.nullcontext())
 
-    route = AgentRoute(
-        intent="question",
-        agent_name="question_agent",
-        prompt_name="question_skill",
-    )
+    route = AgentRoute(agent_name="question_agent", prompt_name="question_skill")
     result = asyncio.run(route_agent_message(
         "make questions from this paper",
         "thread-1",

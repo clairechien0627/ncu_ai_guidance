@@ -28,6 +28,7 @@ from agents.router_agent import (
 from agents.request_context import set_user_id
 from api.dependencies import get_current_user
 from db import get_db, Conversation, Document, Trace
+from db.models import TraceV2
 from db.models import User
 from services.quota_service import check_quota
 
@@ -58,12 +59,28 @@ class ChatRequest(BaseModel):
     bypass_cache: bool = False
 
 
-def _should_use_mini(model: str, intent: str, document_ids: list[int] | None) -> bool:
+def _get_previous_agent(db, thread_id: str | None) -> str | None:
+    """Query the last router trace from TraceV2 to get the previously used agent."""
+    if not thread_id:
+        return None
+    row = (
+        db.query(TraceV2.metadata_json)
+        .filter(TraceV2.name == "router_agent", TraceV2.thread_id == thread_id)
+        .order_by(TraceV2.start_time.desc())
+        .first()
+    )
+    if not row or not row[0]:
+        return None
+    meta = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+    return meta.get("agent_name")
+
+
+def _should_use_mini(model: str, agent_name: str, document_ids: list[int] | None) -> bool:
     """Use the mini model when explicitly requested OR for simple chat without documents."""
     if "mini" in (model or "").lower():
         return True
-    # Pure conversation (no documents, chat intent) → mini is sufficient
-    if intent == "chat" and not document_ids:
+    # Pure conversation (no documents, chat agent) → mini is sufficient
+    if agent_name == "chat_agent" and not document_ids:
         return True
     return False
 
@@ -133,12 +150,12 @@ def _hydrate_assistant_meta(thread_id: str, messages: list[dict], db: Session) -
         item = dict(msg)
         if item.get("role") == "assistant":
             if assistant_turn < len(traces):
-                observation_id, task_type, route_intent, agent_name, prompt_name, prompt_version = traces[assistant_turn]
+                observation_id, task_type, routed_agent, agent_name, prompt_name, prompt_version = traces[assistant_turn]
                 if task_type:
                     item["task_type"] = task_type
-                if route_intent:
-                    item["route_intent"] = route_intent
-                if agent_name:
+                if routed_agent:
+                    item["agent_name"] = routed_agent
+                elif agent_name:
                     item["agent_name"] = agent_name
                 if prompt_name:
                     item["prompt_name"] = prompt_name
@@ -174,21 +191,10 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db),
     check_quota(current_user, db)
     set_user_id(str(current_user.id))
     try:
-        def _get_prev_intent():
-            if not req.thread_id:
-                return None
-            last = (
-                db.query(Trace.route_intent)
-                .filter(Trace.agent_name == "router_agent", Trace.thread_id == conv.thread_id)
-                .order_by(Trace.start_time.desc())
-                .first()
-            )
-            return last[0] if last else None
-
-        prev_intent_sync = await asyncio.to_thread(_get_prev_intent)
-        route = await classify_intent(req.message, req.document_ids, conv.thread_id, previous_intent=prev_intent_sync)
+        prev_agent = await asyncio.to_thread(_get_previous_agent, db, conv.thread_id if req.thread_id else None)
+        route = await classify_intent(req.message, req.document_ids, conv.thread_id, previous_agent_name=prev_agent)
         trace_id = new_id()
-        use_mini = _should_use_mini(req.model, route.intent, req.document_ids)
+        use_mini = _should_use_mini(req.model, route.agent_name, req.document_ids)
         result = await route_agent_message(
             req.message,
             conv.thread_id,
@@ -209,12 +215,9 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db),
         "response": response,
         "sources": sources,
         "task_type": result.task_type,
-        "route_intent": result.route_intent,
         "agent_name": result.agent_name,
         "prompt_name": result.prompt_name,
         "prompt_version": result.prompt_version,
-        "original_intent": route.original_intent,
-        "resolved_intent": route.resolved_intent,
         "trace_id": trace_id,
         "agent_observation_id": result.observation_id,
     }
@@ -243,41 +246,27 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
     check_quota(current_user, db)
     is_new = req.thread_id is None
     set_user_id(str(current_user.id))
-    def _get_prev_intent():
-        if not req.thread_id:
-            return None
-        last_trace = (
-            db.query(Trace.route_intent)
-            .filter(Trace.agent_name == "router_agent", Trace.thread_id == conv.thread_id)
-            .order_by(Trace.start_time.desc())
-            .first()
-        )
-        return last_trace[0] if last_trace else None
 
-    prev_intent = await asyncio.to_thread(_get_prev_intent)
-
-    route = await classify_intent(req.message, req.document_ids, conv.thread_id, previous_intent=prev_intent)
+    prev_agent = await asyncio.to_thread(_get_previous_agent, db, conv.thread_id if req.thread_id else None)
+    route = await classify_intent(req.message, req.document_ids, conv.thread_id, previous_agent_name=prev_agent)
     trace_id = new_id()
-    use_mini = _should_use_mini(req.model, route.intent, req.document_ids)
+    use_mini = _should_use_mini(req.model, route.agent_name, req.document_ids)
 
     async def event_stream():
         sources = []
         full_response = ""
         route_payload = {
             "task_type": "chat_turn",
-            "route_intent": route.intent,
             "agent_name": route.agent_name,
             "prompt_name": route.prompt_name,
             "prompt_version": route.prompt_version,
-            "original_intent": route.original_intent,
-            "resolved_intent": route.resolved_intent,
             "trace_id": trace_id,
             "agent_observation_id": None,
         }
         yield f"data: {_json_dumps({'thread_id': conv.thread_id, **route_payload})}\n\n"
         observation_id = new_id()
         try:
-            if route.intent == "research":
+            if route.agent_name == "research_agent":
                 # Merged event queue: ("token", t) | ("stage", msg) | None (sentinel on done)
                 event_queue: asyncio.Queue = asyncio.Queue()
 
@@ -294,8 +283,6 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
                         trace_id=trace_id,
                         on_stage=_push_stage,
                         on_token=_push_token,
-                        original_intent=route.original_intent,
-                        resolved_intent=route.resolved_intent,
                         bypass_cache=req.bypass_cache,
                     )
                 )

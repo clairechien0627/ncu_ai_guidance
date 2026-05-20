@@ -79,7 +79,7 @@ def test_router_reports_research_runtime_prompt(monkeypatch):
 
     route = asyncio.run(classify_intent("summary this document", [1], thread_id="thread-1"))
 
-    assert route.intent == "research"
+    assert route.agent_name == "research_agent"
     assert route.prompt_name == "research_writer"
     assert route.prompt_version == version("research_writer")
 
@@ -93,7 +93,7 @@ def test_prompt_ab_test_no_longer_changes_research_runtime_route(monkeypatch):
 
     route = asyncio.run(classify_intent("summary this document", [1], thread_id="thread-1"))
 
-    assert route.intent == "research"
+    assert route.agent_name == "research_agent"
     assert route.prompt_name == "research_writer"
     assert route.prompt_version == version("research_writer")
 

@@ -131,19 +131,10 @@ def get_document_metadata(runtime: ToolRuntime[AgentContext]) -> str:
         docs = db.query(DocModel).filter(DocModel.id.in_(ctx.document_ids or [])).all()
         result = []
         for doc in docs:
-            tags: list[str] = []
-            if doc.tags:
-                try:
-                    import json as _json
-                    tags = _json.loads(doc.tags)
-                except Exception:
-                    tags = [doc.tags]
             result.append({
                 "id": doc.id,
                 "filename": doc.filename,
                 "uploaded_at": doc.created_at.isoformat() if doc.created_at else None,
-                "category": doc.category,
-                "tags": tags,
                 "quality_issue": doc.quality_issue,
                 "abstract_preview": (doc.abstract_text or "")[:400],
             })

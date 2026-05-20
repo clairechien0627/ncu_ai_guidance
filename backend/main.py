@@ -137,7 +137,9 @@ async def auth_context_middleware(request: Request, call_next):
 
 app.include_router(auth.router)
 app.include_router(users_api.router)
+app.include_router(documents.public_router)
 app.include_router(documents.router)
+app.include_router(summaries.public_router)
 app.include_router(summaries.router)
 app.include_router(jobs.router)
 app.include_router(chat.router)

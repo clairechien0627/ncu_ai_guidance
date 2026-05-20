@@ -158,12 +158,9 @@ def test_route_agent_stream_evaluate_after_passes_exclude_observation_id():
     from agents.types import AgentRoute
 
     fake_route = AgentRoute(
-        intent="chat",
         agent_name="chat_agent",
         prompt_name="chat_mode",
         prompt_version="v1",
-        original_intent="chat",
-        resolved_intent="chat",
         evaluate_after=True,
     )
 
@@ -178,7 +175,7 @@ def test_route_agent_stream_evaluate_after_passes_exclude_observation_id():
         from agents.types import AgentResult
         return AgentResult(
             response="ok", sources=[], task_type="evaluation",
-            route_intent="evaluation", agent_name="evaluation_agent",
+            agent_name="evaluation_agent",
             prompt_name="eval", prompt_version="v1", observation_id="eval-obs",
         )
 

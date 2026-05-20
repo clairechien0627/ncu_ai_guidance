@@ -103,8 +103,6 @@ class TraceListReadService:
                 "llm_call_count": p.get("llm_call_count"),
                 "quality_score": p.get("quality_score"),
                 "user_feedback": p.get("user_feedback"),
-                "original_intent": p.get("original_intent"),
-                "resolved_intent": p.get("resolved_intent"),
                 "quality_detail": p.get("quality_detail"),
                 "runtime_prompt_metadata": p.get("runtime_prompt_metadata"),
             }

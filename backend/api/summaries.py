@@ -5,7 +5,7 @@ import os
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from config import settings
 from db import get_db, Document, SessionLocal
@@ -14,6 +14,7 @@ from services import job_service
 
 logger = logging.getLogger(__name__)
 from api.dependencies import require_admin
+public_router = APIRouter()
 router = APIRouter(dependencies=[Depends(require_admin)])
 
 
@@ -81,11 +82,11 @@ async def extract_summary_step(step: str, doc_id: int, db: Session = Depends(get
     return {"id": doc_id, "filename": doc.filename, "queued": True}
 
 
-@router.get("/api/summaries")
+@public_router.get("/api/summaries")
 def list_summaries(slim: bool = False, db: Session = Depends(get_db)):
     if not slim:
         from rag import _pymupdf_cache_path, _azure_di_cache_path, _llamaparse_cache_path
-    docs = db.query(Document).filter(
+    docs = db.query(Document).options(joinedload(Document.extraction)).filter(
         Document.deleted_at.is_(None),
         Document.status.in_(["ready", "processing", "error"])
     ).order_by(Document.created_at.asc()).all()

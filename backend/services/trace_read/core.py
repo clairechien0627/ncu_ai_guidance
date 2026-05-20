@@ -136,7 +136,7 @@ class _TraceReadCore:
         if not rows:
             return []
         cleaned = {k: _clean(v) if isinstance(v, str) else v for k, v in filters.items()}
-        meta_keys = {"task_type", "route_intent", "prompt_name", "prompt_version", "original_intent", "resolved_intent"}
+        meta_keys = {"task_type", "route_intent", "prompt_name", "prompt_version"}
         active_meta = {k: cleaned[k] for k in meta_keys if cleaned.get(k)}
         if not active_meta:
             return rows
@@ -157,8 +157,6 @@ class _TraceReadCore:
             "route_intent": Trace.route_intent,
             "prompt_name": Trace.prompt_name,
             "prompt_version": Trace.prompt_version,
-            "original_intent": Trace.original_intent,
-            "resolved_intent": Trace.resolved_intent,
             "agent_name": Trace.agent_name,
             "environment": Trace.environment,
             "user_id": Trace.user_id,
@@ -348,8 +346,6 @@ class _TraceReadCore:
             "llm_call_count": payload.get("llm_call_count"),
             "quality_score": payload.get("quality_score"),
             "user_feedback": payload.get("user_feedback"),
-            "original_intent": payload.get("original_intent"),
-            "resolved_intent": payload.get("resolved_intent"),
             "quality_detail": payload.get("quality_detail"),
         }
 

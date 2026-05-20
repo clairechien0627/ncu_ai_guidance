@@ -50,7 +50,7 @@ class FakeMetaSession:
     def query(self, *_args, **_kwargs):
         return FakeQuery([
             ("run-1", "document_extraction", None, "research_agent", "research_writer", "sha256:abc"),
-            ("run-2", "retrieval_qa", "retrieval", "retrieval_agent", "chat", "sha256:def"),
+            ("run-2", "retrieval_qa", "retrieval_agent", "retrieval_agent", "chat", "sha256:def"),
         ])
 
 
@@ -67,5 +67,4 @@ def test_hydrate_assistant_meta_uses_root_traces_by_assistant_turn():
     assert hydrated[1]["task_type"] == "document_extraction"
     assert hydrated[1]["trace_id"] == "run-1"
     assert hydrated[3]["agent_name"] == "retrieval_agent"
-    assert hydrated[3]["route_intent"] == "retrieval"
     assert hydrated[3]["prompt_version"] == "sha256:def"
