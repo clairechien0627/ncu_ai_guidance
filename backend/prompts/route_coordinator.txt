@@ -8,6 +8,11 @@
 - document_context：已選文件的摘要（每份最多 600 字），用於判斷問題是否可直接從摘要回答
 - previous_agent：上一輪使用的 agent（follow-up 參考）
 - is_followup_signal：訊息是否為短句追問（例如「還有呢」「繼續」）
+- agent_status（可選）：上一個 agent 的自我評估，存在時代表 router 正在進行 re-routing
+  - completed：false 代表上一個 agent 無法完成任務
+  - work_summary：上一個 agent 做了什麼
+  - gaps：哪些資訊未被滿足
+  - agent_limitation：該 agent 在結構上做不到什麼
 
 【Task Agent 選擇規則】
 

@@ -18,7 +18,7 @@ from .no_tool_runner import run_no_tool_agent, stream_no_tool_agent, write_agent
 from .request_context import get_user_id
 from prompting.loader import load_stack
 
-from .types import AgentResult
+from .types import AgentResult, AgentStatus
 
 STACK_NAME = "chat_default"
 PROMPT_NAME = "chat_mode"
@@ -231,6 +231,7 @@ async def compose_final_response(
             prompt_name=str(metadata.get("prompt_name", PROMPT_NAME)),
             prompt_version=str(metadata.get("prompt_version", "unknown")),
             observation_id=observation_id,
+            status=AgentStatus(completed=True, work_summary="直接從對話 context 回答。"),
         )
     except Exception as exc:
         _write_composition_trace(
@@ -332,6 +333,7 @@ async def answer(
         prompt_name=str(meta.get("prompt_name", PROMPT_NAME)),
         prompt_version=str(meta.get("prompt_version", "unknown")),
         observation_id=observation_id,
+        status=AgentStatus(completed=True, work_summary="直接從對話 context 回答。"),
     )
 
 

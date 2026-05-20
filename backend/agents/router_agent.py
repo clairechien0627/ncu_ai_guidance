@@ -17,7 +17,7 @@ from prompting.loader import load_stack
 from prompting.registry import get as get_prompt
 from prompting.registry import version as prompt_version
 
-from .types import AgentRoute, AgentResult
+from .types import AgentRoute, AgentResult, AgentStatus
 from .request_context import get_user_id
 from langfuse import observe, propagate_attributes
 import contextlib
@@ -337,6 +337,7 @@ async def _orchestrate(
     document_ids: list[int] | None = None,
     previous_agent: str | None = None,
     is_followup: bool = False,
+    agent_status: AgentStatus | None = None,
 ) -> RouterDecision:
     """Orchestrator LLM: decides which agent to invoke with full document context."""
     from observability import ainvoke_traced_generation
@@ -354,6 +355,12 @@ async def _orchestrate(
         "document_context": doc_context,
         "previous_agent": previous_agent,
         "is_followup_signal": is_followup,
+        "agent_status": {
+            "completed": agent_status.completed,
+            "work_summary": agent_status.work_summary,
+            "gaps": agent_status.gaps,
+            "agent_limitation": agent_status.agent_limitation,
+        } if agent_status else None,
         "available_agents": [
             "chat_agent", "retrieval_agent", "research_agent", "question_agent", "evaluation_agent",
         ],
@@ -455,6 +462,7 @@ async def _run_evaluation_agent(
             prompt_name="evaluation_agent",
             prompt_version=prompt_version("evaluation_agent"),
             observation_id=observation_id,
+            status=AgentStatus(completed=True, work_summary="完成品質評估。"),
         )
 
 
@@ -605,6 +613,32 @@ async def route_agent_message(
                     trace_id=step.trace_id,
                     use_mini=use_mini,
                 )
+                # Re-routing: if retrieval did not complete and docs are available,
+                # ask orchestrator whether to escalate to a different agent.
+                if not result.status.completed and document_ids and _hop_count + 1 < MAX_HANDOFFS:
+                    escalation_decision = await _orchestrate(
+                        user_message,
+                        has_docs=bool(document_ids),
+                        document_ids=document_ids,
+                        previous_agent=route.agent_name,
+                        agent_status=result.status,
+                    )
+                    if escalation_decision.agent_name != route.agent_name:
+                        escalation_route = _route_for_agent(
+                            escalation_decision.agent_name,
+                            document_ids,
+                            thread_id,
+                            evaluate_after=escalation_decision.evaluate_after,
+                        )
+                        return await route_agent_message(
+                            user_message,
+                            thread_id,
+                            document_ids,
+                            route=escalation_route,
+                            trace_id=trace_id,
+                            _hop_count=_hop_count + 1,
+                            use_mini=use_mini,
+                        )
             else:
                 result = await chat_agent.answer(
                     user_message,
@@ -620,18 +654,6 @@ async def route_agent_message(
                 end_time=datetime.now(timezone.utc), error=str(exc), user_id=get_user_id(),
             )
             raise
-
-        if result.next_agent_name and _hop_count + 1 < MAX_HANDOFFS:
-            handoff_route = _route_for_agent(result.next_agent_name, document_ids, thread_id)
-            return await route_agent_message(
-                user_message,
-                thread_id,
-                document_ids,
-                route=handoff_route,
-                trace_id=trace_id,
-                _hop_count=_hop_count + 1,
-                use_mini=use_mini,
-            )
 
         await asyncio.to_thread(
             _write_router_trace, trace_id, thread_id, document_ids, route,
@@ -764,22 +786,44 @@ async def route_agent_stream(
                 else:
                     yield item
         elif route.agent_name == "retrieval_agent":
-            async for item in retrieval_agent.stream(
+            _retrieval_result = await retrieval_agent.answer(
                 user_message,
                 thread_id,
                 document_ids,
                 observation_id=step.observation_id,
                 trace_id=step.trace_id,
                 use_mini=use_mini,
-            ):
-                token, is_done, sources = item
-                if is_done == "interrupt":
-                    yield item
+            )
+            # Re-routing: if retrieval did not complete and docs are available,
+            # ask orchestrator whether to escalate to a different agent.
+            if not _retrieval_result.status.completed and document_ids and _hop_count + 1 < MAX_HANDOFFS:
+                _escalation_decision = await _orchestrate(
+                    user_message,
+                    has_docs=bool(document_ids),
+                    document_ids=document_ids,
+                    previous_agent=route.agent_name,
+                    agent_status=_retrieval_result.status,
+                )
+                if _escalation_decision.agent_name != route.agent_name:
+                    _escalation_route = _route_for_agent(
+                        _escalation_decision.agent_name,
+                        document_ids,
+                        thread_id,
+                        evaluate_after=_escalation_decision.evaluate_after,
+                    )
+                    async for item in route_agent_stream(
+                        user_message,
+                        thread_id,
+                        document_ids,
+                        route=_escalation_route,
+                        trace_id=trace_id,
+                        _hop_count=_hop_count + 1,
+                        use_mini=use_mini,
+                    ):
+                        yield item
                     return
-                if is_done:
-                    last_sources = sources
-                else:
-                    yield item
+            yield _retrieval_result.response, False, []
+            last_sources = _retrieval_result.sources
         else:
             async for item in chat_agent.stream(
                 user_message, thread_id, document_ids,

@@ -34,7 +34,7 @@ def _seed_dataset(db):
         input=json.dumps({"messages": [{"role": "human", "content": "question"}]}),
         output=json.dumps({"answer": "old"}),
         expected_output=json.dumps({"answer": "expected"}),
-        context=json.dumps({"task_type": "retrieval_qa", "route_intent": "retrieval"}),
+        context=json.dumps({"task_type": "retrieval_qa", "agent_name": "retrieval_agent"}),
         is_archived=False,
         created_at=datetime(2026, 5, 18, 1, 1, 0),
     ))

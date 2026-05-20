@@ -8,7 +8,7 @@ from prompting.loader import load_stack
 
 from .no_tool_runner import run_no_tool_agent, stream_no_tool_agent, write_agent_span
 from observability import update_current_observation_io
-from .types import AgentResult
+from .types import AgentResult, AgentStatus
 
 STACK_NAME = "question_default"
 PROMPT_NAME = "question_skill"
@@ -147,6 +147,7 @@ async def answer(
         },
     )
 
+    _ev = evidence_sources or []
     return AgentResult(
         response=response,
         sources=sources,
@@ -155,6 +156,15 @@ async def answer(
         prompt_name=str(meta.get("prompt_name", PROMPT_NAME)),
         prompt_version=str(meta.get("prompt_version", "unknown")),
         observation_id=observation_id,
+        status=AgentStatus(
+            completed=True,
+            work_summary=f"根據 {len(_ev)} 個來源生成題目。",
+        ) if len(_ev) > 0 else AgentStatus(
+            completed=False,
+            work_summary="生成題目但缺乏充分文件依據。",
+            gaps=["缺少足夠的文件內容作為題目依據"],
+            agent_limitation="依賴 retrieval 提供 evidence",
+        ),
     )
 
 

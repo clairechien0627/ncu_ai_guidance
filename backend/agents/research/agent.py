@@ -21,7 +21,7 @@ from .research_graph import _hard_max_searches, _merge_stream_patch, _seed_keywo
 from .runtime_prompts import RESEARCH_BASE_STACK, research_base_stack_metadata
 from .state import ResearchGraphState, ResearchState, SearchStep
 from .task_planner import create_research_plan, fallback_research_plan
-from ..types import AgentResult
+from ..types import AgentResult, AgentStatus
 from ..no_tool_runner import write_agent_span
 
 logger = logging.getLogger(__name__)
@@ -933,6 +933,17 @@ async def run_research_task(
         _background_tasks.add(_task)
         _task.add_done_callback(_background_tasks.discard)
 
+        _unfilled_gaps = [
+            info.get("label") or slot
+            for slot, info in coverage_result.items()
+            if info.get("status") == "NOT_FILLED"
+        ]
+        _research_status = AgentStatus(
+            completed=len(_unfilled_gaps) == 0,
+            work_summary="完成多步驟研究分析。",
+            gaps=_unfilled_gaps,
+            agent_limitation="" if len(_unfilled_gaps) == 0 else "部分檢索項目未能找到足夠文件內容",
+        )
         return AgentResult(
             response=answer, sources=sources,
             task_type=str(metadata.get("task_type") or task_type),
@@ -941,6 +952,7 @@ async def run_research_task(
             prompt_version=str(metadata.get("prompt_version") or "unknown"),
             observation_id=observation_id,
             coverage_result=coverage_result,
+            status=_research_status,
         )
     except Exception as exc:
         logger.exception("run_research_task failed (observation_id=%s)", observation_id)

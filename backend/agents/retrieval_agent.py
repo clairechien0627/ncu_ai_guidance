@@ -6,7 +6,7 @@ from .runner import run_tool_agent_stream as _run_agent_stream
 from .no_tool_runner import write_agent_span
 from prompting.loader import load_stack
 
-from .types import AgentResult
+from .types import AgentResult, AgentStatus
 
 STACK_NAME = "retrieval_default"
 PROMPT_NAME = "retrieval_capability"
@@ -91,6 +91,7 @@ async def answer(
             output_data={"answer": response, "sources": sources},
             extra_metadata={"task_type": "retrieval_qa", "agent_name": AGENT_NAME},
         )
+    completed = bool(sources)
     return AgentResult(
         response=response,
         sources=sources,
@@ -99,6 +100,12 @@ async def answer(
         prompt_name=metadata.get("prompt_name", PROMPT_NAME),
         prompt_version=metadata.get("prompt_version", "unknown"),
         observation_id=observation_id,
+        status=AgentStatus(
+            completed=completed,
+            work_summary=f"從文件中搜尋相關內容，找到 {len(sources)} 個來源。" if completed else "搜尋文件但未找到相關內容。",
+            gaps=[] if completed else ["未找到與問題相關的文件片段"],
+            agent_limitation="" if completed else "單點查找，無法跨文件深度綜合分析",
+        ),
     )
 
 
