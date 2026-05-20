@@ -1,3 +1,4 @@
+from ids import new_id
 from collections.abc import AsyncIterator, Callable
 
 from .runner import run_tool_agent as _run_agent
@@ -64,7 +65,7 @@ async def answer(
     if resolved_intent and "resolved_intent" not in metadata:
         metadata["resolved_intent"] = resolved_intent
 
-    observation_id = observation_id or str(_uuid.uuid4())
+    observation_id = observation_id or new_id()
     agent_start = datetime.now(_tz.utc)
     if trace_id:
         write_agent_span(

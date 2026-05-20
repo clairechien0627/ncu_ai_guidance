@@ -1,3 +1,4 @@
+from ids import new_id
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 import asyncio
@@ -168,7 +169,7 @@ async def compose_final_response(
     chat calls; this one composes an already-computed task result and is meant
     for router-controlled plans.
     """
-    observation_id = observation_id or str(_uuid.uuid4())
+    observation_id = observation_id or new_id()
     stack = load_stack(STACK_NAME)
     metadata = {
         "task_type": COMPOSITION_TASK_TYPE,
@@ -277,7 +278,7 @@ async def answer(
     await _emit_stage(on_stage, "chat_agent: composing")
     from datetime import datetime, timezone as _tz
     import uuid as _uuid
-    observation_id = observation_id or str(_uuid.uuid4())
+    observation_id = observation_id or new_id()
     agent_start = datetime.now(_tz.utc)
     if trace_id:
         write_agent_span(

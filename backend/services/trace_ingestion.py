@@ -4,6 +4,7 @@ Events are first persisted in Postgres outbox rows. Redis is only used as a
 wakeup queue so traces remain recoverable when Redis is disabled or restarted.
 """
 from __future__ import annotations
+from ids import new_id
 
 import asyncio
 import json
@@ -66,7 +67,7 @@ class TraceEventIngestor:
         written = 0
         try:
             for event in rows:
-                event_id = event.get("event_id") or str(uuid.uuid4())
+                event_id = event.get("event_id") or new_id()
                 event_type = event.get("event_type")
                 body = event.get("body") or {}
                 if not event_type:

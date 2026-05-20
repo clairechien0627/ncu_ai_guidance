@@ -1,3 +1,4 @@
+from ids import new_id
 import re
 import uuid
 from collections.abc import AsyncIterator
@@ -67,7 +68,7 @@ async def answer(
         payload["evidence_context"] = evidence_context
 
     from datetime import datetime, timezone as _tz
-    observation_id = observation_id or str(uuid.uuid4())
+    observation_id = observation_id or new_id()
     agent_start = datetime.now(_tz.utc)
     if trace_id:
         write_agent_span(
@@ -113,7 +114,7 @@ async def answer(
         )
 
     if not _has_questions(response) or not _questions_have_varied_openings(response):
-        retry_observation_id = str(uuid.uuid4()) if observation_id else None
+        retry_observation_id = new_id() if observation_id else None
         r2, s2, _, _ = await run_no_tool_agent(
             user_message=user_message,
             thread_id=thread_id,

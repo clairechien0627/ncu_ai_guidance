@@ -1,5 +1,6 @@
 """Dataset replay experiments for Trace System v2."""
 from __future__ import annotations
+from ids import new_id
 
 import json
 import uuid
@@ -146,7 +147,7 @@ class RouterAgentCurrentAdapter(GeneratorAdapter):
         document_ids = _document_ids_from_context(input_obj, context)
         result = await route_agent_message(
             message,
-            kwargs.get("experiment_item_id") or kwargs.get("experiment_run_id") or str(uuid.uuid4()),
+            kwargs.get("experiment_item_id") or kwargs.get("experiment_run_id") or new_id(),
             document_ids,
             use_mini=bool((kwargs.get("runtime_config") or {}).get("use_mini")),
         )
@@ -270,7 +271,7 @@ class ExperimentRunService:
         if not items:
             return None
 
-        experiment_run_id = f"exp-{uuid.uuid4().hex}"
+        experiment_run_id = f"exp-{new_id()}"
         now = _utcnow()
         adapter = _generator_adapter(target_agent)
         adapter.validate_requested_config(model=model, prompt_name=prompt_name, prompt_version=prompt_version)
@@ -454,7 +455,7 @@ class ExperimentRunService:
         if not items:
             return None
 
-        eval_run_id = f"eval-{uuid.uuid4().hex}"
+        eval_run_id = f"eval-{new_id()}"
         now = _utcnow()
         eval_run = EvaluationRun(
             eval_run_id=eval_run_id,

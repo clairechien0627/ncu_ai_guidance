@@ -1,5 +1,6 @@
 """Repositories for normalized Trace System v2 tables."""
 from __future__ import annotations
+from ids import new_id
 
 import json
 import uuid
@@ -355,7 +356,7 @@ class ScoreRepository:
         if not isinstance(metadata, dict):
             metadata = {}
 
-        score_id = body.get("score_id") or str(uuid.uuid4())
+        score_id = body.get("score_id") or new_id()
         row = db.query(Score).filter(Score.score_id == score_id).first()
         if not isinstance(row, Score):
             row = None

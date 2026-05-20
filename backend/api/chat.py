@@ -4,6 +4,8 @@ import logging
 import uuid
 from typing import Optional
 
+from ids import new_id
+
 logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -156,7 +158,7 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
                 raise HTTPException(status_code=404, detail="Conversation not found")
             c.model = req.model
             return c
-        c = Conversation(model=req.model, thread_id=str(uuid.uuid4()))
+        c = Conversation(model=req.model, thread_id=new_id())
         db.add(c)
         db.commit()
         db.refresh(c)
@@ -180,7 +182,7 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
 
         prev_intent_sync = await asyncio.to_thread(_get_prev_intent)
         route = await classify_intent(req.message, req.document_ids, conv.thread_id, previous_intent=prev_intent_sync)
-        trace_id = str(uuid.uuid4())
+        trace_id = new_id()
         use_mini = _should_use_mini(req.model, route.intent, req.document_ids)
         result = await route_agent_message(
             req.message,
@@ -222,7 +224,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                 raise HTTPException(status_code=404, detail="Conversation not found")
             c.model = req.model
             return c
-        c = Conversation(model=req.model, thread_id=str(uuid.uuid4()))
+        c = Conversation(model=req.model, thread_id=new_id())
         db.add(c)
         db.commit()
         db.refresh(c)
@@ -247,7 +249,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
     prev_intent = await asyncio.to_thread(_get_prev_intent)
 
     route = await classify_intent(req.message, req.document_ids, conv.thread_id, previous_intent=prev_intent)
-    trace_id = str(uuid.uuid4())
+    trace_id = new_id()
     use_mini = _should_use_mini(req.model, route.intent, req.document_ids)
 
     async def event_stream():
@@ -265,7 +267,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
             "agent_observation_id": None,
         }
         yield f"data: {_json_dumps({'thread_id': conv.thread_id, **route_payload})}\n\n"
-        observation_id = str(uuid.uuid4())
+        observation_id = new_id()
         try:
             if route.intent == "research":
                 # Merged event queue: ("token", t) | ("stage", msg) | None (sentinel on done)

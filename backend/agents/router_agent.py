@@ -1,3 +1,4 @@
+from ids import new_id
 from collections.abc import AsyncIterator
 import asyncio
 from dataclasses import dataclass
@@ -410,7 +411,7 @@ def _build_execution_plan(
         steps.append(ExecutionStep(
             intent="retrieval",
             agent_name="retrieval_agent",
-            observation_id=str(_uuid_mod.uuid4()),
+            observation_id=new_id(),
             trace_id=trace_id,
             kind="evidence_collection",
             reason="question_requires_document_evidence",
@@ -418,7 +419,7 @@ def _build_execution_plan(
     steps.append(ExecutionStep(
         intent=intent,
         agent_name=agent_name,
-        observation_id=observation_id or str(_uuid_mod.uuid4()),
+        observation_id=observation_id or new_id(),
         trace_id=trace_id,
         kind="primary",
         reason=f"route_intent={intent}",
@@ -427,7 +428,7 @@ def _build_execution_plan(
         steps.append(ExecutionStep(
             intent="chat",
             agent_name="chat_agent",
-            observation_id=str(_uuid_mod.uuid4()),
+            observation_id=new_id(),
             trace_id=trace_id,
             kind="composition",
             reason="final_composition",
@@ -669,7 +670,7 @@ async def route_agent_message(
         route = route or await classify_intent(user_message, document_ids, thread_id)
 
         # Router is the root trace; task agents become its children.
-        trace_id = trace_id or str(_uuid_mod.uuid4())
+        trace_id = trace_id or new_id()
         plan = _build_execution_plan(
             route,
             trace_id=trace_id,
@@ -832,7 +833,7 @@ async def route_agent_stream(
 
         route = route or await classify_intent(user_message, document_ids, thread_id)
 
-        trace_id = trace_id or str(_uuid_mod.uuid4())
+        trace_id = trace_id or new_id()
         plan = _build_execution_plan(
             route,
             trace_id=trace_id,

@@ -1,5 +1,6 @@
 """Persistent evaluation run pipeline for Trace System v2."""
 from __future__ import annotations
+from ids import new_id
 
 import json
 import uuid
@@ -278,7 +279,7 @@ class EvaluationRunService:
             trace_ids += [t.observation_id for t in legacy]
         if not trace_ids:
             return None
-        eval_run_id = f"eval-{uuid.uuid4().hex}"
+        eval_run_id = f"eval-{new_id()}"
         now = _utcnow()
         run = EvaluationRun(
             eval_run_id=eval_run_id,
@@ -316,7 +317,7 @@ class EvaluationRunService:
         metadata: dict | None = None,
         commit: bool = True,
     ) -> EvaluationRun:
-        eval_run_id = f"eval-{uuid.uuid4().hex}"
+        eval_run_id = f"eval-{new_id()}"
         now = _utcnow()
         run = EvaluationRun(
             eval_run_id=eval_run_id,
@@ -366,7 +367,7 @@ class EvaluationRunService:
         if not items:
             return None
 
-        eval_run_id = f"eval-{uuid.uuid4().hex}"
+        eval_run_id = f"eval-{new_id()}"
         now = _utcnow()
         run = EvaluationRun(
             eval_run_id=eval_run_id,

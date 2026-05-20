@@ -1,3 +1,4 @@
+from ids import new_id
 """Extract structured summaries: agent handles RAG, then a second LLM call structures the output."""
 import asyncio
 import uuid
@@ -132,7 +133,7 @@ async def run_document_research_step1(
     on_stage: Callable[[str], None] | None = None,
 ) -> tuple[str, list[str], str]:
     """Run the expensive research graph only and return (raw_answer, sources, observation_id)."""
-    observation_id = str(uuid.uuid4())
+    observation_id = new_id()
     thread_id = _extraction_thread_id(document_id)
     logger.info("Step 1: agent RAG for document %d (observation_id=%s)", document_id, observation_id)
     await _emit_stage(on_stage, "Step 1 研究檢索中")

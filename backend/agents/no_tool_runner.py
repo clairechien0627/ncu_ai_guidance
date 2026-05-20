@@ -1,6 +1,7 @@
 """No-tool LLM execution for agents that must not call retrieval tools."""
 
 from __future__ import annotations
+from ids import new_id
 
 from datetime import datetime, timezone
 import contextlib
@@ -206,7 +207,7 @@ async def run_no_tool_agent(
     resolved_intent: str | None = None,
 ) -> tuple[str, list[str], dict, str]:
     """Run one no-tool LLM call and persist a local trace row."""
-    observation_id = observation_id or str(uuid.uuid4())
+    observation_id = observation_id or new_id()
     messages, metadata, inputs = _prepare_no_tool_call(
         user_message=user_message,
         stack_name=stack_name,
@@ -263,7 +264,7 @@ async def run_no_tool_agent(
                 _TEI.enqueue_sync([{
                     "event_type": "observation-create",
                     "body": {
-                        "observation_id": str(uuid.uuid4()),
+                        "observation_id": new_id(),
                         "trace_id": trace_id,
                         "thread_id": thread_id,
                         "parent_observation_id": observation_id,
@@ -328,7 +329,7 @@ async def stream_no_tool_agent(
     resolved_intent: str | None = None,
 ) -> AsyncIterator[str]:
     """Stream one no-tool LLM call token-by-token and persist a local trace row."""
-    observation_id = observation_id or str(uuid.uuid4())
+    observation_id = observation_id or new_id()
     messages, metadata, inputs = _prepare_no_tool_call(
         user_message=user_message,
         stack_name=stack_name,
@@ -387,7 +388,7 @@ async def stream_no_tool_agent(
                 _TEI.enqueue_sync([{
                     "event_type": "observation-create",
                     "body": {
-                        "observation_id": str(uuid.uuid4()),
+                        "observation_id": new_id(),
                         "trace_id": trace_id,
                         "thread_id": thread_id,
                         "parent_observation_id": observation_id,

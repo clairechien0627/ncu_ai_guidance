@@ -1,5 +1,6 @@
 """Dataset services for repeatable trace evaluations."""
 from __future__ import annotations
+from ids import new_id
 
 import json
 import uuid
@@ -96,7 +97,7 @@ class DatasetService:
     ) -> Dataset:
         now = _utcnow()
         row = Dataset(
-            dataset_id=f"dataset-{uuid.uuid4().hex}",
+            dataset_id=f"dataset-{new_id()}",
             name=name,
             description=description,
             source=source or "manual",
@@ -221,7 +222,7 @@ class DatasetService:
 
         now = _utcnow()
         row = DatasetItem(
-            dataset_item_id=f"item-{uuid.uuid4().hex}",
+            dataset_item_id=f"item-{new_id()}",
             dataset_id=dataset_id,
             input=_json_text(input),
             output=_json_text(output),
