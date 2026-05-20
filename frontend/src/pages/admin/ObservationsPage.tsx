@@ -114,14 +114,14 @@ export default function ObservationsPage() {
                   </td>
                   {/* Trace link — 點擊開側欄，不跳轉 */}
                   <td>
-                    {row.parent_run_id
+                    {row.parent_observation_id
                       ? <button
                           className="adm-cell-link"
                           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 11, fontFamily: 'var(--adm-font-mono)' }}
-                          onClick={() => setDrawerTraceId(row.parent_run_id!)}
-                          title={row.parent_run_id}
+                          onClick={() => setDrawerTraceId(row.parent_observation_id!)}
+                          title={row.parent_observation_id}
                         >
-                          {row.parent_run_id.slice(-8)} ↗
+                          {row.parent_observation_id.slice(-8)} ↗
                         </button>
                       : <span style={{ color: 'var(--adm-text-3)' }}>—</span>
                     }

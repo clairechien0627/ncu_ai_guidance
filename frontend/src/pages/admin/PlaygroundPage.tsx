@@ -32,7 +32,7 @@ function ChatTester() {
       setResult({
         response: data?.response ?? data?.answer ?? JSON.stringify(data),
         route: data?.route ?? data?.agent_name,
-        trace_id: data?.trace_id ?? data?.run_id,
+        trace_id: data?.trace_id,
         latency,
       })
     } catch (e: any) {

@@ -76,7 +76,7 @@ export interface TraceItem {
 
 export interface TraceDetail extends TraceItem {
   run_type?: string
-  parent_run_id?: string | null
+  parent_observation_id?: string | null
   thread_id?: string | null
   document_ids?: number[] | null
   inputs_raw?: unknown
@@ -135,7 +135,7 @@ export interface VersionCompare {
 export interface VersionCompareResult { v1: VersionCompare; v2: VersionCompare }
 
 export interface ObservationItem {
-  id: string; run_type: string; name: string; parent_run_id: string | null
+  id: string; run_type: string; name: string; parent_observation_id: string | null
   thread_id: string | null; start_time: string | null; latency: number | null
   prompt_tokens: number | null; completion_tokens: number | null
   error: string | null; input: string | null; output: string | null
