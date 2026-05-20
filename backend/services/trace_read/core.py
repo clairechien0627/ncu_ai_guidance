@@ -5,7 +5,7 @@ place while public read capabilities live in smaller service classes.
 """
 from __future__ import annotations
 
-from services.trace_read_common import *  # noqa: F401,F403
+from .common import *  # noqa: F401,F403
 
 
 class _TraceReadCore:

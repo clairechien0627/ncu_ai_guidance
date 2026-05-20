@@ -1,8 +1,8 @@
 """Session and user trace read operations."""
 from __future__ import annotations
 
-from services.trace_read_common import *  # noqa: F401,F403
-from services.trace_read_core import _TraceReadCore
+from .common import *  # noqa: F401,F403
+from .core import _TraceReadCore
 
 
 class TraceSessionUserReadService:

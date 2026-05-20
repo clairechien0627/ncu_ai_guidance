@@ -2,7 +2,7 @@
 
 Manual usage:
     python backend/scripts/traces/backfill_trace_v2.py --dry-run --limit 100
-    python backend/scripts/traces/backfill_trace_v2.py --run-id <trace_id>
+    python backend/scripts/traces/backfill_trace_v2.py --observation-id <observation_id>
 """
 from __future__ import annotations
 
@@ -38,8 +38,9 @@ QUALITY_DIMENSIONS = {
 
 
 def _agent_execution_root():
-    # Router runs ARE the roots; task/chain runs under them become observations.
-    return Trace.agent_name == "router_agent"
+    # New router traces are explicit roots. Older legacy traces used
+    # trace_id=None for top-level task executions before router-owned traces.
+    return or_(Trace.agent_name == "router_agent", Trace.trace_id.is_(None))
 
 
 def _parse_json(value: Any) -> Any:
@@ -192,17 +193,26 @@ def _score_bodies(trace: Trace) -> list[dict]:
     return list(bodies.values())
 
 
-def _root_query(db: Session, *, run_id: str | None, since: datetime | None):
+def _root_query(db: Session, *, observation_id: str | None, since: datetime | None):
     q = db.query(Trace).filter(_agent_execution_root())
-    if run_id:
-        q = q.filter(Trace.observation_id == run_id)
+    if observation_id:
+        q = q.filter(Trace.observation_id == observation_id)
     if since:
         q = q.filter(Trace.start_time >= since)
     return q.order_by(Trace.start_time.asc())
 
 
-def backfill(db: Session, *, dry_run: bool = False, limit: int | None = None, run_id: str | None = None, since: datetime | None = None) -> dict:
-    q = _root_query(db, run_id=run_id, since=since)
+def backfill(
+    db: Session,
+    *,
+    dry_run: bool = False,
+    limit: int | None = None,
+    observation_id: str | None = None,
+    run_id: str | None = None,
+    since: datetime | None = None,
+) -> dict:
+    # run_id is kept as a deprecated compatibility alias for older manual calls.
+    q = _root_query(db, observation_id=observation_id or run_id, since=since)
     if limit is not None:
         q = q.limit(limit)
     roots = q.all()
@@ -229,7 +239,7 @@ def backfill(db: Session, *, dry_run: bool = False, limit: int | None = None, ru
                 .all()
             )
             descendants.extend(children)
-            queue.extend(c.run_id for c in children)
+            queue.extend(c.observation_id for c in children)
 
         score_bodies = _score_bodies(root)
 
@@ -263,7 +273,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Backfill legacy traces into normalized v2 trace tables.")
     parser.add_argument("--dry-run", action="store_true", help="Count planned writes without changing the database.")
     parser.add_argument("--limit", type=int, default=None, help="Maximum number of root traces to process.")
-    parser.add_argument("--run-id", default=None, help="Backfill one root trace by run_id.")
+    parser.add_argument("--observation-id", default=None, help="Backfill one root trace by observation_id.")
+    parser.add_argument("--run-id", default=None, help="Deprecated alias for --observation-id.")
     parser.add_argument("--since", default=None, help="Only backfill root traces whose start_time is at or after this ISO timestamp.")
     return parser.parse_args()
 
@@ -276,7 +287,7 @@ def main() -> int:
             db,
             dry_run=args.dry_run,
             limit=args.limit,
-            run_id=args.run_id,
+            observation_id=args.observation_id or args.run_id,
             since=_parse_since(args.since),
         )
         print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))

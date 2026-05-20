@@ -33,13 +33,13 @@ def _patch_db_session(monkeypatch, SessionLocal):
     monkeypatch.setattr(evaluation_runs, "db_session", _db_session)
 
 
-def _trace(run_id: str, **kwargs) -> Trace:
+def _trace(observation_id: str, **kwargs) -> Trace:
     now = kwargs.pop("start_time", datetime(2026, 5, 18, 1, 0, 0))
     return Trace(
-        run_id=run_id,
-        parent_run_id=kwargs.pop("parent_run_id", None),
+        observation_id=observation_id,
+        trace_id=kwargs.pop("trace_id", None),
         run_type=kwargs.pop("run_type", "chain"),
-        name=kwargs.pop("name", run_id),
+        name=kwargs.pop("name", observation_id),
         start_time=now,
         end_time=kwargs.pop("end_time", now + timedelta(seconds=2)),
         agent_name=kwargs.pop("agent_name", "retrieval_agent"),
@@ -133,7 +133,7 @@ def test_dataset_eval_run_scores_snapshot_without_overwriting_trace(monkeypatch)
     try:
         run = db.query(EvaluationRun).filter(EvaluationRun.eval_run_id == eval_run_id).one()
         item = db.query(EvaluationRunItem).filter(EvaluationRunItem.eval_run_id == eval_run_id).one()
-        trace = db.query(Trace).filter(Trace.run_id == "t1").one()
+        trace = db.query(Trace).filter(Trace.observation_id == "t1").one()
         score = db.query(Score).filter(Score.execution_trace_id == eval_run_id, Score.name == "overall").one()
         metadata = json.loads(score.metadata_json)
 

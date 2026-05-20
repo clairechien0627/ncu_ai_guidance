@@ -183,14 +183,16 @@ def test_execution_plan_can_include_final_composition():
         prompt_name="research_writer",
         compose_after=True,
     )
-    plan = _build_execution_plan(route, router_run_id="router-run", task_run_id="research-run")
+    plan = _build_execution_plan(route, trace_id="trace-1", observation_id="research-obs")
 
     assert len(plan.steps) == 2
-    assert plan.primary_step.run_id == "research-run"
-    assert plan.primary_step.parent_run_id == "router-run"
+    assert plan.trace_id == "trace-1"
+    assert plan.primary_step.trace_id == "trace-1"
+    assert plan.primary_step.observation_id == "research-obs"
     assert plan.composition_step is not None
     assert plan.composition_step.agent_name == "chat_agent"
-    assert plan.composition_step.parent_run_id == "router-run"
+    assert plan.composition_step.trace_id == "trace-1"
+    assert plan.composition_step.observation_id != "research-obs"
 
 
 def test_execution_plan_does_not_compose_chat_routes():
@@ -200,7 +202,7 @@ def test_execution_plan_does_not_compose_chat_routes():
         prompt_name="chat_mode",
         compose_after=True,
     )
-    plan = _build_execution_plan(route, router_run_id="router-run", task_run_id="chat-run")
+    plan = _build_execution_plan(route, trace_id="trace-1", observation_id="chat-obs")
 
     assert len(plan.steps) == 1
     assert plan.composition_step is None
@@ -214,16 +216,17 @@ def test_execution_plan_collects_evidence_for_document_questions():
     )
     plan = _build_execution_plan(
         route,
-        router_run_id="router-run",
-        task_run_id="question-run",
+        trace_id="trace-1",
+        observation_id="question-obs",
         collect_evidence=True,
     )
 
     assert len(plan.steps) == 2
     assert plan.evidence_step is not None
     assert plan.evidence_step.intent == "retrieval"
+    assert plan.evidence_step.trace_id == "trace-1"
     assert plan.target_step.intent == "question"
-    assert plan.target_step.run_id == "question-run"
+    assert plan.target_step.observation_id == "question-obs"
 
 
 def test_keyword_routes_always_have_evaluate_after_false():
@@ -370,15 +373,16 @@ def test_chat_composition_is_no_tool_child_step(monkeypatch):
         ),
         thread_id="thread-1",
         document_ids=[1],
-        run_id="composition-run",
-        parent_run_id="router-run",
+        observation_id="composition-obs",
+        trace_id="trace-1",
     ))
 
     assert result.response == "formatted answer"
     assert result.task_type == COMPOSITION_TASK_TYPE
     assert result.route_intent == "chat"
-    assert result.trace_run_id == "composition-run"
-    assert writes[0][1]["parent_run_id"] == "router-run"
+    assert result.observation_id == "composition-obs"
+    assert writes[0][0][0] == "composition-obs"
+    assert writes[0][1]["trace_id"] == "trace-1"
     assert writes[-1][1]["output"]["answer"] == "formatted answer"
 
 
@@ -397,7 +401,7 @@ def test_router_message_can_compose_after_task_result(monkeypatch):
             route_intent="research",
             agent_name="research_agent",
             prompt_name="research_writer",
-            trace_run_id=kwargs.get("run_id"),
+            observation_id=kwargs.get("observation_id"),
         )
 
     async def fake_compose(**kwargs):
@@ -409,7 +413,7 @@ def test_router_message_can_compose_after_task_result(monkeypatch):
             route_intent="chat",
             agent_name="chat_agent",
             prompt_name="chat_mode",
-            trace_run_id=kwargs.get("run_id"),
+            observation_id=kwargs.get("observation_id"),
         )
 
     monkeypatch.setattr("agents.router_agent._write_router_trace", lambda *_, **__: None)
@@ -428,13 +432,15 @@ def test_router_message_can_compose_after_task_result(monkeypatch):
         "thread-1",
         [1],
         route=route,
-        run_id="router-run",
+        trace_id="trace-1",
     ))
 
     assert result.response == "composed answer"
     assert [name for name, _ in calls] == ["research", "compose"]
-    assert calls[0][1]["parent_run_id"] == "router-run"
-    assert calls[1][1]["parent_run_id"] == "router-run"
+    assert calls[0][1]["trace_id"] == "trace-1"
+    assert calls[0][1]["observation_id"]
+    assert calls[1][1]["trace_id"] == "trace-1"
+    assert calls[1][1]["observation_id"]
     assert calls[1][1]["task_result"].response == "research answer"
 
 
@@ -453,7 +459,7 @@ def test_router_document_question_collects_evidence_then_questions(monkeypatch):
             route_intent="question",
             agent_name="retrieval_agent",
             prompt_name="retrieval_capability",
-            trace_run_id=kwargs.get("run_id"),
+            observation_id=kwargs.get("observation_id"),
         )
 
     async def fake_question(*args, **kwargs):
@@ -465,7 +471,7 @@ def test_router_document_question_collects_evidence_then_questions(monkeypatch):
             route_intent="question",
             agent_name="question_agent",
             prompt_name="question_skill",
-            trace_run_id=kwargs.get("run_id"),
+            observation_id=kwargs.get("observation_id"),
         )
 
     monkeypatch.setattr("agents.router_agent._write_router_trace", lambda *_, **__: None)
@@ -483,7 +489,7 @@ def test_router_document_question_collects_evidence_then_questions(monkeypatch):
         "thread-1",
         [1],
         route=route,
-        run_id="router-run",
+        trace_id="trace-1",
     ))
 
     assert result.response == "Q1? Q2?"
@@ -491,8 +497,10 @@ def test_router_document_question_collects_evidence_then_questions(monkeypatch):
     assert calls[0][1]["route_intent"] == "question"
     assert calls[1][1]["evidence_context"] == "evidence bundle"
     assert calls[1][1]["evidence_sources"] == ["paper.pdf p.2"]
-    assert calls[0][1]["parent_run_id"] == "router-run"
-    assert calls[1][1]["parent_run_id"] == "router-run"
+    assert calls[0][1]["trace_id"] == "trace-1"
+    assert calls[0][1]["observation_id"]
+    assert calls[1][1]["trace_id"] == "trace-1"
+    assert calls[1][1]["observation_id"]
 
 
 def test_research_retriever_uses_task_context_fields(monkeypatch):

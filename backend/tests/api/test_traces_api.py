@@ -20,8 +20,8 @@ def make_trace(**overrides):
     now = datetime(2026, 5, 2, 1, 0, tzinfo=timezone.utc)
     values = {
         "id": 1,
-        "run_id": "run-1",
-        "parent_run_id": None,
+        "observation_id": "run-1",
+        "trace_id": None,
         "run_type": "chain",
         "name": "chain",
         "inputs": json.dumps({"messages": [{"content": "hello"}]}),
@@ -60,6 +60,8 @@ def make_trace(**overrides):
         "quality_score": None,
         "user_feedback": None,
         "display": json.dumps({"answer": "final answer"}),
+        "input_cost": None,
+        "output_cost": None,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -99,9 +101,9 @@ def test_trace_payload_preserves_additive_trace_metadata():
 def test_grouped_trace_stats_keeps_unknown_bucket():
     rows = _grouped_trace_stats(
         [
-            make_trace(run_id="a", route_intent="retrieval", error=None, quality_score=4, user_feedback="useful"),
-            make_trace(run_id="b", route_intent="retrieval", error="boom", end_time=None, quality_score=2),
-            make_trace(run_id="c", route_intent=None, prompt_tokens=None, completion_tokens=None),
+            make_trace(observation_id="a", route_intent="retrieval", error=None, quality_score=4, user_feedback="useful"),
+            make_trace(observation_id="b", route_intent="retrieval", error="boom", end_time=None, quality_score=2),
+            make_trace(observation_id="c", route_intent=None, prompt_tokens=None, completion_tokens=None),
         ],
         "route_intent",
     )
@@ -118,9 +120,9 @@ def test_grouped_trace_stats_keeps_unknown_bucket():
 def test_grouped_prompt_version_stats_separates_versions():
     rows = _grouped_prompt_version_stats(
         [
-            make_trace(run_id="a", prompt_name="research_writer", prompt_version="sha256:a", quality_score=5),
-            make_trace(run_id="b", prompt_name="research_writer", prompt_version="sha256:b", error="boom", quality_score=2),
-            make_trace(run_id="c", prompt_name="research_writer", prompt_version="sha256:a", quality_score=3, user_feedback="ok"),
+            make_trace(observation_id="a", prompt_name="research_writer", prompt_version="sha256:a", quality_score=5),
+            make_trace(observation_id="b", prompt_name="research_writer", prompt_version="sha256:b", error="boom", quality_score=2),
+            make_trace(observation_id="c", prompt_name="research_writer", prompt_version="sha256:a", quality_score=3, user_feedback="ok"),
         ],
     )
 

@@ -14,7 +14,7 @@ from services.evaluation_runs import EvaluationRunService
 from services.evaluation_worker import EvaluationWorker
 from services.experiments import ExperimentRunService
 from services.trace_repositories import ScoreRepository
-from services.trace_read_service import TraceReadService
+from services.trace_read.service import TraceReadService
 
 logger = logging.getLogger(__name__)
 

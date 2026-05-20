@@ -23,12 +23,12 @@ def _session_factory():
     return sessionmaker(bind=engine)
 
 
-def _trace(run_id: str, quality_score: float | None = None) -> Trace:
+def _trace(observation_id: str, quality_score: float | None = None) -> Trace:
     now = datetime(2026, 5, 18, 1, 0, 0)
     return Trace(
-        run_id=run_id,
+        observation_id=observation_id,
         run_type="chain",
-        name=run_id,
+        name=observation_id,
         start_time=now,
         end_time=now + timedelta(seconds=2),
         agent_name="retrieval_agent",

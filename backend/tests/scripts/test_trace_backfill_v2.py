@@ -15,13 +15,13 @@ def _session_factory():
     return sessionmaker(bind=engine)
 
 
-def _trace(run_id: str, **kwargs) -> Trace:
+def _trace(observation_id: str, **kwargs) -> Trace:
     now = kwargs.pop("start_time", datetime(2026, 5, 18, 1, 0, 0))
     return Trace(
-        run_id=run_id,
-        parent_run_id=kwargs.pop("parent_run_id", None),
+        observation_id=observation_id,
+        trace_id=kwargs.pop("trace_id", None),
         run_type=kwargs.pop("run_type", "chain"),
-        name=kwargs.pop("name", run_id),
+        name=kwargs.pop("name", observation_id),
         start_time=now,
         end_time=kwargs.pop("end_time", now + timedelta(seconds=2)),
         agent_name=kwargs.pop("agent_name", "retrieval_agent"),
@@ -48,7 +48,7 @@ def test_backfill_dry_run_does_not_write_v2_tables():
     db = SessionLocal()
     try:
         db.add(_trace("root-1", quality_score=4.0))
-        db.add(_trace("child-1", parent_run_id="root-1", run_type="llm"))
+        db.add(_trace("child-1", trace_id="root-1", run_type="llm"))
         db.commit()
 
         summary = backfill(db, dry_run=True)
@@ -73,7 +73,7 @@ def test_backfill_writes_idempotent_trace_observation_and_scores():
             quality_detail=json.dumps({"grounding": 3.0, "completeness": 5.0, "verdict": "pass"}),
             user_feedback="useful",
         ))
-        db.add(_trace("child-1", parent_run_id="root-1", run_type="llm", prompt_tokens=8, completion_tokens=2))
+        db.add(_trace("child-1", trace_id="root-1", run_type="llm", prompt_tokens=8, completion_tokens=2))
         db.commit()
 
         first = backfill(db, dry_run=False)
@@ -88,7 +88,7 @@ def test_backfill_writes_idempotent_trace_observation_and_scores():
         db.close()
 
 
-def test_backfill_filters_by_run_id_limit_and_since():
+def test_backfill_filters_by_observation_id_limit_and_since():
     SessionLocal = _session_factory()
     db = SessionLocal()
     try:
@@ -96,7 +96,7 @@ def test_backfill_filters_by_run_id_limit_and_since():
         db.add(_trace("new", start_time=datetime(2026, 5, 18, 1, 0, 0)))
         db.commit()
 
-        summary = backfill(db, dry_run=False, run_id="new", since=datetime(2026, 5, 18, 0, 0, 0), limit=1)
+        summary = backfill(db, dry_run=False, observation_id="new", since=datetime(2026, 5, 18, 0, 0, 0), limit=1)
 
         assert summary["roots_seen"] == 1
         assert db.query(TraceV2).filter(TraceV2.trace_id == "new").count() == 1

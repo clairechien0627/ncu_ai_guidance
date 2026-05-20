@@ -72,17 +72,39 @@ def test_score_config_validation_accepts_categorical_and_text_scores():
         db.close()
 
 
-def test_categorical_score_rejects_unknown_option():
+def test_verdict_accepts_free_text_values():
     SessionLocal = _session_factory()
     db = SessionLocal()
     try:
         ScoreRepository.seed_default_configs(db)
+        score = ScoreRepository.upsert_score(db, {
+            "score_id": "verdict-free-text",
+            "trace_id": "trace-1",
+            "name": "verdict",
+            "string_value": "unknown but useful evaluator note",
+            "data_type": "TEXT",
+        })
+        db.commit()
 
+        assert score.data_type == "TEXT"
+        assert score.string_value == "unknown but useful evaluator note"
+    finally:
+        db.close()
+
+
+def test_categorical_score_rejects_unknown_option_when_categories_are_configured():
+    SessionLocal = _session_factory()
+    db = SessionLocal()
+    try:
+        config = ScoreRepository.ensure_config(db, name="decision", data_type="CATEGORICAL")
+        config.data_type = "CATEGORICAL"
+        config.categories = json.dumps(["accept", "reject"])
+        db.flush()
         try:
             ScoreRepository.upsert_score(db, {
-                "score_id": "verdict-bad",
+                "score_id": "decision-bad",
                 "trace_id": "trace-1",
-                "name": "verdict",
+                "name": "decision",
                 "string_value": "unknown",
                 "data_type": "CATEGORICAL",
             })

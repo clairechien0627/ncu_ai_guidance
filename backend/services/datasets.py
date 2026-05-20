@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from db import Dataset, DatasetItem, Trace
-from services.trace_read_service import TraceReadService
+from services.trace_read.service import TraceReadService
 
 
 def _utcnow() -> datetime:

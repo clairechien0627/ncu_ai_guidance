@@ -9,7 +9,7 @@ from agents.research import trace_metadata as summary_trace_metadata
 from agents.research.task_planner import CoverageItemModel, ResearchPlan, _clean_plan, fallback_research_plan
 from prompting.loader import PROMPT_STACKS, load_stack
 from prompting.registry import list_known_names
-from prompts import get, resolve, select, version
+from prompting.registry import get, resolve, select, version
 
 
 CANONICAL_PROMPTS = [

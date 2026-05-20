@@ -50,7 +50,7 @@ def _write_router_trace(
     """Write or update a thin router-level trace entry (trace_id=None)."""
     import os
     from db import db_session, Trace
-    from observability.tracer import _get_default_environment
+    from services.trace_capture import _get_default_environment
     from services.trace_ingestion import TraceEventIngestor
 
     now = datetime.now(timezone.utc)

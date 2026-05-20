@@ -419,8 +419,6 @@ class LocalTracer(BaseCallbackHandler):
                 continue
             is_root = ev["run_id"] == self._root_observation_id
             parent_id = ev.get("parent_observation_id")
-            if is_root and self.trace_id:
-                parent_id = self.trace_id
             rows.append({
                 "run_id": ev["run_id"],
                 "parent_observation_id": parent_id,

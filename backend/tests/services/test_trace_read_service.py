@@ -8,12 +8,12 @@ from sqlalchemy.orm import sessionmaker
 
 from db import Observation, Score, Trace, TraceV2
 from db.session import Base
-from services.trace_read_core import _TraceReadCore
-from services.trace_read_detail import TraceDetailReadService
-from services.trace_read_payload import TraceLegacyAdapter, TracePayloadReadService
-from services.trace_read_sessions import TraceSessionUserReadService
-from services.trace_read_stats import TraceStatsReadService
-from services.trace_read_service import TraceReadService
+from services.trace_read.core import _TraceReadCore
+from services.trace_read.detail import TraceDetailReadService
+from services.trace_read.payload import TraceLegacyAdapter, TracePayloadReadService
+from services.trace_read.sessions import TraceSessionUserReadService
+from services.trace_read.stats import TraceStatsReadService
+from services.trace_read.service import TraceReadService
 
 
 def _session_factory():

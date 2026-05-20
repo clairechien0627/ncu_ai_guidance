@@ -840,7 +840,7 @@ async def run_research_task(
 
     tracer = None
     if trace_id:
-        from observability.tracer import LocalTracer
+        from services.trace_capture import LocalTracer
         tracer = LocalTracer(
             thread_id=thread_id,
             document_ids=document_ids,

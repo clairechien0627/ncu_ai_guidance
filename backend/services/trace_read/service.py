@@ -7,12 +7,12 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from services.trace_read_core import _TraceReadCore
-from services.trace_read_detail import TraceDetailReadService
-from services.trace_read_list import TraceListReadService
-from services.trace_read_payload import TraceLegacyAdapter, TracePayloadReadService
-from services.trace_read_sessions import TraceSessionUserReadService
-from services.trace_read_stats import TraceStatsReadService
+from .core import _TraceReadCore
+from .detail import TraceDetailReadService
+from .list import TraceListReadService
+from .payload import TraceLegacyAdapter, TracePayloadReadService
+from .sessions import TraceSessionUserReadService
+from .stats import TraceStatsReadService
 
 
 class TraceReadService:

@@ -65,7 +65,7 @@ def test_hydrate_assistant_meta_uses_root_traces_by_assistant_turn():
     hydrated = _hydrate_assistant_meta(1, messages, FakeMetaSession())
 
     assert hydrated[1]["task_type"] == "document_extraction"
-    assert hydrated[1]["trace_run_id"] == "run-1"
+    assert hydrated[1]["trace_id"] == "run-1"
     assert hydrated[3]["agent_name"] == "retrieval_agent"
     assert hydrated[3]["route_intent"] == "retrieval"
     assert hydrated[3]["prompt_version"] == "sha256:def"

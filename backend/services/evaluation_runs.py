@@ -103,7 +103,7 @@ def _trace_payload(trace: Trace) -> tuple[str, str, list[str], dict, dict]:
             break
     if not user_task:
         user_task = json.dumps(inputs, ensure_ascii=False)[:1200] if inputs else ""
-    extra_context = {"run_id": trace.observation_id, "agent_name": trace.agent_name}
+    extra_context = {"observation_id": trace.observation_id, "agent_name": trace.agent_name}
     return user_task, answer, sources, trace_summary, extra_context
 
 

@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from services.trace_read_core import _TraceReadCore
-from services.trace_read_common import Trace, legacy_trace_payload
+from .core import _TraceReadCore
+from .common import Trace, legacy_trace_payload
 
 
 class TraceLegacyAdapter:

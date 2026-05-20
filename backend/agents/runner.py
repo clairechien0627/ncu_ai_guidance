@@ -574,7 +574,7 @@ def _build_tracer(
     trace_id: str | None = None,
     parent_observation_id: str | None = None,
 ):
-    from observability.tracer import LocalTracer
+    from services.trace_capture import LocalTracer
     return LocalTracer(
         thread_id=thread_id,
         document_ids=document_ids,
