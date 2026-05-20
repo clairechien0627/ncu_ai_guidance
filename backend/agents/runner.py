@@ -70,6 +70,7 @@ def _get_abstracts(document_ids: list[int] | None) -> list[dict]:
 
 _checkpointer: AsyncPostgresSaver | None = None
 _store: AsyncPostgresStore | None = None
+_pool = None  # AsyncConnectionPool — kept for shutdown
 _tool_agent = None
 _tool_agent_mini = None
 _llm = None
@@ -241,7 +242,7 @@ async def _memory_prompt(request: ModelRequest) -> str:
 
 async def setup_checkpointer():
     """Initialize AsyncPostgresSaver, AsyncPostgresStore, and build the agent. Called once at startup."""
-    global _checkpointer, _store, _tool_agent, _tool_agent_mini
+    global _checkpointer, _store, _tool_agent, _tool_agent_mini, _pool
     from psycopg_pool import AsyncConnectionPool
     from langchain_openai import AzureOpenAIEmbeddings
     pool = AsyncConnectionPool(
@@ -250,6 +251,7 @@ async def setup_checkpointer():
         open=False,
     )
     await pool.open()
+    _pool = pool
     _checkpointer = AsyncPostgresSaver(
         pool,
         serde=JsonPlusSerializer(allowed_msgpack_modules=[
@@ -339,6 +341,18 @@ def get_checkpointer() -> AsyncPostgresSaver | None:
 
 def get_store() -> AsyncPostgresStore | None:
     return _store
+
+
+async def shutdown_checkpointer() -> None:
+    """Close the shared AsyncConnectionPool used by checkpointer and store."""
+    global _pool
+    if _pool is not None:
+        try:
+            await _pool.close()
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("checkpointer pool close failed: %s", exc)
+        _pool = None
 
 
 # ── Human-in-the-loop helpers ─────────────────────────────────────────────────

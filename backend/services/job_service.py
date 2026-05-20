@@ -604,7 +604,7 @@ def reset_stuck_processing():
     with db_session() as db:
         stuck = db.query(Document).filter(Document.batch_status == "processing").all()
         for doc in stuck:
-            doc.batch_status = "summarized" if doc.summary_json else "pending"
+            doc.batch_status = "summarized" if (doc.extraction and doc.extraction.summary_json) else "pending"
         stuck_reindex = db.query(Document).filter(Document.status == "processing").all()
         for doc in stuck_reindex:
             doc.status = "error"

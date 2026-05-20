@@ -29,7 +29,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from db import create_tables
-from agents.runner import setup_checkpointer
+from agents.runner import setup_checkpointer, shutdown_checkpointer
 from services import job_service
 from api import documents, summaries, jobs, chat, traces, health, prompts, system, auth, users as users_api
 
@@ -93,6 +93,7 @@ async def lifespan(app: FastAPI):
     await stop_trace_ingestion_worker()
     job_service.mark_all_interrupted()
     await job_service.shutdown_workers()
+    await shutdown_checkpointer()
     await close_redis()
     # Signal all active research graph runs to stop at the next superstep boundary.
     from agents.research.agent import request_all_drain

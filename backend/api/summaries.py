@@ -42,7 +42,7 @@ async def extract_summary(doc_id: int, db: Session = Depends(get_db)):
     if job_service.jobs_has_active(doc_id):
         return {"id": doc_id, "filename": doc.filename, "queued": True}
 
-    on_failure = "restore_summarized" if doc.summary_json else "error"
+    on_failure = "restore_summarized" if (doc.extraction and doc.extraction.summary_json) else "error"
     doc.batch_status = "processing"
     db.commit()
 
@@ -64,12 +64,12 @@ async def extract_summary_step(step: str, doc_id: int, db: Session = Depends(get
     ).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found or not ready")
-    if step in {"step2", "step3"} and not doc.raw_research_answer:
+    if step in {"step2", "step3"} and not (doc.extraction and doc.extraction.raw_research_answer):
         raise HTTPException(status_code=400, detail="請先執行 Step 1，才能重跑 Step 2 或 Step 3")
     if job_service.jobs_has_active(doc_id):
         return {"id": doc_id, "filename": doc.filename, "queued": True}
 
-    on_failure = "restore_summarized" if doc.summary_json else "error"
+    on_failure = "restore_summarized" if (doc.extraction and doc.extraction.summary_json) else "error"
     doc.batch_status = "processing"
     db.commit()
 

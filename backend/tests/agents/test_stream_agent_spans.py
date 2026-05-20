@@ -149,7 +149,12 @@ def test_retrieval_stream_no_span_without_trace_id():
 
 def test_route_agent_stream_evaluate_after_passes_exclude_observation_id():
     """Background evaluation must receive exclude_observation_id=step.observation_id
-    so it does not re-evaluate the observation currently being written."""
+    so it does not re-evaluate the observation currently being written.
+
+    This test patches _run_evaluation_agent directly to capture kwargs,
+    then verifies the coroutine passed to _fire_and_forget carries the
+    correct exclude_observation_id (matching the primary step's observation_id).
+    """
     from agents.types import AgentRoute
 
     fake_route = AgentRoute(
@@ -166,15 +171,27 @@ def test_route_agent_stream_evaluate_after_passes_exclude_observation_id():
         yield ("hi", False, [])
         yield ("", True, [])
 
-    fire_forget_calls: list = []
+    eval_kwargs_captured: list[dict] = []
+
+    async def fake_run_evaluation_agent(thread_id, **kwargs):
+        eval_kwargs_captured.append({"thread_id": thread_id, **kwargs})
+        from agents.types import AgentResult
+        return AgentResult(
+            response="ok", sources=[], task_type="evaluation",
+            route_intent="evaluation", agent_name="evaluation_agent",
+            prompt_name="eval", prompt_version="v1", observation_id="eval-obs",
+        )
+
+    # Collect coroutines from _fire_and_forget, run them separately after main loop exits
+    deferred_coros: list = []
 
     def capture_fire_forget(coro):
-        fire_forget_calls.append(coro)
-        coro.close()
+        deferred_coros.append(coro)
 
     with patch("agents.router_agent.classify_intent", return_value=fake_route), \
          patch("agents.router_agent._write_router_trace"), \
          patch("agents.router_agent._fire_and_forget", side_effect=capture_fire_forget), \
+         patch("agents.router_agent._run_evaluation_agent", side_effect=fake_run_evaluation_agent), \
          patch("agents.chat_agent.stream", side_effect=fake_chat_stream):
 
         from agents.router_agent import route_agent_stream
@@ -184,7 +201,19 @@ def test_route_agent_stream_evaluate_after_passes_exclude_observation_id():
             trace_id="trace-1",
         )))
 
-    assert len(fire_forget_calls) >= 1, "evaluate_after should call _fire_and_forget"
-    coro = fire_forget_calls[0]
-    assert "evaluation" in coro.__qualname__.lower(), \
-        f"expected evaluation coroutine, got {coro.__qualname__}"
+    # Run deferred coroutines in a fresh event loop (outside the one above)
+    for coro in deferred_coros:
+        run(coro)
+
+    assert len(eval_kwargs_captured) == 1, "evaluate_after should trigger exactly one evaluation"
+    kwargs = eval_kwargs_captured[0]
+
+    # THE KEY CONTRACT: exclude_observation_id must be set and must not be None
+    assert "exclude_observation_id" in kwargs, \
+        "exclude_observation_id missing from _run_evaluation_agent call"
+    assert kwargs["exclude_observation_id"] is not None, \
+        "exclude_observation_id must not be None — would evaluate wrong trace"
+
+    # It must equal the primary step's observation_id (not the trace root)
+    assert kwargs["exclude_observation_id"] != "trace-1", \
+        "exclude_observation_id must be step.observation_id, not trace_id"

@@ -394,7 +394,8 @@ def export_document(doc_id: int, db: Session = Depends(get_db)):
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    summary = json.loads(doc.summary_json) if doc.summary_json else None
+    _ext = doc.extraction
+    summary = json.loads(_ext.summary_json) if _ext and _ext.summary_json else None
     metadata = {
         "id": doc.id,
         "filename": doc.filename,
