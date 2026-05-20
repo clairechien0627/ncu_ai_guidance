@@ -13,10 +13,10 @@ import type { ConversationItem } from '../api'
 interface SidebarProps {
   conversations: ConversationItem[]
   onNewChat: () => void
-  onLoadConversation: (id: number) => void
-  onDeleteConversation: (id: number) => void
-  onRenameConversation?: (id: number, title: string) => void
-  activeConversationId: number | null
+  onLoadConversation: (threadId: string) => void
+  onDeleteConversation: (threadId: string) => void
+  onRenameConversation?: (threadId: string, title: string) => void
+  activeThreadId: string | null
   loading: boolean
   collapsed: boolean
   onToggleCollapse: () => void
@@ -27,27 +27,27 @@ export default function Sidebar({
   onNewChat,
   onLoadConversation,
   onDeleteConversation,
-  activeConversationId,
+  activeThreadId,
   loading,
   collapsed,
   onToggleCollapse,
 }: SidebarProps) {
   const [query, setQuery] = useState('')
-  const [confirmId, setConfirmId] = useState<number | null>(null)
+  const [confirmId, setConfirmId] = useState<string | null>(null)
 
   const filtered = query.trim()
     ? conversations.filter((c) =>
-        (c.title ?? `Chat #${c.id}`).toLowerCase().includes(query.toLowerCase())
+        (c.title ?? 'New chat').toLowerCase().includes(query.toLowerCase())
       )
     : conversations
 
-  const handleDeleteClick = (e: React.MouseEvent, id: number) => {
+  const handleDeleteClick = (e: React.MouseEvent, threadId: string) => {
     e.stopPropagation()
-    if (confirmId === id) {
-      onDeleteConversation(id)
+    if (confirmId === threadId) {
+      onDeleteConversation(threadId)
       setConfirmId(null)
     } else {
-      setConfirmId(id)
+      setConfirmId(threadId)
     }
   }
 
@@ -108,14 +108,14 @@ export default function Sidebar({
             ) : (
               filtered.map((conv) => (
                 <div
-                  key={conv.id}
-                  className={`conv-item ${activeConversationId === conv.id ? 'selected' : ''}`}
-                  onClick={() => { if (!loading) { setConfirmId(null); onLoadConversation(conv.id) } }}
+                  key={conv.thread_id}
+                  className={`conv-item ${activeThreadId === conv.thread_id ? 'selected' : ''}`}
+                  onClick={() => { if (!loading) { setConfirmId(null); onLoadConversation(conv.thread_id) } }}
                 >
                   <MessageSquare size={13} className="conv-icon" />
                   <div className="conv-info">
                     <span className="conv-title">
-                      {conv.title ?? `Chat #${conv.id}`}
+                      {conv.title ?? 'New chat'}
                     </span>
                     <span className="conv-meta-row">
                       <span className="conv-date">
@@ -129,15 +129,15 @@ export default function Sidebar({
                     </span>
                   </div>
 
-                  {confirmId === conv.id ? (
+                  {confirmId === conv.thread_id ? (
                     <div className="conv-confirm-row" onClick={(e) => e.stopPropagation()}>
-                      <button className="conv-confirm-yes" onClick={(e) => handleDeleteClick(e, conv.id)}>Delete</button>
+                      <button className="conv-confirm-yes" onClick={(e) => handleDeleteClick(e, conv.thread_id)}>Delete</button>
                       <button className="conv-confirm-no" onClick={cancelConfirm}>Cancel</button>
                     </div>
                   ) : (
                     <button
                       className="conv-delete-btn"
-                      onClick={(e) => handleDeleteClick(e, conv.id)}
+                      onClick={(e) => handleDeleteClick(e, conv.thread_id)}
                       disabled={loading}
                       title="Delete chat"
                     >

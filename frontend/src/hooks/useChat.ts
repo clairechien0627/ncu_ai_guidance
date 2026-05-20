@@ -6,14 +6,14 @@ import type { Message } from '../types'
 interface UseChatOptions {
   model: string
   documents: DocumentItem[]
-  onConversationUpdate: (convId: number, title?: string) => void
+  onConversationUpdate: (threadId: string, title?: string) => void
 }
 
 export function useChat({ model, documents, onConversationUpdate }: UseChatOptions) {
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [conversationId, setConversationId] = useState<number | null>(null)
+  const [threadId, setThreadId] = useState<string | null>(null)
   const [selectedDocIds, setSelectedDocIds] = useState<number[]>([])
 
   const handleSend = useCallback(
@@ -36,11 +36,11 @@ export function useChat({ model, documents, onConversationUpdate }: UseChatOptio
         { role: 'assistant', content: '' },
       ])
 
-      const isFirst = !conversationId
+      const isFirst = !threadId
 
       await sendMessageStream(
         actualText,
-        conversationId,
+        threadId,
         model,
         selectedDocIds,
         (token) => {
@@ -50,7 +50,7 @@ export function useChat({ model, documents, onConversationUpdate }: UseChatOptio
             return next
           })
         },
-        (newConvId, sources, title, meta) => {
+        (newThreadId, sources, title, meta) => {
           setMessages((prev) => {
             const next = [...prev]
             next[next.length - 1] = {
@@ -67,9 +67,9 @@ export function useChat({ model, documents, onConversationUpdate }: UseChatOptio
             }
             return next
           })
-          setConversationId(newConvId)
+          setThreadId(newThreadId)
           setLoading(false)
-          onConversationUpdate(newConvId, isFirst ? (title ?? undefined) : undefined)
+          onConversationUpdate(newThreadId, isFirst ? (title ?? undefined) : undefined)
         },
         (msg) => { setError(msg); setLoading(false) },
         (meta: ChatResponse) => {
@@ -105,14 +105,14 @@ export function useChat({ model, documents, onConversationUpdate }: UseChatOptio
         },
       )
     },
-    [loading, conversationId, model, selectedDocIds, documents, onConversationUpdate],
+    [loading, threadId, model, selectedDocIds, documents, onConversationUpdate],
   )
 
   return {
     messages, setMessages,
     loading,
     error, setError,
-    conversationId, setConversationId,
+    threadId, setThreadId,
     selectedDocIds, setSelectedDocIds,
     handleSend,
   }

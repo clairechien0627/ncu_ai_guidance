@@ -34,7 +34,7 @@ export interface UploadResponse {
 }
 
 export interface ChatResponse {
-  conversation_id: number
+  thread_id: string
   response: string
   sources: string[]
   mode?: string | null
@@ -87,14 +87,15 @@ export const renameDocument = async (id: number, newTitle: string): Promise<{ fi
 
 export interface ConversationItem {
   id: number
+  thread_id: string
   created_at: string
   message_count: number
   model: string
   title: string | null
 }
 
-export const generateConversationTitle = async (id: number): Promise<string | null> => {
-  const { data } = await api.post<{ title: string | null }>(`/conversations/${id}/title`)
+export const generateConversationTitle = async (threadId: string): Promise<string | null> => {
+  const { data } = await api.post<{ title: string | null }>(`/conversations/${threadId}/title`)
   return data.title
 }
 
@@ -103,17 +104,17 @@ export const getConversations = async (): Promise<ConversationItem[]> => {
   return data
 }
 
-export const deleteConversation = async (id: number): Promise<void> => {
-  await api.delete(`/conversations/${id}`)
+export const deleteConversation = async (threadId: string): Promise<void> => {
+  await api.delete(`/conversations/${threadId}`)
 }
 
-export const updateConversationTitle = async (id: number, title: string): Promise<string> => {
-  const { data } = await api.patch<{ title: string }>(`/conversations/${id}/title`, { title })
+export const updateConversationTitle = async (threadId: string, title: string): Promise<string> => {
+  const { data } = await api.patch<{ title: string }>(`/conversations/${threadId}/title`, { title })
   return data.title
 }
 
 export const getConversationMessages = async (
-  convId: number,
+  threadId: string,
 ): Promise<{
   role: string
   content: string
@@ -124,7 +125,7 @@ export const getConversationMessages = async (
   prompt_version?: string | null
   trace_id?: string | null
 }[]> => {
-  const { data } = await api.get(`/conversations/${convId}/messages`)
+  const { data } = await api.get(`/conversations/${threadId}/messages`)
   return data
 }
 
@@ -1035,11 +1036,11 @@ export const runBackfill = async (params: { dry_run?: boolean; limit?: number } 
 
 export const sendMessageStream = async (
   message: string,
-  conversationId: number | null,
+  threadId: string | null,
   model: string,
   documentIds: number[],
   onToken: (token: string) => void,
-  onDone: (conversationId: number, sources: string[], title: string | null, meta?: ChatResponse) => void,
+  onDone: (threadId: string, sources: string[], title: string | null, meta?: ChatResponse) => void,
   onError: (msg: string) => void,
   onMeta?: (meta: ChatResponse) => void,
   onStage?: (stage: string) => void,
@@ -1054,7 +1055,7 @@ export const sendMessageStream = async (
     },
     body: JSON.stringify({
       message,
-      conversation_id: conversationId,
+      thread_id: threadId,
       model,
       document_ids: documentIds.length > 0 ? documentIds : null,
     }),
@@ -1067,7 +1068,7 @@ export const sendMessageStream = async (
 
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
-  let convId = conversationId
+  let currentThreadId = threadId
 
   while (true) {
     const { done, value } = await reader.read()
@@ -1079,14 +1080,14 @@ export const sendMessageStream = async (
       try {
         const data = JSON.parse(line.slice(6))
         if (data.error) { onError(data.error); return }
-        if (data.conversation_id) {
-          convId = data.conversation_id
+        if (data.thread_id) {
+          currentThreadId = data.thread_id
           onMeta?.(data)
         }
         if (data.clear) { onClear?.(); if (data.stage) onStage?.(data.stage) }
         else if (data.stage) onStage?.(data.stage)
         if (data.token) onToken(data.token)
-        if (data.done) onDone(convId!, data.sources ?? [], data.title ?? null, data)
+        if (data.done) onDone(currentThreadId!, data.sources ?? [], data.title ?? null, data)
       } catch { /* incomplete chunk */ }
     }
   }

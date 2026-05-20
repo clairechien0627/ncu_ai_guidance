@@ -193,6 +193,7 @@ class User(Base):
 class Conversation(Base):
     __tablename__ = "conversations"
     id = Column(Integer, primary_key=True, index=True)
+    thread_id = Column(String(36), unique=True, nullable=True, index=True)
     model = Column(String, default="openai")
     title = Column(String, nullable=True)
     message_count = Column(Integer, default=0)

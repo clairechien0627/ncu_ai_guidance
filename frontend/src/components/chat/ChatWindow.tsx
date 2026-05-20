@@ -34,8 +34,8 @@ interface ChatWindowProps {
   onToggleDocPanel: () => void
   onOpenDoc: (id: number) => void
   conversationTitle?: string | null
-  conversationId?: number | null
-  onRenameConversation?: (id: number, title: string) => void
+  threadId?: string | null
+  onRenameConversation?: (threadId: string, title: string) => void
 }
 
 export default function ChatWindow({
@@ -54,7 +54,7 @@ export default function ChatWindow({
   onToggleDocPanel,
   onOpenDoc,
   conversationTitle,
-  conversationId,
+  threadId,
   onRenameConversation,
 }: ChatWindowProps) {
   const [input, setInput] = useState('')
@@ -159,7 +159,7 @@ export default function ChatWindow({
       <div className="chat-topbar">
         {/* Title + pencil */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
-          {editingConvTitle && conversationId ? (
+          {editingConvTitle && threadId ? (
             <>
               <input
                 autoFocus
@@ -168,14 +168,14 @@ export default function ChatWindow({
                 onKeyDown={e => {
                   if (e.key === 'Enter') {
                     const t = convTitleDraft.trim()
-                    if (t && conversationId) onRenameConversation?.(conversationId, t)
+                    if (t && threadId) onRenameConversation?.(threadId, t)
                     setEditingConvTitle(false)
                   }
                   if (e.key === 'Escape') setEditingConvTitle(false)
                 }}
                 onBlur={() => {
                   const t = convTitleDraft.trim()
-                  if (t && conversationId) onRenameConversation?.(conversationId, t)
+                  if (t && threadId) onRenameConversation?.(threadId, t)
                   setEditingConvTitle(false)
                 }}
                 style={{
@@ -187,19 +187,19 @@ export default function ChatWindow({
             </>
           ) : (
             <>
-              {conversationId && (
+              {threadId && (
                 <span style={{
                   fontSize: 13, fontWeight: 600, color: '#1e293b',
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 280,
                 }}>
-                  {conversationTitle ?? `對話 #${conversationId}`}
+                  {conversationTitle ?? '新對話'}
                 </span>
               )}
-              {conversationId && (
+              {threadId && (
                 <button
                   className="topbar-icon-btn"
                   title="重新命名"
-                  onClick={() => { setConvTitleDraft(conversationTitle ?? `對話 #${conversationId}`); setEditingConvTitle(true) }}
+                  onClick={() => { setConvTitleDraft(conversationTitle ?? ''); setEditingConvTitle(true) }}
                   style={{ padding: 3 }}
                 >
                   <Pencil size={13} />

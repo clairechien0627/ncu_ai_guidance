@@ -47,7 +47,7 @@ def _interrupt_event(interrupts) -> dict:
 
 class ChatRequest(BaseModel):
     message: str
-    conversation_id: Optional[int] = None
+    thread_id: Optional[str] = None
     model: str = "gemini"
     document_ids: Optional[list[int]] = None
     user_id: Optional[str] = None
@@ -75,13 +75,13 @@ def _document_attachment_payload(db: Session, document_ids: list[int] | None) ->
     ]
 
 
-def _hydrate_message_attachments(conv_id: int, messages: list[dict], db: Session) -> list[dict]:
+def _hydrate_message_attachments(thread_id: str, messages: list[dict], db: Session) -> list[dict]:
     """Attach document chips to user messages using root trace document_ids."""
     traces = (
         db.query(Trace.document_ids)
         .filter(
             Trace.agent_name == "router_agent",
-            Trace.thread_id == str(conv_id),
+            Trace.thread_id == thread_id,
             Trace.document_ids.isnot(None),
         )
         .order_by(Trace.start_time.asc())
@@ -107,7 +107,7 @@ def _hydrate_message_attachments(conv_id: int, messages: list[dict], db: Session
     return hydrated
 
 
-def _hydrate_assistant_meta(conv_id: int, messages: list[dict], db: Session) -> list[dict]:
+def _hydrate_assistant_meta(thread_id: str, messages: list[dict], db: Session) -> list[dict]:
     """Attach route/trace metadata to assistant messages using router-level traces by turn."""
     traces = (
         db.query(
@@ -118,7 +118,7 @@ def _hydrate_assistant_meta(conv_id: int, messages: list[dict], db: Session) -> 
             Trace.prompt_name,
             Trace.prompt_version,
         )
-        .filter(Trace.agent_name == "router_agent", Trace.thread_id == str(conv_id))
+        .filter(Trace.agent_name == "router_agent", Trace.thread_id == thread_id)
         .order_by(Trace.start_time.asc())
         .all()
     )
@@ -150,13 +150,13 @@ def _hydrate_assistant_meta(conv_id: int, messages: list[dict], db: Session) -> 
 @router.post("/api/chat")
 async def chat(req: ChatRequest, db: Session = Depends(get_db)):
     def _setup_conv():
-        if req.conversation_id:
-            c = db.query(Conversation).filter(Conversation.id == req.conversation_id).first()
+        if req.thread_id:
+            c = db.query(Conversation).filter(Conversation.thread_id == req.thread_id).first()
             if not c:
                 raise HTTPException(status_code=404, detail="Conversation not found")
             c.model = req.model
             return c
-        c = Conversation(model=req.model)
+        c = Conversation(model=req.model, thread_id=str(uuid.uuid4()))
         db.add(c)
         db.commit()
         db.refresh(c)
@@ -168,23 +168,23 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
         set_user_id(req.user_id)
     try:
         def _get_prev_intent():
-            if not req.conversation_id:
+            if not req.thread_id:
                 return None
             last = (
                 db.query(Trace.route_intent)
-                .filter(Trace.agent_name == "router_agent", Trace.thread_id == str(conv.id))
+                .filter(Trace.agent_name == "router_agent", Trace.thread_id == conv.thread_id)
                 .order_by(Trace.start_time.desc())
                 .first()
             )
             return last[0] if last else None
 
         prev_intent_sync = await asyncio.to_thread(_get_prev_intent)
-        route = await classify_intent(req.message, req.document_ids, str(conv.id), previous_intent=prev_intent_sync)
+        route = await classify_intent(req.message, req.document_ids, conv.thread_id, previous_intent=prev_intent_sync)
         trace_id = str(uuid.uuid4())
         use_mini = _should_use_mini(req.model, route.intent, req.document_ids)
         result = await route_agent_message(
             req.message,
-            str(conv.id),
+            conv.thread_id,
             req.document_ids,
             route=route,
             trace_id=trace_id,
@@ -198,7 +198,7 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
 
     await asyncio.to_thread(lambda: (setattr(conv, "message_count", (conv.message_count or 0) + 2), db.commit()))
     return {
-        "conversation_id": conv.id,
+        "thread_id": conv.thread_id,
         "response": response,
         "sources": sources,
         "task_type": result.task_type,
@@ -216,30 +216,29 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
 @router.post("/api/chat/stream")
 async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
     def _setup_conv():
-        if req.conversation_id:
-            c = db.query(Conversation).filter(Conversation.id == req.conversation_id).first()
+        if req.thread_id:
+            c = db.query(Conversation).filter(Conversation.thread_id == req.thread_id).first()
             if not c:
                 raise HTTPException(status_code=404, detail="Conversation not found")
             c.model = req.model
             return c
-        c = Conversation(model=req.model)
+        c = Conversation(model=req.model, thread_id=str(uuid.uuid4()))
         db.add(c)
         db.commit()
         db.refresh(c)
         return c
 
     conv = await asyncio.to_thread(_setup_conv)
-    conv_id = conv.id
-    is_new = req.conversation_id is None
+    is_new = req.thread_id is None
 
     if req.user_id:
         set_user_id(req.user_id)
     def _get_prev_intent():
-        if not req.conversation_id:
+        if not req.thread_id:
             return None
         last_trace = (
             db.query(Trace.route_intent)
-            .filter(Trace.agent_name == "router_agent", Trace.thread_id == str(conv_id))
+            .filter(Trace.agent_name == "router_agent", Trace.thread_id == conv.thread_id)
             .order_by(Trace.start_time.desc())
             .first()
         )
@@ -247,7 +246,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
 
     prev_intent = await asyncio.to_thread(_get_prev_intent)
 
-    route = await classify_intent(req.message, req.document_ids, str(conv_id), previous_intent=prev_intent)
+    route = await classify_intent(req.message, req.document_ids, conv.thread_id, previous_intent=prev_intent)
     trace_id = str(uuid.uuid4())
     use_mini = _should_use_mini(req.model, route.intent, req.document_ids)
 
@@ -265,7 +264,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
             "trace_id": trace_id,
             "agent_observation_id": None,
         }
-        yield f"data: {_json_dumps({'conversation_id': conv_id, **route_payload})}\n\n"
+        yield f"data: {_json_dumps({'thread_id': conv.thread_id, **route_payload})}\n\n"
         observation_id = str(uuid.uuid4())
         try:
             if route.intent == "research":
@@ -280,7 +279,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
 
                 task = asyncio.create_task(
                     run_research_agent(
-                        req.message, str(conv_id), req.document_ids,
+                        req.message, conv.thread_id, req.document_ids,
                         observation_id=observation_id,
                         trace_id=trace_id,
                         on_stage=_push_stage,
@@ -328,7 +327,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
             else:
                 async for token, is_done, src in route_agent_stream(
                     req.message,
-                    str(conv_id),
+                    conv.thread_id,
                     req.document_ids,
                     route=route,
                     trace_id=trace_id,
@@ -382,6 +381,7 @@ def list_conversations(db: Session = Depends(get_db)):
     return [
         {
             "id": c.id,
+            "thread_id": c.thread_id,
             "created_at": c.created_at,
             "message_count": c.message_count or 0,
             "model": c.model or "openai",
@@ -391,14 +391,14 @@ def list_conversations(db: Session = Depends(get_db)):
     ]
 
 
-@router.post("/api/conversations/{conv_id}/title")
-async def create_conversation_title(conv_id: int, db: Session = Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+@router.post("/api/conversations/{thread_id}/title")
+async def create_conversation_title(thread_id: str, db: Session = Depends(get_db)):
+    conv = db.query(Conversation).filter(Conversation.thread_id == thread_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     if conv.title:
         return {"title": conv.title}
-    msgs = (await get_thread_messages(str(conv_id)))[:4]
+    msgs = (await get_thread_messages(thread_id))[:4]
     if not msgs:
         return {"title": None}
     try:
@@ -411,9 +411,9 @@ async def create_conversation_title(conv_id: int, db: Session = Depends(get_db))
         raise HTTPException(status_code=500, detail="Title generation failed")
 
 
-@router.patch("/api/conversations/{conv_id}/title")
-def update_conversation_title(conv_id: int, body: dict, db: Session = Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+@router.patch("/api/conversations/{thread_id}/title")
+def update_conversation_title(thread_id: str, body: dict, db: Session = Depends(get_db)):
+    conv = db.query(Conversation).filter(Conversation.thread_id == thread_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     title = (body.get("title") or "").strip()
@@ -430,19 +430,13 @@ def update_conversation_title(conv_id: int, body: dict, db: Session = Depends(ge
 #   1. Adding interrupt() calls inside runner.py agent nodes at decision points
 #   2. Removing the "not yet activated" response below
 
-@router.get("/api/conversations/{conv_id}/interrupt")
-async def get_conversation_interrupt(conv_id: int, db: Session = Depends(get_db)):
-    """Check whether the conversation agent is paused at a human-in-the-loop interrupt.
-
-    Returns:
-        has_interrupt: True if the agent is waiting for user input.
-        interrupt_id: Opaque identifier needed to resume.
-        value: The interrupt payload (e.g. proposed action, question for user).
-    """
-    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+@router.get("/api/conversations/{thread_id}/interrupt")
+async def get_conversation_interrupt(thread_id: str, db: Session = Depends(get_db)):
+    """Check whether the conversation agent is paused at a human-in-the-loop interrupt."""
+    conv = db.query(Conversation).filter(Conversation.thread_id == thread_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    pending = await get_pending_interrupt(str(conv_id))
+    pending = await get_pending_interrupt(thread_id)
     return {
         "has_interrupt": pending is not None,
         "interrupt_id": pending["interrupt_id"] if pending else None,
@@ -455,21 +449,17 @@ class ResumeRequest(BaseModel):
     interrupt_id: Optional[str] = None
 
 
-@router.post("/api/conversations/{conv_id}/resume")
-async def resume_conversation(conv_id: int, body: ResumeRequest, db: Session = Depends(get_db)):
-    """Resume an agent that is paused at a human-in-the-loop interrupt.
-
-    The frontend sends the user's decision/feedback as `response`.
-    The agent continues from the interrupt point with that value.
-    """
-    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+@router.post("/api/conversations/{thread_id}/resume")
+async def resume_conversation(thread_id: str, body: ResumeRequest, db: Session = Depends(get_db)):
+    """Resume an agent that is paused at a human-in-the-loop interrupt."""
+    conv = db.query(Conversation).filter(Conversation.thread_id == thread_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     async def resume_stream():
         saw_event = False
         async for token, is_done, sources in run_tool_agent_resume_stream(
-            str(conv_id),
+            thread_id,
             body.decisions,
             interrupt_id=body.interrupt_id,
         ):
@@ -487,9 +477,9 @@ async def resume_conversation(conv_id: int, body: ResumeRequest, db: Session = D
     return StreamingResponse(resume_stream(), media_type="text/event-stream")
 
 
-@router.delete("/api/conversations/{conv_id}")
-def delete_conversation(conv_id: int, db: Session = Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+@router.delete("/api/conversations/{thread_id}")
+def delete_conversation(thread_id: str, db: Session = Depends(get_db)):
+    conv = db.query(Conversation).filter(Conversation.thread_id == thread_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     db.delete(conv)
@@ -497,11 +487,11 @@ def delete_conversation(conv_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-@router.get("/api/conversations/{conv_id}/messages")
-async def get_messages(conv_id: int, db: Session = Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+@router.get("/api/conversations/{thread_id}/messages")
+async def get_messages(thread_id: str, db: Session = Depends(get_db)):
+    conv = db.query(Conversation).filter(Conversation.thread_id == thread_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    messages = await get_thread_messages(str(conv_id))
-    messages = _hydrate_message_attachments(conv_id, messages, db)
-    return _hydrate_assistant_meta(conv_id, messages, db)
+    messages = await get_thread_messages(thread_id)
+    messages = _hydrate_message_attachments(thread_id, messages, db)
+    return _hydrate_assistant_meta(thread_id, messages, db)

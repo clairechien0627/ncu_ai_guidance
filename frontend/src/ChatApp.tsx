@@ -52,16 +52,16 @@ export default function ChatApp() {
     messages, setMessages,
     loading,
     error, setError,
-    conversationId, setConversationId,
+    threadId, setThreadId,
     selectedDocIds, setSelectedDocIds,
     handleSend,
   } = useChat({
     model,
     documents,
-    onConversationUpdate: useCallback((convId: number, title?: string) => {
+    onConversationUpdate: useCallback((newThreadId: string, title?: string) => {
       if (title) {
         queryClient.setQueryData(['conversations'], (prev: ConversationItem[] | undefined) =>
-          prev?.map((c) => (c.id === convId ? { ...c, title } : c)) ?? []
+          prev?.map((c) => (c.thread_id === newThreadId ? { ...c, title } : c)) ?? []
         )
       }
       queryClient.invalidateQueries({ queryKey: ['conversations'] })
@@ -78,14 +78,14 @@ export default function ChatApp() {
   // ── Persist attachment badges ───────────────────────────────────────────────
 
   useEffect(() => {
-    if (!conversationId) return
+    if (!threadId) return
     const map: Record<number, { name: string; id: number }[]> = {}
     messages.forEach((msg, i) => {
       if (msg.role === 'user' && msg.attachedDocs?.length) map[i] = msg.attachedDocs
     })
     if (Object.keys(map).length > 0)
-      localStorage.setItem(`att_${conversationId}`, JSON.stringify(map))
-  }, [messages, conversationId])
+      localStorage.setItem(`att_${threadId}`, JSON.stringify(map))
+  }, [messages, threadId])
 
   // ── Document handlers ──────────────────────────────────────────────────────
 
@@ -141,35 +141,35 @@ export default function ChatApp() {
   // ── Conversation handlers ──────────────────────────────────────────────────
 
   const handleDeleteConversation = useCallback(
-    async (id: number) => {
+    async (tid: string) => {
       queryClient.setQueryData(['conversations'], (prev: ConversationItem[] | undefined) =>
-        prev?.filter((c) => c.id !== id) ?? []
+        prev?.filter((c) => c.thread_id !== tid) ?? []
       )
-      localStorage.removeItem(`att_${id}`)
-      if (conversationId === id) {
+      localStorage.removeItem(`att_${tid}`)
+      if (threadId === tid) {
         setMessages([])
-        setConversationId(null)
+        setThreadId(null)
         setSelectedDocIds([])
       }
       try {
-        await deleteConversation(id)
+        await deleteConversation(tid)
       } catch {
         setError('刪除對話失敗')
         queryClient.invalidateQueries({ queryKey: ['conversations'] })
       }
     },
-    [conversationId, queryClient],
+    [threadId, queryClient],
   )
 
   const handleLoadConversation = useCallback(
-    async (id: number) => {
+    async (tid: string) => {
       if (convLoading) return
       setConvLoading(true)
       setError(null)
       try {
-        const msgs = await getConversationMessages(id)
+        const msgs = await getConversationMessages(tid)
         const attMap: Record<number, { name: string; id: number }[]> = JSON.parse(
-          localStorage.getItem(`att_${id}`) ?? '{}'
+          localStorage.getItem(`att_${tid}`) ?? '{}'
         )
         setMessages(msgs.map((m, i) => {
           const raw = m.attached_docs ?? attMap[i]
@@ -185,7 +185,7 @@ export default function ChatApp() {
             traceRunId: m.trace_id,
           }
         }))
-        setConversationId(id)
+        setThreadId(tid)
         setSelectedDocIds([])
       } catch {
         setError('無法載入對話')
@@ -213,7 +213,7 @@ export default function ChatApp() {
 
   const handleNewChat = () => {
     setMessages([])
-    setConversationId(null)
+    setThreadId(null)
     setError(null)
     setSelectedDocIds([])
   }
@@ -232,12 +232,12 @@ export default function ChatApp() {
         onNewChat={handleNewChat}
         onLoadConversation={handleLoadConversation}
         onDeleteConversation={handleDeleteConversation}
-        onRenameConversation={(id, title) =>
+        onRenameConversation={(tid, title) =>
           queryClient.setQueryData(['conversations'], (prev: ConversationItem[] | undefined) =>
-            prev?.map((c) => (c.id === id ? { ...c, title } : c)) ?? []
+            prev?.map((c) => (c.thread_id === tid ? { ...c, title } : c)) ?? []
           )
         }
-        activeConversationId={conversationId}
+        activeThreadId={threadId}
         loading={loading || convLoading}
         collapsed={sidebarCollapsed}
         onToggleCollapse={handleToggleSidebar}
@@ -259,11 +259,11 @@ export default function ChatApp() {
         docPanelOpen={docPanelOpen}
         onToggleDocPanel={() => setDocPanelOpen(v => !v)}
         onOpenDoc={handleOpenDoc}
-        conversationId={conversationId}
-        conversationTitle={conversations.find(c => c.id === conversationId)?.title ?? null}
-        onRenameConversation={(id, title) =>
+        threadId={threadId}
+        conversationTitle={conversations.find(c => c.thread_id === threadId)?.title ?? null}
+        onRenameConversation={(tid, title) =>
           queryClient.setQueryData(['conversations'], (prev: ConversationItem[] | undefined) =>
-            prev?.map((c) => (c.id === id ? { ...c, title } : c)) ?? []
+            prev?.map((c) => (c.thread_id === tid ? { ...c, title } : c)) ?? []
           )
         }
       />
