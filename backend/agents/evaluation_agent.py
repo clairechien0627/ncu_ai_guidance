@@ -205,7 +205,7 @@ def _trace_payload(trace: Trace) -> tuple[str, str, list[str], dict]:
 async def evaluate_trace_by_observation_id(observation_id: str) -> EvaluationResult | None:
     """Evaluate a root trace and persist score/detail back to the Trace row."""
     try:
-        from services.evaluation_runs import EvaluationRunService
+        from services.evaluation.runs import EvaluationRunService
         result = await EvaluationRunService.evaluate_single_trace(
             observation_id,
             evaluator=evaluate_output,

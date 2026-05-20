@@ -8,8 +8,8 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from db import Dataset, DatasetItem, ExperimentRun, ExperimentRunItem, Score
-from services.evaluation_analytics import DIMENSION_NAMES, EvaluationAnalyticsService
-from services.experiments import ExperimentRunService
+from .analytics import DIMENSION_NAMES, EvaluationAnalyticsService
+from .experiments import ExperimentRunService
 
 
 def _json_obj(value):

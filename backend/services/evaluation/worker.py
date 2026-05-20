@@ -10,8 +10,8 @@ import logging
 from typing import Awaitable, Callable
 
 from db import EvaluationRun, db_session
-from services.evaluation_runs import EvaluationRunService
-from services.experiments import ExperimentRunService
+from .runs import EvaluationRunService
+from .experiments import ExperimentRunService
 from services.redis_service import redis_blpop, redis_enabled, redis_rpush
 
 logger = logging.getLogger(__name__)

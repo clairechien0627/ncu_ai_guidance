@@ -44,7 +44,7 @@ def get_queue_status(db: Session = Depends(get_db)) -> dict[str, Any]:
 
     # Evaluation worker status
     try:
-        from services.evaluation_worker import _worker_task
+        from services.evaluation.worker import _worker_task
         worker_running = _worker_task is not None and not _worker_task.done()
     except Exception:
         worker_running = None

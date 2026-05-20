@@ -7,8 +7,8 @@ from sqlalchemy.orm import sessionmaker
 
 from db import EvaluationRun, EvaluationRunItem, Score, Trace
 from db.session import Base
-from services import evaluation_runs
-from services.evaluation_runs import EvaluationRunService
+from services.evaluation import runs as evaluation_runs
+from services.evaluation.runs import EvaluationRunService
 
 
 def _session_factory():

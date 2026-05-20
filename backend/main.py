@@ -57,7 +57,7 @@ def _run_migrations():
 def _reset_stuck_runs():
     """Reset experiment/eval runs stuck in 'running' state from a previous crash."""
     try:
-        from services.evaluation_worker import EvaluationWorker
+        from services.evaluation.worker import EvaluationWorker
         result = EvaluationWorker.recover_stale_records(timeout_seconds=0)
         if any(result.values()):
             logger.info("startup recovery: %s", result)
@@ -78,7 +78,7 @@ async def lifespan(app: FastAPI):
     _reset_stuck_runs()
     job_service.init_workers()
     from services.trace_ingestion import init_trace_ingestion_worker, stop_trace_ingestion_worker
-    from services.evaluation_worker import init_evaluation_worker, stop_evaluation_worker
+    from services.evaluation.worker import init_evaluation_worker, stop_evaluation_worker
     init_trace_ingestion_worker()
     init_evaluation_worker()
     job_service.restore_jobs_from_db()

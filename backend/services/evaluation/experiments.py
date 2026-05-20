@@ -20,7 +20,7 @@ from db import (
     Score,
     db_session,
 )
-from services.evaluation_runs import evaluation_result_to_score_payloads
+from .runs import evaluation_result_to_score_payloads
 from services.trace_repositories import ScoreRepository
 
 

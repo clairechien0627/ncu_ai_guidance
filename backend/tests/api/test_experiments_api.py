@@ -10,7 +10,7 @@ import api.traces as traces_api
 from api.traces import ExperimentEvalRequest, ExperimentReplayRequest
 from db import Dataset, DatasetItem, ExperimentRunItem, Score
 from db.session import Base
-from services.experiments import ExperimentRunService
+from services.evaluation.experiments import ExperimentRunService
 
 
 def _session_factory():

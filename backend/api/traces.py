@@ -8,11 +8,11 @@ from sqlalchemy.orm import Session
 
 from db import get_db, Trace, Observation, Score, TraceV2
 from services.datasets import DatasetService
-from services.evaluation_analytics import EvaluationAnalyticsService
-from services.evaluation_reports import EvaluationReportService
-from services.evaluation_runs import EvaluationRunService
-from services.evaluation_worker import EvaluationWorker
-from services.experiments import ExperimentRunService
+from services.evaluation.analytics import EvaluationAnalyticsService
+from services.evaluation.reports import EvaluationReportService
+from services.evaluation.runs import EvaluationRunService
+from services.evaluation.worker import EvaluationWorker
+from services.evaluation.experiments import ExperimentRunService
 from services.trace_repositories import ScoreRepository
 from services.trace_read.service import TraceReadService
 
