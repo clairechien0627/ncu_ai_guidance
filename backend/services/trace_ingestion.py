@@ -127,6 +127,7 @@ class TraceIngestionWorker:
                 .all()
             )
             for row in rows:
+                event_id = row.event_id
                 try:
                     row.attempts = (row.attempts or 0) + 1
                     row.status = "processing"
@@ -146,12 +147,25 @@ class TraceIngestionWorker:
                     processed += 1
                     db.flush()
                 except Exception as exc:
-                    row.status = "failed"
-                    row.last_error = str(exc)[:2000]
-                    row.locked_at = None
-                    row.locked_by = None
-                    logger.warning("trace ingestion event failed event_id=%s: %s", row.event_id, exc)
-                    db.flush()
+                    # After any DB exception the session is in a rolled-back state.
+                    # Rollback first, then update the row's status in a fresh mini-session
+                    # so subsequent rows in the same batch can still be processed.
+                    db.rollback()
+                    logger.warning("trace ingestion event failed event_id=%s: %s", event_id, exc)
+                    try:
+                        with _worker_session() as err_db:
+                            err_row = err_db.query(TraceEventOutbox).filter(
+                                TraceEventOutbox.event_id == event_id
+                            ).first()
+                            if err_row:
+                                err_row.attempts = (err_row.attempts or 0) + 1
+                                err_row.status = "failed"
+                                err_row.last_error = str(exc)[:2000]
+                                err_row.locked_at = None
+                                err_row.locked_by = None
+                                err_db.commit()
+                    except Exception as mark_exc:
+                        logger.debug("failed to mark outbox event as failed: %s", mark_exc)
             db.commit()
         return processed
 

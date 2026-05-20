@@ -579,31 +579,38 @@ class EvaluationRunService:
                     ScoreRepository.upsert_score(db, payload, sync_legacy_cache=False)
                 if item.dataset_item_id is None and trace is not None:
                     ScoreRepository.sync_legacy_trace_cache(db, trace.observation_id)
-                # Write evaluation result as a local observation so it shows in trace detail
+                # Write evaluation result as a local observation so it shows in trace detail.
+                # Only write when trace_id exists in traces_v2 to avoid FK violations
+                # (dataset items may have source_trace_id referencing legacy-only traces).
                 if trace_id:
                     try:
                         from services.trace_ingestion import TraceEventIngestor
-                        now_iso = _utcnow().isoformat()
-                        TraceEventIngestor.enqueue_sync([{
-                            "event_type": "observation-create",
-                            "body": {
-                                "observation_id": f"eval-obs:{eval_item_id}",
-                                "trace_id": trace_id,
-                                "type": "EVALUATOR",
-                                "name": "Evaluate Output",
-                                "start_time": now_iso,
-                                "end_time": now_iso,
-                                "output": {k: v for k, v in result_dict.items()
-                                           if k in ("overall", "grounding", "task_fit",
-                                                    "completeness", "verdict", "issues")},
-                                "metadata": {
-                                    "eval_run_id": eval_run_id,
-                                    "eval_item_id": eval_item_id,
-                                    "task_type": task_type,
+                        # Only write EVALUATOR observation when trace exists in traces_v2
+                        # (FK constraint: observations.trace_id → traces_v2.trace_id).
+                        # Use current db session to see uncommitted upserts from line above.
+                        trace_v2_exists = TraceRepository.get_trace(db, trace_id) is not None
+                        if trace_v2_exists:
+                            now_iso = _utcnow().isoformat()
+                            TraceEventIngestor.enqueue_sync([{
+                                "event_type": "observation-create",
+                                "body": {
+                                    "observation_id": f"eval-obs:{eval_item_id}",
+                                    "trace_id": trace_id,
+                                    "type": "EVALUATOR",
+                                    "name": "Evaluate Output",
+                                    "start_time": now_iso,
+                                    "end_time": now_iso,
+                                    "output": {k: v for k, v in result_dict.items()
+                                               if k in ("overall", "grounding", "task_fit",
+                                                        "completeness", "verdict", "issues")},
+                                    "metadata": {
+                                        "eval_run_id": eval_run_id,
+                                        "eval_item_id": eval_item_id,
+                                        "task_type": task_type,
+                                    },
+                                    "level": "DEFAULT",
                                 },
-                                "level": "DEFAULT",
-                            },
-                        }])
+                            }])
                     except Exception:
                         pass
                 now = _utcnow()
