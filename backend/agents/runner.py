@@ -156,7 +156,7 @@ def _track_model_cost(state: dict, runtime) -> None:
         thread_id = (getattr(ctx, "thread_id", None) or "")[:8]
         model_name = (getattr(response, "response_metadata", None) or {}).get("model_name", "")
         logger.info(
-            "model_cost intent=%s thread=%s in=%d out=%d total=%d model=%s",
+            "model_cost agent=%s thread=%s in=%d out=%d total=%d model=%s",
             agent_name_ctx,
             thread_id,
             usage.get("input_tokens", 0),
@@ -294,7 +294,7 @@ async def setup_checkpointer():
                 ),
                 _trim_messages,                         # safety message-count cap
                 # ── Observability ────────────────────────────────────────
-                _track_model_cost,                      # log token usage per call (intent/thread/model)
+                _track_model_cost,                      # log token usage per call (agent/thread/model)
                 # ── Cost & safety limits ─────────────────────────────────
                 ModelCallLimitMiddleware(               # per-request model call hard cap (tool agent only)
                     run_limit=15,                       # chat/retrieval/question are lightweight; research graph unaffected

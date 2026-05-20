@@ -61,7 +61,7 @@ def test_experiment_api_create_list_detail_eval_and_stats(monkeypatch):
         item = db.query(ExperimentRunItem).filter(ExperimentRunItem.experiment_run_id == experiment_run_id).one()
         item.status = "completed"
         item.generated_output = json.dumps({"answer": "new"})
-        item.generated_context = json.dumps({"task_type": "retrieval_qa", "route_intent": "retrieval"})
+        item.generated_context = json.dumps({"task_type": "retrieval_qa", "agent_name": "retrieval_agent"})
         item.trace_id = "generated-trace"
         db.commit()
 
