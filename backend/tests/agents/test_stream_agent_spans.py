@@ -185,7 +185,7 @@ def test_route_agent_stream_evaluate_after_passes_exclude_observation_id():
     def capture_fire_forget(coro):
         deferred_coros.append(coro)
 
-    with patch("agents.router_agent.classify_intent", return_value=fake_route), \
+    with patch("agents.router_agent.route_request", return_value=fake_route), \
          patch("agents.router_agent._write_router_trace"), \
          patch("agents.router_agent._fire_and_forget", side_effect=capture_fire_forget), \
          patch("agents.router_agent._run_evaluation_agent", side_effect=fake_run_evaluation_agent), \

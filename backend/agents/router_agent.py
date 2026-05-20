@@ -394,7 +394,7 @@ async def _orchestrate(
         return RouterDecision(agent_name=fallback, evaluate_after=False, reason="fallback")
 
 
-async def classify_intent(
+async def route_request(
     message: str,
     document_ids: list[int] | None = None,
     thread_id: str | None = None,
@@ -551,7 +551,7 @@ async def route_agent_message(
             return await chat_agent.answer(user_message, thread_id, document_ids,
                                            use_mini=use_mini)
 
-        route = route or await classify_intent(user_message, document_ids, thread_id)
+        route = route or await route_request(user_message, document_ids, thread_id)
 
         # Router is the root trace; task agents become its children.
         trace_id = trace_id or new_id()
@@ -715,7 +715,7 @@ async def route_agent_stream(
                 yield item
             return
 
-        route = route or await classify_intent(user_message, document_ids, thread_id)
+        route = route or await route_request(user_message, document_ids, thread_id)
 
         trace_id = trace_id or new_id()
         plan = _build_execution_plan(

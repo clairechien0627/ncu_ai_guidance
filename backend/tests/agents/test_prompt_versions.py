@@ -1,6 +1,6 @@
 import asyncio
 
-from agents.router_agent import classify_intent
+from agents.router_agent import route_request
 from agents.research.research_graph import (
     _hard_max_searches,
 )
@@ -56,7 +56,7 @@ def test_all_prompt_stacks_load_nonempty_content():
 
 
 def test_router_reports_prompt_hash_version():
-    route = asyncio.run(classify_intent("summary this document", [1]))
+    route = asyncio.run(route_request("summary this document", [1]))
     assert route.prompt_version.startswith("sha256:")
 
 
@@ -77,7 +77,7 @@ def test_router_reports_research_runtime_prompt(monkeypatch):
         return RouterDecision(agent_name="research_agent", evaluate_after=False, reason="test")
     monkeypatch.setattr("agents.router_agent._orchestrate", fake_orchestrate)
 
-    route = asyncio.run(classify_intent("summary this document", [1], thread_id="thread-1"))
+    route = asyncio.run(route_request("summary this document", [1], thread_id="thread-1"))
 
     assert route.agent_name == "research_agent"
     assert route.prompt_name == "research_writer"
@@ -91,7 +91,7 @@ def test_prompt_ab_test_no_longer_changes_research_runtime_route(monkeypatch):
         return RouterDecision(agent_name="research_agent", evaluate_after=False, reason="test")
     monkeypatch.setattr("agents.router_agent._orchestrate", fake_orchestrate)
 
-    route = asyncio.run(classify_intent("summary this document", [1], thread_id="thread-1"))
+    route = asyncio.run(route_request("summary this document", [1], thread_id="thread-1"))
 
     assert route.agent_name == "research_agent"
     assert route.prompt_name == "research_writer"

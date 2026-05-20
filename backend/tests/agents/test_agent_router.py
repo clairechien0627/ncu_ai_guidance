@@ -8,7 +8,7 @@ from agents.router_agent import (
     _allows_background_evaluation,
     _build_execution_plan,
     _normalise_decision,
-    classify_intent,
+    route_request,
 )
 from agents.types import AgentRoute
 
@@ -23,40 +23,40 @@ def _fake_orchestrate(agent_name: str, evaluate_after: bool = False):
 
 def test_router_routes_to_research_agent(monkeypatch):
     monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("research_agent"))
-    route = asyncio.run(classify_intent("請整理研究動機、研究方法、研究成果與限制", [1]))
+    route = asyncio.run(route_request("請整理研究動機、研究方法、研究成果與限制", [1]))
     assert route.agent_name == "research_agent"
     assert route.prompt_name == "research_writer"
 
 
 def test_router_routes_to_question_agent(monkeypatch):
     monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("question_agent"))
-    route = asyncio.run(classify_intent("請出三題導讀問題給我", [1]))
+    route = asyncio.run(route_request("請出三題導讀問題給我", [1]))
     assert route.agent_name == "question_agent"
     assert route.prompt_name == "question_skill"
 
 
 def test_router_routes_to_retrieval_agent(monkeypatch):
     monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("retrieval_agent"))
-    route = asyncio.run(classify_intent("這篇論文的研究方法細節？", [1]))
+    route = asyncio.run(route_request("這篇論文的研究方法細節？", [1]))
     assert route.agent_name == "retrieval_agent"
 
 
 def test_router_routes_to_chat_without_documents(monkeypatch):
     monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("chat_agent"))
-    route = asyncio.run(classify_intent("我想討論一個研究方向"))
+    route = asyncio.run(route_request("我想討論一個研究方向"))
     assert route.agent_name == "chat_agent"
 
 
 def test_router_routes_meta_question_to_chat(monkeypatch):
     """Meta questions answerable from abstract should go to chat_agent."""
     monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("chat_agent"))
-    route = asyncio.run(classify_intent("這是關於什麼領域的", [1]))
+    route = asyncio.run(route_request("這是關於什麼領域的", [1]))
     assert route.agent_name == "chat_agent"
 
 
 def test_router_routes_to_evaluation_agent(monkeypatch):
     monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate("evaluation_agent"))
-    route = asyncio.run(classify_intent("評估一下剛才的回答好不好"))
+    route = asyncio.run(route_request("評估一下剛才的回答好不好"))
     assert route.agent_name == "evaluation_agent"
     assert route.evaluate_after is False
 
@@ -64,7 +64,7 @@ def test_router_routes_to_evaluation_agent(monkeypatch):
 # ── Orchestrator always called (no keyword fast-path) ────────────────────────
 
 def test_orchestrate_is_always_called(monkeypatch):
-    """Every classify_intent call goes through _orchestrate — no keyword bypass."""
+    """Every route_request call goes through _orchestrate — no keyword bypass."""
     calls = 0
 
     async def counting_orchestrate(*args, **kwargs):
@@ -73,7 +73,7 @@ def test_orchestrate_is_always_called(monkeypatch):
         return RouterDecision(agent_name="chat_agent", evaluate_after=False, reason="test")
 
     monkeypatch.setattr("agents.router_agent._orchestrate", counting_orchestrate)
-    asyncio.run(classify_intent("幫我摘要這份文件", [1]))
+    asyncio.run(route_request("幫我摘要這份文件", [1]))
     assert calls == 1
 
 
@@ -87,7 +87,7 @@ def test_orchestrate_receives_document_context_when_has_docs(monkeypatch):
         return RouterDecision(agent_name="retrieval_agent", evaluate_after=False, reason="test")
 
     monkeypatch.setattr("agents.router_agent._orchestrate", spy_orchestrate)
-    asyncio.run(classify_intent("研究方法是什麼", [42, 99]))
+    asyncio.run(route_request("研究方法是什麼", [42, 99]))
     assert captured["has_docs"] is True
     assert captured["document_ids"] == [42, 99]
 
@@ -102,14 +102,14 @@ def test_orchestrate_receives_is_followup_signal(monkeypatch):
         return RouterDecision(agent_name="retrieval_agent", evaluate_after=False, reason="test")
 
     monkeypatch.setattr("agents.router_agent._orchestrate", spy_orchestrate)
-    asyncio.run(classify_intent("還有呢", [1], previous_agent_name="retrieval_agent"))
+    asyncio.run(route_request("還有呢", [1], previous_agent_name="retrieval_agent"))
     assert captured["is_followup"] is True
 
 
 def test_evaluate_after_propagates_to_route(monkeypatch):
     monkeypatch.setattr("agents.router_agent._orchestrate",
                         _fake_orchestrate("research_agent", evaluate_after=True))
-    route = asyncio.run(classify_intent("幫我分析完之後確認有沒有漏掉重點", [1]))
+    route = asyncio.run(route_request("幫我分析完之後確認有沒有漏掉重點", [1]))
     assert route.agent_name == "research_agent"
     assert route.evaluate_after is True
 
@@ -239,7 +239,7 @@ def test_execution_plan_collects_evidence_for_document_questions():
 def test_routes_always_have_evaluate_after_false_by_default(monkeypatch):
     for agent_name in ["chat_agent", "question_agent", "retrieval_agent"]:
         monkeypatch.setattr("agents.router_agent._orchestrate", _fake_orchestrate(agent_name))
-        route = asyncio.run(classify_intent("message", [1]))
+        route = asyncio.run(route_request("message", [1]))
         assert route.evaluate_after is False, f"expected False for agent: {agent_name}"
 
 

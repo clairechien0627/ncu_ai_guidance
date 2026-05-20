@@ -9,7 +9,7 @@ DATASET_PATH = Path(__file__).parent / "dataset.json"
 
 
 async def run_eval_suite(dataset_path: str | None = None) -> dict:
-    from agents.router_agent import classify_intent
+    from agents.router_agent import route_request
 
     path = dataset_path or str(DATASET_PATH)
     with open(path, encoding="utf-8") as f:
@@ -18,7 +18,7 @@ async def run_eval_suite(dataset_path: str | None = None) -> dict:
     results = []
     for case in cases:
         try:
-            route = await classify_intent(
+            route = await route_request(
                 case["message"],
                 case.get("document_ids"),
                 thread_id=None,

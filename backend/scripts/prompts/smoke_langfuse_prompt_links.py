@@ -19,7 +19,7 @@ load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"
 
 async def main() -> None:
     from agents.evaluation_agent import evaluate_output
-    from agents.router_agent import classify_intent
+    from agents.router_agent import route_request
     from observability import initialize_langfuse_client
     from services.extraction_quality import score_extraction
 
@@ -53,7 +53,7 @@ async def main() -> None:
         traces.append(("evaluation_agent", langfuse.get_current_trace_id()))
 
     with langfuse.start_as_current_observation(name="Smoke Intent Router") as obs:
-        route = await classify_intent(
+        route = await route_request(
             "請判斷我接下來應該怎麼閱讀這份文件",
             document_ids=[1],
             thread_id="smoke-langfuse-prompts",

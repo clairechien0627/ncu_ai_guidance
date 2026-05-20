@@ -21,7 +21,7 @@ from agents.runner import (
 )
 from agents.router_agent import (
     run_research_agent,
-    classify_intent,
+    route_request,
     route_agent_message,
     route_agent_stream,
 )
@@ -203,7 +203,7 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db),
     set_user_id(str(current_user.id))
     try:
         prev_agent = await asyncio.to_thread(_get_previous_agent, db, conv.thread_id if req.thread_id else None)
-        route = await classify_intent(req.message, req.document_ids, conv.thread_id, previous_agent_name=prev_agent)
+        route = await route_request(req.message, req.document_ids, conv.thread_id, previous_agent_name=prev_agent)
         trace_id = new_id()
         use_mini = _should_use_mini(req.model, route.agent_name, req.document_ids)
         result = await route_agent_message(
@@ -259,7 +259,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
     set_user_id(str(current_user.id))
 
     prev_agent = await asyncio.to_thread(_get_previous_agent, db, conv.thread_id if req.thread_id else None)
-    route = await classify_intent(req.message, req.document_ids, conv.thread_id, previous_agent_name=prev_agent)
+    route = await route_request(req.message, req.document_ids, conv.thread_id, previous_agent_name=prev_agent)
     trace_id = new_id()
     use_mini = _should_use_mini(req.model, route.agent_name, req.document_ids)
 
