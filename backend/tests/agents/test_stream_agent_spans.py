@@ -199,6 +199,7 @@ def test_route_agent_stream_evaluate_after_passes_exclude_observation_id():
             "hello", "thread-1",
             route=fake_route,
             trace_id="trace-1",
+            observation_id="obs-1",
         )))
 
     # Run deferred coroutines in a fresh event loop (outside the one above)
@@ -208,12 +209,8 @@ def test_route_agent_stream_evaluate_after_passes_exclude_observation_id():
     assert len(eval_kwargs_captured) == 1, "evaluate_after should trigger exactly one evaluation"
     kwargs = eval_kwargs_captured[0]
 
-    # THE KEY CONTRACT: exclude_observation_id must be set and must not be None
-    assert "exclude_observation_id" in kwargs, \
-        "exclude_observation_id missing from _run_evaluation_agent call"
-    assert kwargs["exclude_observation_id"] is not None, \
-        "exclude_observation_id must not be None — would evaluate wrong trace"
-
-    # It must equal the primary step's observation_id (not the trace root)
-    assert kwargs["exclude_observation_id"] != "trace-1", \
-        "exclude_observation_id must be step.observation_id, not trace_id"
+    # THE KEY CONTRACT: exclude_observation_id must equal the primary step's observation_id
+    assert kwargs.get("exclude_observation_id") == "obs-1", (
+        f"exclude_observation_id must be the primary step's observation_id 'obs-1', "
+        f"got {kwargs.get('exclude_observation_id')!r}"
+    )

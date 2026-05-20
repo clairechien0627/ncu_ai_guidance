@@ -55,7 +55,6 @@ class ChatRequest(BaseModel):
     thread_id: Optional[str] = None
     model: str = "gemini"
     document_ids: Optional[list[int]] = None
-    user_id: Optional[str] = None
     bypass_cache: bool = False
 
 
@@ -157,12 +156,15 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db),
                current_user: User = Depends(get_current_user)):
     def _setup_conv():
         if req.thread_id:
-            c = db.query(Conversation).filter(Conversation.thread_id == req.thread_id).first()
+            c = db.query(Conversation).filter(
+                Conversation.thread_id == req.thread_id,
+                Conversation.user_id == str(current_user.id),
+            ).first()
             if not c:
                 raise HTTPException(status_code=404, detail="Conversation not found")
             c.model = req.model
             return c
-        c = Conversation(model=req.model, thread_id=new_id())
+        c = Conversation(model=req.model, thread_id=new_id(), user_id=str(current_user.id))
         db.add(c)
         db.commit()
         db.refresh(c)
@@ -170,9 +172,7 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db),
 
     conv = await asyncio.to_thread(_setup_conv)
     check_quota(current_user, db)
-
-    if req.user_id:
-        set_user_id(req.user_id)
+    set_user_id(str(current_user.id))
     try:
         def _get_prev_intent():
             if not req.thread_id:
@@ -225,12 +225,15 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
                       current_user: User = Depends(get_current_user)):
     def _setup_conv():
         if req.thread_id:
-            c = db.query(Conversation).filter(Conversation.thread_id == req.thread_id).first()
+            c = db.query(Conversation).filter(
+                Conversation.thread_id == req.thread_id,
+                Conversation.user_id == str(current_user.id),
+            ).first()
             if not c:
                 raise HTTPException(status_code=404, detail="Conversation not found")
             c.model = req.model
             return c
-        c = Conversation(model=req.model, thread_id=new_id())
+        c = Conversation(model=req.model, thread_id=new_id(), user_id=str(current_user.id))
         db.add(c)
         db.commit()
         db.refresh(c)
@@ -239,9 +242,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
     conv = await asyncio.to_thread(_setup_conv)
     check_quota(current_user, db)
     is_new = req.thread_id is None
-
-    if req.user_id:
-        set_user_id(req.user_id)
+    set_user_id(str(current_user.id))
     def _get_prev_intent():
         if not req.thread_id:
             return None
@@ -385,8 +386,11 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
 
 
 @router.get("/api/conversations")
-def list_conversations(db: Session = Depends(get_db)):
-    convs = db.query(Conversation).order_by(Conversation.created_at.desc()).limit(20).all()
+def list_conversations(db: Session = Depends(get_db),
+                       current_user: User = Depends(get_current_user)):
+    convs = (db.query(Conversation)
+             .filter(Conversation.user_id == str(current_user.id))
+             .order_by(Conversation.created_at.desc()).limit(20).all())
     return [
         {
             "id": c.id,
@@ -401,8 +405,12 @@ def list_conversations(db: Session = Depends(get_db)):
 
 
 @router.post("/api/conversations/{thread_id}/title")
-async def create_conversation_title(thread_id: str, db: Session = Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.thread_id == thread_id).first()
+async def create_conversation_title(thread_id: str, db: Session = Depends(get_db),
+                                       current_user: User = Depends(get_current_user)):
+    conv = db.query(Conversation).filter(
+        Conversation.thread_id == thread_id,
+        Conversation.user_id == str(current_user.id),
+    ).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     if conv.title:
@@ -421,8 +429,12 @@ async def create_conversation_title(thread_id: str, db: Session = Depends(get_db
 
 
 @router.patch("/api/conversations/{thread_id}/title")
-def update_conversation_title(thread_id: str, body: dict, db: Session = Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.thread_id == thread_id).first()
+def update_conversation_title(thread_id: str, body: dict, db: Session = Depends(get_db),
+                              current_user: User = Depends(get_current_user)):
+    conv = db.query(Conversation).filter(
+        Conversation.thread_id == thread_id,
+        Conversation.user_id == str(current_user.id),
+    ).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     title = (body.get("title") or "").strip()
@@ -440,9 +452,13 @@ def update_conversation_title(thread_id: str, body: dict, db: Session = Depends(
 #   2. Removing the "not yet activated" response below
 
 @router.get("/api/conversations/{thread_id}/interrupt")
-async def get_conversation_interrupt(thread_id: str, db: Session = Depends(get_db)):
+async def get_conversation_interrupt(thread_id: str, db: Session = Depends(get_db),
+                                       current_user: User = Depends(get_current_user)):
     """Check whether the conversation agent is paused at a human-in-the-loop interrupt."""
-    conv = db.query(Conversation).filter(Conversation.thread_id == thread_id).first()
+    conv = db.query(Conversation).filter(
+        Conversation.thread_id == thread_id,
+        Conversation.user_id == str(current_user.id),
+    ).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     pending = await get_pending_interrupt(thread_id)
@@ -459,9 +475,13 @@ class ResumeRequest(BaseModel):
 
 
 @router.post("/api/conversations/{thread_id}/resume")
-async def resume_conversation(thread_id: str, body: ResumeRequest, db: Session = Depends(get_db)):
+async def resume_conversation(thread_id: str, body: ResumeRequest, db: Session = Depends(get_db),
+                              current_user: User = Depends(get_current_user)):
     """Resume an agent that is paused at a human-in-the-loop interrupt."""
-    conv = db.query(Conversation).filter(Conversation.thread_id == thread_id).first()
+    conv = db.query(Conversation).filter(
+        Conversation.thread_id == thread_id,
+        Conversation.user_id == str(current_user.id),
+    ).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -487,8 +507,12 @@ async def resume_conversation(thread_id: str, body: ResumeRequest, db: Session =
 
 
 @router.delete("/api/conversations/{thread_id}")
-def delete_conversation(thread_id: str, db: Session = Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.thread_id == thread_id).first()
+def delete_conversation(thread_id: str, db: Session = Depends(get_db),
+                        current_user: User = Depends(get_current_user)):
+    conv = db.query(Conversation).filter(
+        Conversation.thread_id == thread_id,
+        Conversation.user_id == str(current_user.id),
+    ).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     db.delete(conv)
@@ -497,8 +521,12 @@ def delete_conversation(thread_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/api/conversations/{thread_id}/messages")
-async def get_messages(thread_id: str, db: Session = Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.thread_id == thread_id).first()
+async def get_messages(thread_id: str, db: Session = Depends(get_db),
+                       current_user: User = Depends(get_current_user)):
+    conv = db.query(Conversation).filter(
+        Conversation.thread_id == thread_id,
+        Conversation.user_id == str(current_user.id),
+    ).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     messages = await get_thread_messages(thread_id)
