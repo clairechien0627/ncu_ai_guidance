@@ -951,7 +951,9 @@ async def route_agent_stream(
 
         if plan.evaluate_after:
             _fire_and_forget(_run_evaluation_agent(
-                thread_id, trace_id=plan.trace_id
+                thread_id,
+                trace_id=plan.trace_id,
+                exclude_observation_id=step.observation_id,
             ))
 
         yield "", True, last_sources

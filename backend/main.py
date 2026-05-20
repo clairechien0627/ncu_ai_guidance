@@ -130,8 +130,8 @@ async def auth_context_middleware(request: Request, call_next):
         try:
             payload = decode_token(token)
             set_user_id(str(payload["sub"]))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("auth middleware: token decode failed: %s", exc)
     return await call_next(request)
 
 app.include_router(auth.router)

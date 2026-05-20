@@ -476,7 +476,7 @@ def observation_to_trace_payload(obs: Observation) -> dict:
         "id": obs.observation_id,
         "run_type": obs.type,
         "name": obs.name,
-        "parent_observation_id": obs.parent_observation_id or obs.trace_id,
+        "parent_observation_id": obs.parent_observation_id,
         "thread_id": None,
         "start_time": obs.start_time.isoformat() + "Z" if obs.start_time else None,
         "end_time": obs.end_time.isoformat() + "Z" if obs.end_time else None,

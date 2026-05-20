@@ -366,7 +366,21 @@ async def stream(
     original_intent: str | None = None,
     resolved_intent: str | None = None,
 ) -> AsyncIterator[tuple[str, bool, list[str]]]:
+    observation_id = observation_id or new_id()
+    agent_start = datetime.now(timezone.utc)
+    if trace_id:
+        write_agent_span(
+            observation_id=observation_id,
+            trace_id=trace_id,
+            thread_id=thread_id,
+            parent_observation_id=trace_id,
+            name="Chat Agent",
+            start_time=agent_start,
+            input_data={"messages": [{"role": "user", "content": user_message}]},
+            extra_metadata={"task_type": "chat_turn", "agent_name": AGENT_NAME},
+        )
     await _emit_stage(on_stage, "chat_agent: composing")
+    content = ""
     async for token in stream_no_tool_agent(
         user_message=user_message,
         thread_id=thread_id,
@@ -388,5 +402,18 @@ async def stream(
         original_intent=original_intent,
         resolved_intent=resolved_intent,
     ):
+        content += token
         yield token, False, []
+    if trace_id:
+        write_agent_span(
+            observation_id=observation_id,
+            trace_id=trace_id,
+            thread_id=thread_id,
+            parent_observation_id=trace_id,
+            name="Chat Agent",
+            start_time=agent_start,
+            end_time=datetime.now(timezone.utc),
+            output_data={"answer": content, "sources": []},
+            extra_metadata={"task_type": "chat_turn", "agent_name": AGENT_NAME},
+        )
     yield "", True, []

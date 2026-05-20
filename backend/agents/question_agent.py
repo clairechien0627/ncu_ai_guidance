@@ -182,6 +182,20 @@ async def stream(
     evidence_context: str | None = None,
     evidence_sources: list[str] | None = None,
 ) -> AsyncIterator[tuple[str, bool, list[str]]]:
+    from datetime import datetime, timezone as _tz
+    observation_id = observation_id or new_id()
+    agent_start = datetime.now(_tz.utc)
+    if trace_id:
+        write_agent_span(
+            observation_id=observation_id,
+            trace_id=trace_id,
+            thread_id=thread_id,
+            parent_observation_id=trace_id,
+            name="Question Agent",
+            start_time=agent_start,
+            input_data={"messages": [{"role": "user", "content": user_message}]},
+            extra_metadata={"task_type": "question_generation", "agent_name": AGENT_NAME},
+        )
     extra_system_messages = [
         "You do not have retrieval tools in this step. Generate tutoring or "
         "student-facing questions only from the user request and any evidence "
@@ -192,6 +206,7 @@ async def stream(
     if evidence_context:
         payload["evidence_context"] = evidence_context
 
+    content = ""
     async for token in stream_no_tool_agent(
         user_message=user_message,
         thread_id=thread_id,
@@ -210,5 +225,18 @@ async def stream(
         original_intent=original_intent,
         resolved_intent=resolved_intent,
     ):
+        content += token
         yield token, False, []
+    if trace_id:
+        write_agent_span(
+            observation_id=observation_id,
+            trace_id=trace_id,
+            thread_id=thread_id,
+            parent_observation_id=trace_id,
+            name="Question Agent",
+            start_time=agent_start,
+            end_time=datetime.now(_tz.utc),
+            output_data={"answer": content, "sources": evidence_sources or []},
+            extra_metadata={"task_type": "question_generation", "agent_name": AGENT_NAME},
+        )
     yield "", True, evidence_sources or []
