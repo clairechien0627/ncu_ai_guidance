@@ -60,19 +60,13 @@ class ChatRequest(BaseModel):
 
 
 def _get_previous_agent(db, thread_id: str | None) -> str | None:
-    """Query the last router trace from TraceV2 to get the previously used agent."""
+    """Read the last agent used in this conversation from Conversation.last_agent_name."""
     if not thread_id:
         return None
-    row = (
-        db.query(TraceV2.metadata_json)
-        .filter(TraceV2.name == "router_agent", TraceV2.thread_id == thread_id)
-        .order_by(TraceV2.start_time.desc())
-        .first()
-    )
-    if not row or not row[0]:
-        return None
-    meta = row[0] if isinstance(row[0], dict) else json.loads(row[0])
-    return meta.get("agent_name")
+    row = db.query(Conversation.last_agent_name).filter(
+        Conversation.thread_id == thread_id
+    ).first()
+    return row[0] if row else None
 
 
 def _should_use_mini(model: str, agent_name: str, document_ids: list[int] | None) -> bool:
@@ -220,7 +214,11 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db),
         logger.error("Agent error in chat endpoint", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal agent error")
 
-    await asyncio.to_thread(lambda: (setattr(conv, "message_count", (conv.message_count or 0) + 2), db.commit()))
+    def _update_conv():
+        conv.message_count = (conv.message_count or 0) + 2
+        conv.last_agent_name = result.agent_name
+        db.commit()
+    await asyncio.to_thread(_update_conv)
     return {
         "thread_id": conv.thread_id,
         "response": response,
@@ -364,6 +362,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
             return
 
         conv.message_count = (conv.message_count or 0) + 2
+        conv.last_agent_name = route_payload.get("agent_name") or route.agent_name
 
         # Generate title for new conversations using the message pair just exchanged.
         title = conv.title

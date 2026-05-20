@@ -199,6 +199,7 @@ class Conversation(Base):
     title = Column(String, nullable=True)
     message_count = Column(Integer, default=0)
     context_summary = Column(Text, nullable=True)
+    last_agent_name = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
