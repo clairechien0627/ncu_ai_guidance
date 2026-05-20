@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 from db import get_db
 from db.models import PromptVersion, Trace
 
-router = APIRouter()
+from api.dependencies import require_admin
+router = APIRouter(dependencies=[Depends(require_admin)])
 
 PROMPTS_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "prompts")

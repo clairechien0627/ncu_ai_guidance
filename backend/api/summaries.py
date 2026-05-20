@@ -13,7 +13,8 @@ from rag import process_pdf
 from services import job_service
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+from api.dependencies import require_admin
+router = APIRouter(dependencies=[Depends(require_admin)])
 
 
 

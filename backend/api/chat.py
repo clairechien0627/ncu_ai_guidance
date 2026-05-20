@@ -26,9 +26,12 @@ from agents.router_agent import (
     route_agent_stream,
 )
 from agents.request_context import set_user_id
+from api.dependencies import get_current_user
 from db import get_db, Conversation, Document, Trace
+from db.models import User
+from services.quota_service import check_quota
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 def _json_dumps(data: dict) -> str:
@@ -150,7 +153,8 @@ def _hydrate_assistant_meta(thread_id: str, messages: list[dict], db: Session) -
 
 
 @router.post("/api/chat")
-async def chat(req: ChatRequest, db: Session = Depends(get_db)):
+async def chat(req: ChatRequest, db: Session = Depends(get_db),
+               current_user: User = Depends(get_current_user)):
     def _setup_conv():
         if req.thread_id:
             c = db.query(Conversation).filter(Conversation.thread_id == req.thread_id).first()
@@ -165,6 +169,7 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
         return c
 
     conv = await asyncio.to_thread(_setup_conv)
+    check_quota(current_user, db)
 
     if req.user_id:
         set_user_id(req.user_id)
@@ -216,7 +221,8 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/api/chat/stream")
-async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
+async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
+                      current_user: User = Depends(get_current_user)):
     def _setup_conv():
         if req.thread_id:
             c = db.query(Conversation).filter(Conversation.thread_id == req.thread_id).first()
@@ -231,6 +237,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
         return c
 
     conv = await asyncio.to_thread(_setup_conv)
+    check_quota(current_user, db)
     is_new = req.thread_id is None
 
     if req.user_id:

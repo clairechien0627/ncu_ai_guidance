@@ -18,7 +18,8 @@ from services.trace_read.service import TraceReadService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+from api.dependencies import require_admin
+router = APIRouter(dependencies=[Depends(require_admin)])
 
 
 def _agent_execution_root():

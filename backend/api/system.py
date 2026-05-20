@@ -7,10 +7,11 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from api.dependencies import require_admin
 from db import get_db
 from db.models import TraceEventOutbox, EvaluationRun, EvaluationRunItem
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_admin)])
 logger = logging.getLogger(__name__)
 
 

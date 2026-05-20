@@ -26,7 +26,8 @@ from rag import (
 )
 from services import job_service, storage_service
 
-router = APIRouter()
+from api.dependencies import require_admin
+router = APIRouter(dependencies=[Depends(require_admin)])
 
 
 def _sync_vector_filename(doc_id: int, filename: str) -> None:

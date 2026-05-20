@@ -2,14 +2,15 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
+from api.dependencies import require_admin
 from services import job_service
 from services.redis_service import get_redis, BROADCAST_CHANNEL
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_admin)])
 
 
 @router.get("/api/jobs")
