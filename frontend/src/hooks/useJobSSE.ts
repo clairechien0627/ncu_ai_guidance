@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { JobItem } from '../api'
-import { useJobStore } from '../store/jobStore'
+import { useJobStore } from '../stores/jobStore'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 

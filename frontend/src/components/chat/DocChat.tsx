@@ -19,7 +19,7 @@ interface Props {
 export default function DocChat({ docId, filename }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
-  const [convId, setConvId] = useState<number | null>(null)
+  const [convId, setConvId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)

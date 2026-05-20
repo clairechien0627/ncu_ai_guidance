@@ -10,7 +10,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 import { cancelJob, clearJobHistory, getJobs, getEvalRuns, getExperimentRuns, type JobItem, type EvalRun, type ExperimentRunData } from '../../api'
 import { useLinkedColumnResize, type ColDef } from '../../hooks/useLinkedColumnResize'
-import { useJobStore } from '../../store/jobStore'
+import { useJobStore } from '../../stores/jobStore'
 import { useJobSSE } from '../../hooks/useJobSSE'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 

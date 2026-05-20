@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Trash2, X } from 'lucide-react'
-import { useJobStore, selectJobs } from '../store/jobStore'
+import { useJobStore, selectJobs } from '../stores/jobStore'
 import { cancelJob, clearJobHistory, type JobItem } from '../api'
 import { getDisplayTitle, relativeTime } from '../utils/summaryUtils'
 

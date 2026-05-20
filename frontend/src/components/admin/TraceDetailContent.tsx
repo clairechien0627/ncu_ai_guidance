@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ChevronDown, ChevronRight, ExternalLink, Save } from 'lucide-react'
 import { getTraceDetail, updateTraceFeedback, type TraceDetail } from '../../api'
-import LatencyWaterfall from '../trace/LatencyWaterfall'
+import LatencyWaterfall from '../viewer/LatencyWaterfall'
 import { ScoreBar } from './ScoreBar'
 import { DimensionGrid } from './DimensionGrid'
 

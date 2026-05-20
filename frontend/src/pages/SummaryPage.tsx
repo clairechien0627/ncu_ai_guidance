@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useJobStore, selectJobs } from '../store/jobStore'
+import { useJobStore, selectJobs } from '../stores/jobStore'
 import { useJobSSE } from '../hooks/useJobSSE'
 import { useDocumentList } from '../hooks/useDocumentList'
 import { useInlineEdit } from '../hooks/useInlineEdit'

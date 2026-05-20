@@ -62,7 +62,7 @@ export function useChat({ model, documents, onConversationUpdate }: UseChatOptio
                 agentName: meta?.agent_name,
                 promptName: meta?.prompt_name,
                 promptVersion: meta?.prompt_version,
-                traceRunId: meta?.trace_run_id,
+                traceRunId: meta?.trace_id,
               } : {}),
             }
             return next

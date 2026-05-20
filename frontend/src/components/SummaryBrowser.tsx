@@ -62,7 +62,7 @@ export default function SummaryBrowser({ onClose }: Props) {
   )
 
   const getUniqueKey = (item: SummaryItem, index: number) => 
-    `${item.id}-${item.raw_research_run_id || 'no-run'}-${index}`
+    `${item.id}-${index}`
 
   return (
     <div style={styles.overlay}>
