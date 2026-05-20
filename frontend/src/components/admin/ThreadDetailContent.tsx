@@ -24,8 +24,8 @@ function fmtTs(iso: string | null) {
 function IOPreview({ trace }: { trace: TraceItem }) {
   const display  = trace.display
   const humanMsg = display?.messages?.find((m: any) => m.role === 'human')
-  const userText = humanMsg && 'content' in humanMsg ? String(humanMsg.content ?? '') : ''
-  const answer   = display?.answer ? String(display.answer) : ''
+  const userText = humanMsg && 'content' in humanMsg ? String(humanMsg.content ?? '') : (typeof trace.input === 'string' ? trace.input : '')
+  const answer   = display?.answer ? String(display.answer) : (typeof trace.output === 'string' ? trace.output : '')
   if (!userText && !answer) return <p style={{ fontSize: 12, color: 'var(--adm-text-3)', margin: 0 }}>No I/O recorded</p>
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -83,23 +83,22 @@ interface Props {
   threadId: string
 }
 
-export function SessionDetailContent({ threadId }: Props) {
+export function ThreadDetailContent({ threadId }: Props) {
   const [traceDrawerId, setTraceDrawerId] = useState<string | null>(null)
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['session-detail', threadId],
+    queryKey: ['thread-detail', threadId],
     queryFn:  () => getSessionDetail(threadId),
     enabled:  !!threadId,
   })
 
   if (isLoading) return <div style={{ padding: 24, textAlign: 'center', color: 'var(--adm-text-3)' }}><div className="adm-spinner" style={{ margin: '0 auto 8px' }} />載入中…</div>
-  if (isError || !data) return <div style={{ padding: 24, color: 'var(--adm-red)', fontSize: 12 }}>Session not found</div>
+  if (isError || !data) return <div style={{ padding: 24, color: 'var(--adm-red)', fontSize: 12 }}>Thread not found</div>
 
   const traces: TraceItem[] = (data as any).traces ?? []
 
   return (
     <div>
-      {/* Stats row */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
         {[
           `${traces.length} traces`,
@@ -110,12 +109,10 @@ export function SessionDetailContent({ threadId }: Props) {
         {data.avg_quality_score != null && <ScoreBar value={data.avg_quality_score} />}
       </div>
 
-      {/* Thread ID */}
       <div style={{ fontSize: 10, fontFamily: 'var(--adm-font-mono)', color: 'var(--adm-text-3)', marginBottom: 14, wordBreak: 'break-all' }}>
         {threadId}
       </div>
 
-      {/* Traces */}
       {traces.length === 0 ? (
         <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--adm-text-3)', fontSize: 12 }}>No traces found</div>
       ) : (
@@ -124,7 +121,6 @@ export function SessionDetailContent({ threadId }: Props) {
         ))
       )}
 
-      {/* Nested trace drawer */}
       <DrawerPanel
         open={!!traceDrawerId}
         title={traceDrawerId ? `Trace · ${traceDrawerId.slice(-12)}…` : ''}

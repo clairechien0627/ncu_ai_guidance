@@ -22,7 +22,7 @@ const NAV_GROUPS = [
   {
     group: 'Tracing',
     items: [
-      { label: 'Sessions',     path: '/admin/sessions',     icon: <ChevronRight size={16} /> },
+      { label: 'Threads',      path: '/admin/threads',      icon: <ChevronRight size={16} /> },
       { label: 'Traces',       path: '/admin/traces',       icon: <List size={16} /> },
       { label: 'Observations', path: '/admin/observations', icon: <Layers size={16} /> },
       { label: 'Users',        path: '/admin/users',        icon: <Users size={16} /> },
@@ -58,7 +58,7 @@ const NAV_GROUPS = [
 ]
 
 const PAGE_TITLES: Record<string, string> = {
-  dashboard: 'Dashboard', traces: 'Traces', sessions: 'Sessions',
+  dashboard: 'Dashboard', traces: 'Traces', threads: 'Threads',
   users: 'Users', documents: 'Documents', jobs: 'Jobs', playground: 'Playground', prompts: 'Prompts',
   scores: 'Scores', observations: 'Observations',
   evaluations: 'Eval Runs', datasets: 'Datasets', experiments: 'Experiments',

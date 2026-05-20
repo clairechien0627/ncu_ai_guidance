@@ -79,15 +79,15 @@ class TraceStatsReadService:
         rows = q.order_by(Observation.start_time.desc()).offset(offset).limit(limit).all()
         if rows:
             return [observation_to_trace_payload(row) for row in rows]
-        legacy_q = self.core.db.query(Trace).filter(Trace.parent_run_id.isnot(None))
+        legacy_q = self.core.db.query(Trace).filter(Trace.trace_id.isnot(None))
         if run_type and run_type != "all":
             legacy_q = legacy_q.filter(Trace.run_type == run_type)
         return [
             {
-                "id": t.run_id,
+                "id": t.observation_id,
                 "run_type": t.run_type,
                 "name": t.name,
-                "parent_run_id": t.parent_run_id,
+                "trace_id": t.trace_id,
                 "thread_id": t.thread_id,
                 "start_time": t.start_time.isoformat() + "Z" if t.start_time else None,
                 "latency": _legacy_latency(t),
@@ -119,7 +119,7 @@ class TraceStatsReadService:
                 pt_fn=lambda o: o.prompt_tokens,
                 ct_fn=lambda o: o.completion_tokens,
             )
-        rows = self.core.db.query(Trace).filter(Trace.parent_run_id.isnot(None)).all()
+        rows = self.core.db.query(Trace).filter(Trace.trace_id.isnot(None)).all()
         return _agg_rows(rows,
             type_fn=lambda t: t.run_type,
             pt_fn=lambda t: t.prompt_tokens,

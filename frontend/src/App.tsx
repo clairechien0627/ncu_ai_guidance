@@ -29,8 +29,8 @@ import TracesPage from './pages/admin/TracesPage'
 import TraceDetailPage from './pages/admin/TraceDetailPage'
 import ScoresPage from './pages/admin/ScoresPage'
 import ObservationsPage from './pages/admin/ObservationsPage'
-import SessionsPage from './pages/admin/SessionsPage'
-import SessionDetailPage from './pages/admin/SessionDetailPage'
+import ThreadsPage from './pages/admin/ThreadsPage'
+import ThreadDetailPage from './pages/admin/ThreadDetailPage'
 import UsersPage from './pages/admin/UsersPage'
 import UserDetailPage from './pages/admin/UserDetailPage'
 import UsersManagePage from './pages/admin/UsersManagePage'
@@ -79,8 +79,8 @@ export default function App() {
           <Route path="traces/:runId"          element={<TraceDetailPage />} />
           <Route path="scores"                 element={<ScoresPage />} />
           <Route path="observations"           element={<ObservationsPage />} />
-          <Route path="sessions"               element={<SessionsPage />} />
-          <Route path="sessions/:threadId"     element={<SessionDetailPage />} />
+          <Route path="threads"                element={<ThreadsPage />} />
+          <Route path="threads/:threadId"     element={<ThreadDetailPage />} />
           <Route path="users"                  element={<UsersPage />} />
           <Route path="users/:userId"          element={<UserDetailPage />} />
           <Route path="users-manage"           element={<UsersManagePage />} />

@@ -517,46 +517,31 @@ def _upsert_extraction(s, doc_id: int) -> "DocumentExtraction":
     return ext
 
 
-def db_set_summarized(doc_id: int, summary: dict, run_id: str | None = None):
+def db_set_summarized(doc_id: int, summary: dict):
     from db import db_session, Document
     with db_session() as s:
-        d = s.query(Document).filter(Document.id == doc_id).first()
         ext = _upsert_extraction(s, doc_id)
         summary_str = json.dumps(summary, ensure_ascii=False)
         tags_str = json.dumps(summary.get("tags", []), ensure_ascii=False)
-        # Write to DocumentExtraction (canonical)
         ext.summary_json = summary_str
         ext.tags = tags_str
-        if run_id:
-            ext.langsmith_run_id = run_id
-        # Keep Document columns in sync for backward compat
-        d.summary_json = summary_str
-        d.tags = tags_str
-        if run_id:
-            d.langsmith_run_id = run_id
-        d.batch_status = "summarized"
+        d = s.query(Document).filter(Document.id == doc_id).first()
+        if d:
+            d.batch_status = "summarized"
         s.commit()
 
 
-def db_set_research_step1(doc_id: int, answer: str, sources: list[str], run_id: str | None = None):
+def db_set_research_step1(doc_id: int, answer: str, sources: list[str], observation_id: str | None = None):
     from db import db_session, Document
     with db_session() as s:
         d = s.query(Document).filter(Document.id == doc_id).first()
         ext = _upsert_extraction(s, doc_id)
         sources_str = json.dumps(sources, ensure_ascii=False)
-        # Write to DocumentExtraction (canonical)
         ext.raw_research_answer = answer
         ext.raw_research_sources = sources_str
-        if run_id:
-            ext.raw_research_run_id = run_id
-            ext.langsmith_run_id = run_id
-        # Keep Document columns in sync for backward compat
-        d.raw_research_answer = answer
-        d.raw_research_sources = sources_str
-        if run_id:
-            d.raw_research_run_id = run_id
-            d.langsmith_run_id = run_id
-        d.batch_status = "summarized" if d.summary_json else "pending"
+        if observation_id:
+            ext.research_observation_id = observation_id
+        d.batch_status = "summarized" if ext.summary_json else "pending"
         s.commit()
 
 
@@ -581,24 +566,16 @@ def _merged_summary(existing_json: str | None, patch: dict) -> dict:
     return base
 
 
-def db_set_summary_patch(doc_id: int, patch: dict, run_id: str | None = None):
+def db_set_summary_patch(doc_id: int, patch: dict):
     from db import db_session, Document
     with db_session() as s:
         d = s.query(Document).filter(Document.id == doc_id).first()
         ext = _upsert_extraction(s, doc_id)
-        # Merge into the canonical extraction row
-        summary = _merged_summary(ext.summary_json or d.summary_json, patch)
+        summary = _merged_summary(ext.summary_json, patch)
         summary_str = json.dumps(summary, ensure_ascii=False)
         tags_str = json.dumps(summary.get("tags", []), ensure_ascii=False)
         ext.summary_json = summary_str
         ext.tags = tags_str
-        if run_id:
-            ext.langsmith_run_id = run_id
-        # Keep Document columns in sync
-        d.summary_json = summary_str
-        d.tags = tags_str
-        if run_id:
-            d.langsmith_run_id = run_id
         d.batch_status = "summarized"
         s.commit()
 
@@ -663,9 +640,9 @@ async def run_one_extraction(doc_id: int, on_failure: str):
             jobs_set_stage(_doc_id, label)
             await _push_jobs_payload(_jobs_payload())
 
-        summary, run_id, answer, sources = await extract_document_summary_with_raw(doc_id, on_stage=_stage_cb)
-        await asyncio.to_thread(db_set_research_step1, doc_id, answer, sources, run_id)
-        await asyncio.to_thread(db_set_summarized, doc_id, summary, run_id)
+        summary, observation_id, answer, sources = await extract_document_summary_with_raw(doc_id, on_stage=_stage_cb)
+        await asyncio.to_thread(db_set_research_step1, doc_id, answer, sources, observation_id)
+        await asyncio.to_thread(db_set_summarized, doc_id, summary)
     except asyncio.CancelledError:
         job_error = "已取消"
         await asyncio.to_thread(db_set_error, doc_id, job_error)
@@ -692,10 +669,10 @@ async def run_one_extraction_step(doc_id: int, step: str, on_failure: str):
             await _push_jobs_payload(_jobs_payload())
 
         if step == "step1":
-            answer, sources, run_id = await run_document_research_step1(doc_id, on_stage=_stage_cb)
+            answer, sources, observation_id = await run_document_research_step1(doc_id, on_stage=_stage_cb)
             if not answer or answer.strip() == "Unable to generate a response.":
                 raise ValueError("Step 1 沒有產生可用研究摘要")
-            await asyncio.to_thread(db_set_research_step1, doc_id, answer, sources, run_id)
+            await asyncio.to_thread(db_set_research_step1, doc_id, answer, sources, observation_id)
             return
 
         answer = await asyncio.to_thread(db_get_research_step1, doc_id)

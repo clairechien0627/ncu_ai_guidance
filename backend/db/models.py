@@ -75,16 +75,7 @@ class Document(Base):
     # Pipeline state (stays here — queried directly without JOIN)
     batch_status = Column(String, default="pending")   # pending/classified/summarized/embedded/error
     error_message = Column(Text, nullable=True)
-    # DEPRECATED: new writes go to DocumentExtraction; kept for backward compat.
-    # TODO: remove once all read paths migrate to DocumentExtraction.
-    summary_json = Column(JsonColumn, nullable=True)          # DEPRECATED
-    category = Column(String, nullable=True)                  # DEPRECATED
-    tags = Column(JsonColumn, nullable=True)                  # DEPRECATED
-    department_hint = Column(String, nullable=True)           # DEPRECATED
-    langsmith_run_id = Column(String, nullable=True)          # DEPRECATED
-    raw_research_answer = Column(Text, nullable=True)         # DEPRECATED
-    raw_research_sources = Column(JsonColumn, nullable=True)  # DEPRECATED
-    raw_research_run_id = Column(String, nullable=True)       # DEPRECATED
+    department_hint = Column(String, nullable=True)
     # Document metadata
     abstract_text = Column(Text, nullable=True)
     abstract_edited = Column(Boolean, default=False)
@@ -128,8 +119,7 @@ class DocumentExtraction(Base):
     department_hint = Column(String, nullable=True)
     raw_research_answer = Column(Text, nullable=True)
     raw_research_sources = Column(JsonColumn, nullable=True)
-    raw_research_run_id = Column(String, nullable=True)
-    langsmith_run_id = Column(String, nullable=True)
+    research_observation_id = Column(String, nullable=True)
 
     document = relationship("Document", back_populates="extraction")
 
@@ -213,8 +203,8 @@ class Conversation(Base):
 class Trace(Base):
     __tablename__ = "traces"
     id = Column(Integer, primary_key=True, index=True)
-    run_id = Column(String, unique=True, index=True, nullable=False)
-    parent_run_id = Column(String, nullable=True, index=True)
+    observation_id = Column(String, unique=True, index=True, nullable=False)
+    trace_id = Column(String, nullable=True, index=True)
     run_type = Column(String, nullable=False)          # 'llm' | 'tool' | 'chain'
     name = Column(String, nullable=False)
     inputs = Column(JsonColumn, nullable=True)          # JSON
@@ -254,7 +244,7 @@ class Trace(Base):
     user_id = Column(String, nullable=True, index=True)
 
     def __repr__(self) -> str:
-        return f"<Trace run_id={self.run_id!r} task_type={self.task_type!r} agent={self.agent_name!r}>"
+        return f"<Trace observation_id={self.observation_id!r} task_type={self.task_type!r} agent={self.agent_name!r}>"
 
 
 class TraceEventOutbox(Base):
@@ -280,7 +270,6 @@ class TraceV2(Base):
     trace_id = Column(String, unique=True, nullable=False, index=True)
     name = Column(String, nullable=False)
     thread_id = Column(String, nullable=True, index=True)
-    session_id = Column(String, nullable=True, index=True)
     user_id = Column(String, nullable=True, index=True)
     environment = Column(String(40), nullable=False, default="default", index=True)
     input = Column(JsonColumn, nullable=True)
@@ -303,6 +292,7 @@ class Observation(Base):
     id = Column(Integer, primary_key=True, index=True)
     observation_id = Column(String, unique=True, nullable=False, index=True)
     trace_id = Column(String, nullable=False, index=True)
+    thread_id = Column(String, nullable=True, index=True)
     parent_observation_id = Column(String, nullable=True, index=True)
     type = Column(String, nullable=False, index=True)
     name = Column(String, nullable=False)
@@ -321,6 +311,7 @@ class Observation(Base):
     input = Column(JsonColumn, nullable=True)
     output = Column(JsonColumn, nullable=True)
     metadata_json = Column("metadata", JsonColumn, nullable=True)
+    status = Column(String(20), nullable=True, index=True)
     level = Column(String(20), nullable=False, default="DEFAULT", index=True)
     status_message = Column(Text, nullable=True)
     start_time = Column(DateTime, nullable=False, index=True)

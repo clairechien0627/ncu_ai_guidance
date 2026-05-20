@@ -571,7 +571,8 @@ def _build_tracer(
     thread_id: str,
     document_ids: list[int] | None,
     metadata: dict,
-    parent_run_id: str | None = None,
+    trace_id: str | None = None,
+    parent_observation_id: str | None = None,
 ):
     from observability.tracer import LocalTracer
     return LocalTracer(
@@ -595,7 +596,8 @@ def _build_tracer(
         prompt_stack_tokens=metadata.get("prompt_stack_tokens"),
         quality_score=metadata.get("quality_score"),
         user_feedback=metadata.get("user_feedback"),
-        parent_run_id=parent_run_id,
+        trace_id=trace_id,
+        parent_observation_id=parent_observation_id,
         original_intent=metadata.get("original_intent"),
         resolved_intent=metadata.get("resolved_intent"),
     )
@@ -608,7 +610,7 @@ async def run_tool_agent(
     document_ids: list[int] | None = None,
     metadata: dict | None = None,
     tracer_metadata: dict | None = None,
-    run_id: str | None = None,
+    observation_id: str | None = None,
     on_stage: Callable[[str], None] | None = None,
     task_prompt: str | list[str] | None = None,
     recursion_limit: int = 100,
@@ -616,14 +618,15 @@ async def run_tool_agent(
     include_research_context: bool = True,
     max_searches: int | None = None,
     max_consecutive_empty: int | None = None,
-    parent_run_id: str | None = None,
+    trace_id: str | None = None,
+    parent_observation_id: str | None = None,
     use_mini: bool = False,
 ) -> tuple[str, list[str]]:
     import uuid as _uuid
     agent = _get_tool_agent(mini=use_mini)
     metadata = {**(metadata or {}), **(tracer_metadata or {})}
     with propagate_attributes(version=metadata.get("prompt_version")) if metadata.get("prompt_version") else contextlib.nullcontext():
-        tracer = _build_tracer(thread_id, document_ids, metadata, parent_run_id)
+        tracer = _build_tracer(thread_id, document_ids, metadata, trace_id, parent_observation_id)
     config_metadata = {**metadata, **langfuse_prompt_metadata_from_metadata(metadata)}
     config: dict = {
         "configurable": {"thread_id": thread_id},
@@ -631,8 +634,8 @@ async def run_tool_agent(
         "recursion_limit": recursion_limit,
     }
     config["metadata"] = config_metadata
-    if run_id:
-        config["run_id"] = _uuid.UUID(run_id)
+    if observation_id:
+        config["run_id"] = _uuid.UUID(observation_id)
 
     async def _invoke():
         with propagate_attributes(session_id=thread_id, user_id=get_user_id()):
@@ -647,7 +650,7 @@ async def run_tool_agent(
                     max_searches=max_searches,
                     max_consecutive_empty=max_consecutive_empty,
                     thread_id=thread_id,
-                    run_id=run_id,
+                    observation_id=observation_id,
                 ),
             )
 
@@ -716,14 +719,14 @@ async def run_tool_agent_stream(
     document_ids: list[int] | None = None,
     metadata: dict | None = None,
     tracer_metadata: dict | None = None,
-    run_id: str | None = None,
+    observation_id: str | None = None,
     on_stage: Callable[[str], None] | None = None,
     task_prompt: str | list[str] | None = None,
     include_document_abstracts: bool = True,
     include_research_context: bool = True,
     max_searches: int | None = None,
     max_consecutive_empty: int | None = None,
-    parent_run_id: str | None = None,
+    trace_id: str | None = None,
     use_mini: bool = False,
 ):
     """Async generator yielding (token, is_done, sources) tuples."""
@@ -731,7 +734,7 @@ async def run_tool_agent_stream(
     agent = _get_tool_agent(mini=use_mini)
     metadata = {**(metadata or {}), **(tracer_metadata or {})}
     with propagate_attributes(version=metadata.get("prompt_version")) if metadata.get("prompt_version") else contextlib.nullcontext():
-        tracer = _build_tracer(thread_id, document_ids, metadata, parent_run_id)
+        tracer = _build_tracer(thread_id, document_ids, metadata, trace_id)
     config_metadata = {**metadata, **langfuse_prompt_metadata_from_metadata(metadata)}
     config = {
         "configurable": {"thread_id": thread_id},
@@ -739,8 +742,8 @@ async def run_tool_agent_stream(
         "recursion_limit": 100,
         "metadata": config_metadata,
     }
-    if run_id:
-        config["run_id"] = _uuid.UUID(run_id)
+    if observation_id:
+        config["run_id"] = _uuid.UUID(observation_id)
 
     async def _stream_chunks() -> AsyncIterator[dict]:
         with propagate_attributes(session_id=thread_id, user_id=get_user_id()):
@@ -755,7 +758,7 @@ async def run_tool_agent_stream(
                     max_searches=max_searches,
                     max_consecutive_empty=max_consecutive_empty,
                     thread_id=thread_id,
-                    run_id=run_id,
+                    observation_id=observation_id,
                 ),
                 stream_mode=["messages", "updates"],
                 version="v2",

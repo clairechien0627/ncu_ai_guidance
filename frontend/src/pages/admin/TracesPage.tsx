@@ -57,13 +57,17 @@ const ALL_COLS: ColEntry[] = [
   { key: 'output',      label: 'Output',                          width: 180, resizable: true, minWidth: 120, maxWidth: 600  },
   { key: 'obs_levels',  label: 'Obs. Levels',                     width: 100,  resizable: false },
   { key: 'latency',     label: 'Latency',                         width: 80,  resizable: false },
-  { key: 'tokens',      label: 'Tokens',                          width: 80,  resizable: false },
-  { key: 'total_cost',  label: 'Cost',                            width: 80,  resizable: false },
+  { key: 'tokens',        label: 'Tokens',                        width: 90,  resizable: false },
+  { key: 'input_tokens',  label: 'Input Tokens',                  width: 80,  resizable: false },
+  { key: 'output_tokens', label: 'Output Tokens',                 width: 80,  resizable: false },
+  { key: 'total_cost',    label: 'Cost',                          width: 80,  resizable: false },
+  { key: 'input_cost',    label: 'Input Cost',                    width: 80,  resizable: false },
+  { key: 'output_cost',   label: 'Output Cost',                   width: 80,  resizable: false },
   { key: 'environment', label: 'Env',                             width: 120,  resizable: false },
   { key: 'tags',        label: 'Tags',                            width: 140, resizable: true, minWidth: 80, maxWidth: 300 },
   { key: 'metadata',    label: 'Metadata',                        width: 90,  resizable: false },
   { key: 'score',       label: 'Score',                           width: 130, resizable: false },
-  { key: 'session',     label: 'Session',                         width: 120, resizable: true, minWidth: 80, maxWidth: 300  },
+  { key: 'session',     label: 'Thread',                          width: 120, resizable: true, minWidth: 80, maxWidth: 300  },
   { key: 'user',        label: 'User',                            width: 100, resizable: true, minWidth: 80, maxWidth: 300  },
   { key: 'obs_count',   label: 'Observations',                    width: 110,  resizable: false },
   { key: 'level',       label: 'Level',                           width: 110,  resizable: false },
@@ -79,6 +83,8 @@ const COL_DEFAULTS: Record<string, boolean> = {
   // Langfuse defaults OFF
   score: false, session: false, user: false,
   obs_count: false, level: false, trace_id: false,
+  input_tokens: false, output_tokens: false,
+  input_cost: false, output_cost: false,
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -88,10 +94,12 @@ function fmtTime(iso: string | null | undefined) {
   return new Date(iso).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
 }
 function inputPreview(t: TraceItem): string {
+  if (typeof t.input === 'string' && t.input) return t.input.slice(0, 100)
   const msg = t.display?.messages?.find((m: any) => m.role === 'human' || m.role === 'user')
   return msg && 'content' in msg ? String(msg.content ?? '').slice(0, 100) : ''
 }
 function outputPreview(t: TraceItem): string {
+  if (typeof t.output === 'string' && t.output) return t.output.slice(0, 100)
   const a = t.display?.answer
   return typeof a === 'string' ? a.slice(0, 100) : ''
 }
@@ -690,13 +698,17 @@ export default function TracesPage() {
                   if (c.key === 'output')      return <th key="output">Output{D}</th>
                   if (c.key === 'obs_levels')  return <th key="obs_levels">Obs. Levels{D}</th>
                   if (c.key === 'latency')     return <th key="latency" {...sort.th('latency')}>Latency{sort.ind('latency')}{D}</th>
-                  if (c.key === 'tokens')      return <th key="tokens">Tokens{D}</th>
-                  if (c.key === 'total_cost')  return <th key="total_cost">Cost{D}</th>
+                  if (c.key === 'tokens')        return <th key="tokens">Tokens{D}</th>
+                  if (c.key === 'input_tokens')  return <th key="input_tokens">In Tokens{D}</th>
+                  if (c.key === 'output_tokens') return <th key="output_tokens">Out Tokens{D}</th>
+                  if (c.key === 'total_cost')    return <th key="total_cost">Cost{D}</th>
+                  if (c.key === 'input_cost')    return <th key="input_cost">In Cost{D}</th>
+                  if (c.key === 'output_cost')   return <th key="output_cost">Out Cost{D}</th>
                   if (c.key === 'environment') return <th key="environment">Env{D}</th>
                   if (c.key === 'tags')        return <th key="tags">Tags{D}</th>
                   if (c.key === 'metadata')    return <th key="metadata">Metadata{D}</th>
                   if (c.key === 'score')       return <th key="score" {...sort.th('quality_score')}>Score{sort.ind('quality_score')}{D}</th>
-                  if (c.key === 'session')     return <th key="session">Session{D}</th>
+                  if (c.key === 'session')     return <th key="session">Thread{D}</th>
                   if (c.key === 'user')        return <th key="user">User{D}</th>
                   if (c.key === 'obs_count')   return <th key="obs_count">Observations{D}</th>
                   if (c.key === 'level')       return <th key="level">Level{D}</th>
@@ -761,14 +773,45 @@ export default function TracesPage() {
                         </td>
                       )
                       if (c.key === 'latency') return <td key="latency" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>{trace.latency != null ? `${trace.latency.toFixed(1)}s` : '—'}</td>
-                      if (c.key === 'tokens') return (
-                        <td key="tokens" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>
-                          {((trace.prompt_tokens ?? 0) + (trace.completion_tokens ?? 0)) || '—'}
-                        </td>
-                      )
+                      if (c.key === 'tokens') {
+                        const inp = trace.prompt_tokens ?? 0
+                        const out = trace.completion_tokens ?? 0
+                        const total = inp + out
+                        const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+                        return (
+                          <td key="tokens" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {total > 0 ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                <span style={{ fontSize: 11, color: 'var(--adm-text-2)', fontWeight: 500 }}>{fmt(total)}</span>
+                                <span style={{ fontSize: 10, color: 'var(--adm-text-3)' }}>↑{fmt(inp)} ↓{fmt(out)}</span>
+                              </div>
+                            ) : <span style={{ fontSize: 11, color: 'var(--adm-text-3)' }}>—</span>}
+                          </td>
+                        )
+                      }
+                      if (c.key === 'input_tokens') {
+                        const n = trace.prompt_tokens
+                        const fmt = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)
+                        return <td key="input_tokens" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>{n != null && n > 0 ? fmt(n) : '—'}</td>
+                      }
+                      if (c.key === 'output_tokens') {
+                        const n = trace.completion_tokens
+                        const fmt = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)
+                        return <td key="output_tokens" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>{n != null && n > 0 ? fmt(n) : '—'}</td>
+                      }
                       if (c.key === 'total_cost') return (
                         <td key="total_cost" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>
                           {trace.total_cost != null ? `$${trace.total_cost.toFixed(4)}` : '—'}
+                        </td>
+                      )
+                      if (c.key === 'input_cost') return (
+                        <td key="input_cost" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>
+                          {trace.input_cost != null ? `$${trace.input_cost.toFixed(4)}` : '—'}
+                        </td>
+                      )
+                      if (c.key === 'output_cost') return (
+                        <td key="output_cost" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>
+                          {trace.output_cost != null ? `$${trace.output_cost.toFixed(4)}` : '—'}
                         </td>
                       )
                       if (c.key === 'environment') return (

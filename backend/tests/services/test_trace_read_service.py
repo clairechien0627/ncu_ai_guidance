@@ -22,13 +22,13 @@ def _session_factory():
     return sessionmaker(bind=engine)
 
 
-def _trace(run_id: str, **kwargs) -> Trace:
+def _trace(observation_id: str, **kwargs) -> Trace:
     now = kwargs.pop("start_time", datetime(2026, 5, 18, 1, 0, 0))
     return Trace(
-        run_id=run_id,
-        parent_run_id=kwargs.pop("parent_run_id", None),
+        observation_id=observation_id,
+        trace_id=kwargs.pop("trace_id", None),
         run_type=kwargs.pop("run_type", "chain"),
-        name=kwargs.pop("name", run_id),
+        name=kwargs.pop("name", observation_id),
         start_time=now,
         end_time=kwargs.pop("end_time", now + timedelta(seconds=2)),
         agent_name=kwargs.pop("agent_name", "retrieval_agent"),
@@ -69,7 +69,8 @@ def test_v2_only_trace_detail_returns_children_and_scores():
             trace_id="v2-1",
             type="llm",
             name="LLM",
-            usage={"input": 7, "output": 3},
+            prompt_tokens=7,
+            completion_tokens=3,
             start_time=datetime(2026, 5, 18, 1, 0, 0),
             end_time=datetime(2026, 5, 18, 1, 0, 1),
         ))
@@ -92,7 +93,7 @@ def test_legacy_only_trace_detail_still_falls_back():
     db = SessionLocal()
     try:
         root = _trace("legacy-1", quality_score=3.5)
-        child = _trace("legacy-child", parent_run_id="legacy-1", run_type="tool", name="search")
+        child = _trace("legacy-child", trace_id="legacy-1", run_type="tool", name="search")
         db.add_all([root, child])
         db.commit()
 
@@ -114,7 +115,7 @@ def test_v2_root_with_legacy_children_uses_child_fallback():
             name="root",
             start_time=datetime(2026, 5, 18, 1, 0, 0),
         ))
-        db.add(_trace("legacy-child", parent_run_id="mixed-1", run_type="tool", name="search"))
+        db.add(_trace("legacy-child", trace_id="mixed-1", run_type="tool", name="search"))
         db.commit()
 
         detail = TraceReadService(db).trace_detail("mixed-1")
@@ -157,6 +158,7 @@ def test_score_stats_counts_v2_and_legacy_fallback():
             start_time=datetime(2026, 5, 18, 1, 0, 0),
         ))
         db.add(Score(score_id="score-1", trace_id="v2-1", name="overall", value=4.0))
+        db.add(Score(score_id="score-2", trace_id="v2-1", name="grounding", value=2.0))
         db.add(_trace("legacy-1", quality_score=2.0, quality_detail=json.dumps({"grounding": 2.0})))
         db.commit()
 
@@ -258,7 +260,7 @@ def test_split_payload_and_legacy_services_keep_dedupe_and_filters():
 
         assert ids.count("shared-1") == 1
         assert "legacy-error" in ids
-        assert legacy_errors[0].run_id == "legacy-error"
+        assert legacy_errors[0].observation_id == "legacy-error"
     finally:
         db.close()
 

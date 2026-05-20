@@ -98,7 +98,7 @@ class _TraceReadCore:
             for row in legacy_rows
             # When v2 data exists, skip legacy child traces (task/chain runs under a router);
             # they belong as observations, not top-level trace rows.
-            if row.run_id not in v2_ids and (not v2_ids or row.parent_run_id is None)
+            if row.observation_id not in v2_ids and (not v2_ids or row.trace_id is None)
         )
         return payloads
 
@@ -183,6 +183,10 @@ class _TraceReadCore:
                 q = q.filter(Trace.error.isnot(None))
             elif has_ok and not has_error:
                 q = q.filter(Trace.error.is_(None))
+        if cleaned.get("status") == "error":
+            q = q.filter(Trace.error.isnot(None))
+        elif cleaned.get("status") == "ok":
+            q = q.filter(Trace.error.is_(None))
         if cleaned.get("max_quality") is not None:
             q = q.filter(Trace.quality_score.isnot(None), Trace.quality_score < cleaned["max_quality"])
         if cleaned.get("min_quality") is not None:
@@ -422,22 +426,22 @@ class _TraceReadCore:
             uid = self._payload_user_id(p)
             if not uid:
                 continue
-            u = users.setdefault(uid, {"user_id": uid, "first_event": p.get("start_time"), "last_event": p.get("start_time"), "session_ids": set(), "trace_count": 0, "input_tokens": 0, "output_tokens": 0, "_quality_scores": []})
+            u = users.setdefault(uid, {"user_id": uid, "first_event": p.get("start_time"), "last_event": p.get("start_time"), "thread_ids": set(), "trace_count": 0, "input_tokens": 0, "output_tokens": 0, "_quality_scores": []})
             u["trace_count"] += 1
             u["input_tokens"] += p.get("prompt_tokens") or 0
             u["output_tokens"] += p.get("completion_tokens") or 0
             if p.get("quality_score") is not None:
                 u["_quality_scores"].append(p["quality_score"])
             if p.get("thread_id"):
-                u["session_ids"].add(p["thread_id"])
+                u["thread_ids"].add(p["thread_id"])
             if p.get("start_time"):
                 u["first_event"] = min(u["first_event"], p["start_time"]) if u["first_event"] else p["start_time"]
                 u["last_event"] = max(u["last_event"], p["start_time"]) if u["last_event"] else p["start_time"]
         result = []
         for u in users.values():
             qs = u.pop("_quality_scores")
-            sids = u.pop("session_ids")
-            result.append({**u, "session_count": len(sids), "total_tokens": u["input_tokens"] + u["output_tokens"], "avg_quality_score": self._avg(qs)})
+            tids = u.pop("thread_ids")
+            result.append({**u, "thread_count": len(tids), "total_tokens": u["input_tokens"] + u["output_tokens"], "avg_quality_score": self._avg(qs)})
         return result
 
     @staticmethod

@@ -54,7 +54,7 @@ class AgentContext:
     max_searches: int | None = None
     max_consecutive_empty: int | None = None
     thread_id: str | None = None
-    run_id: str | None = None
+    observation_id: str | None = None
     tool_sources: list[str] = field(default_factory=list)
     _memory_context: dict | None = field(default=None, repr=False)
 

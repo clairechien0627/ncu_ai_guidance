@@ -22,6 +22,46 @@ function fmtJson(v: unknown) {
   try { return JSON.stringify(v, null, 2) } catch { return String(v) }
 }
 
+function fmtObsInput(v: unknown): string {
+  if (v == null) return '—'
+  if (typeof v === 'string') return v
+  if (typeof v === 'object' && !Array.isArray(v)) {
+    const obj = v as Record<string, unknown>
+    // no_tool_runner format: { user_message, payload, sources }
+    if ('user_message' in obj) {
+      const parts: string[] = [String(obj.user_message)]
+      const payload = obj.payload
+      if (payload && typeof payload === 'object' && Object.keys(payload).length > 0)
+        parts.push(`payload: ${JSON.stringify(payload, null, 2)}`)
+      return parts.join('\n\n')
+    }
+    // LangChain messages format: { messages: [...] }
+    if (Array.isArray(obj.messages)) {
+      return (obj.messages as any[]).map(m =>
+        `[${m.role ?? m.type ?? '?'}]: ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}`
+      ).join('\n\n')
+    }
+  }
+  try { return JSON.stringify(v, null, 2) } catch { return String(v) }
+}
+
+function fmtObsOutput(v: unknown): string {
+  if (v == null) return '—'
+  if (typeof v === 'string') return v
+  if (typeof v === 'object' && !Array.isArray(v)) {
+    const obj = v as Record<string, unknown>
+    // no_tool_runner format: { answer, sources }
+    if ('answer' in obj && typeof obj.answer === 'string') return obj.answer
+    // LangChain LLM output: { generations: [[{ text }]] }
+    if (Array.isArray(obj.generations)) {
+      const gen = (obj.generations as any[][])[0]?.[0]
+      if (gen?.text) return gen.text
+      if (gen?.message?.content) return gen.message.content
+    }
+  }
+  try { return JSON.stringify(v, null, 2) } catch { return String(v) }
+}
+
 // ── Quality breakdown ─────────────────────────────────────────────────────────
 
 function QualityBars({ detail }: { detail: NonNullable<TraceDetail['quality_detail']> }) {
@@ -121,7 +161,7 @@ function ChildSpan({ child }: { child: TraceDetail }) {
             <div key={label}>
               <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--adm-text-3)', marginBottom: 4 }}>{label}</div>
               <pre style={{ fontSize: 11, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 180, overflowY: 'auto', background: 'var(--adm-surface)', padding: 8, borderRadius: 4, border: '1px solid var(--adm-border)' }}>
-                {fmtJson(i === 0 ? child.inputs_raw : child.outputs_raw)}
+                {i === 0 ? fmtObsInput(child.inputs_raw) : fmtObsOutput(child.outputs_raw)}
               </pre>
             </div>
           ))}

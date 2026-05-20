@@ -82,7 +82,7 @@ def _trace_metadata(trace: Trace) -> dict:
         "document_ids": _parse_json(trace.document_ids),
         "display": _parse_json(trace.display),
         "legacy_run_type": trace.run_type,
-        "legacy_parent_run_id": trace.parent_run_id,
+        "legacy_trace_id": trace.trace_id,
         "source": "legacy_backfill",
     }
 
@@ -94,10 +94,9 @@ def _trace_body(trace: Trace) -> dict:
         if value
     ]
     return {
-        "trace_id": trace.run_id,
+        "trace_id": trace.observation_id,
         "name": trace.name,
         "thread_id": trace.thread_id,
-        "session_id": trace.thread_id,
         "user_id": trace.user_id,
         "environment": trace.environment or "default",
         "input": _parse_json(trace.inputs),
@@ -117,9 +116,9 @@ def _observation_body(root: Trace, child: Trace) -> dict:
         "unit": "TOKENS",
     }
     return {
-        "observation_id": child.run_id,
-        "trace_id": root.run_id,
-        "parent_observation_id": child.parent_run_id if child.parent_run_id != root.run_id else None,
+        "observation_id": child.observation_id,
+        "trace_id": root.observation_id,
+        "parent_observation_id": child.trace_id if child.trace_id != root.observation_id else None,
         "type": child.run_type or "span",
         "name": child.name,
         "usage": usage,
@@ -142,46 +141,46 @@ def _score_bodies(trace: Trace) -> list[dict]:
     if isinstance(detail, dict):
         for name, value in detail.items():
             if name in QUALITY_DIMENSIONS and isinstance(value, (int, float)):
-                bodies[f"{trace.run_id}:{name}:legacy-backfill"] = {
-                    "score_id": f"{trace.run_id}:{name}:legacy-backfill",
-                    "trace_id": trace.run_id,
+                bodies[f"{trace.observation_id}:{name}:legacy-backfill"] = {
+                    "score_id": f"{trace.observation_id}:{name}:legacy-backfill",
+                    "trace_id": trace.observation_id,
                     "name": name,
                     "value": float(value),
                     "data_type": "NUMERIC",
                     "source": "EVAL",
                     "comment": trace.user_feedback,
                     "metadata": {"source": "legacy_backfill"},
-                    "execution_trace_id": trace.run_id,
+                    "execution_trace_id": trace.observation_id,
                 }
             elif name == "verdict" and isinstance(value, str):
-                bodies[f"{trace.run_id}:verdict:legacy-backfill"] = {
-                    "score_id": f"{trace.run_id}:verdict:legacy-backfill",
-                    "trace_id": trace.run_id,
+                bodies[f"{trace.observation_id}:verdict:legacy-backfill"] = {
+                    "score_id": f"{trace.observation_id}:verdict:legacy-backfill",
+                    "trace_id": trace.observation_id,
                     "name": "verdict",
                     "string_value": value,
                     "data_type": "CATEGORICAL",
                     "source": "EVAL",
                     "metadata": {"source": "legacy_backfill"},
-                    "execution_trace_id": trace.run_id,
+                    "execution_trace_id": trace.observation_id,
                 }
 
     if trace.quality_score is not None:
-        bodies[f"{trace.run_id}:overall:legacy-backfill"] = {
-            "score_id": f"{trace.run_id}:overall:legacy-backfill",
-            "trace_id": trace.run_id,
+        bodies[f"{trace.observation_id}:overall:legacy-backfill"] = {
+            "score_id": f"{trace.observation_id}:overall:legacy-backfill",
+            "trace_id": trace.observation_id,
             "name": "overall",
             "value": float(trace.quality_score),
             "data_type": "NUMERIC",
             "source": "EVAL",
             "comment": trace.user_feedback,
             "metadata": {"source": "legacy_backfill"},
-            "execution_trace_id": trace.run_id,
+            "execution_trace_id": trace.observation_id,
         }
 
     if trace.user_feedback:
-        bodies[f"{trace.run_id}:feedback:legacy-backfill"] = {
-            "score_id": f"{trace.run_id}:feedback:legacy-backfill",
-            "trace_id": trace.run_id,
+        bodies[f"{trace.observation_id}:feedback:legacy-backfill"] = {
+            "score_id": f"{trace.observation_id}:feedback:legacy-backfill",
+            "trace_id": trace.observation_id,
             "name": "feedback",
             "string_value": trace.user_feedback,
             "data_type": "TEXT",
@@ -196,7 +195,7 @@ def _score_bodies(trace: Trace) -> list[dict]:
 def _root_query(db: Session, *, run_id: str | None, since: datetime | None):
     q = db.query(Trace).filter(_agent_execution_root())
     if run_id:
-        q = q.filter(Trace.run_id == run_id)
+        q = q.filter(Trace.observation_id == run_id)
     if since:
         q = q.filter(Trace.start_time >= since)
     return q.order_by(Trace.start_time.asc())
@@ -220,12 +219,12 @@ def backfill(db: Session, *, dry_run: bool = False, limit: int | None = None, ru
         # Collect ALL descendants (not just direct children) so deeply nested
         # task runs also become observations under the router trace.
         descendants: list[Trace] = []
-        queue = [root.run_id]
+        queue = [root.observation_id]
         while queue:
             parent_id = queue.pop()
             children = (
                 db.query(Trace)
-                .filter(Trace.parent_run_id == parent_id)
+                .filter(Trace.trace_id == parent_id)
                 .order_by(Trace.start_time.asc())
                 .all()
             )

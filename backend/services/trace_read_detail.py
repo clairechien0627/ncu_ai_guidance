@@ -10,16 +10,16 @@ class TraceDetailReadService:
     def __init__(self, core: _TraceReadCore):
         self.core = core
 
-    def trace_detail(self, run_id: str) -> dict:
-        trace_v2 = self.core.db.query(TraceV2).filter(TraceV2.trace_id == run_id).first()
-        legacy = self.core.db.query(Trace).filter(Trace.run_id == run_id).first()
+    def trace_detail(self, trace_id: str) -> dict:
+        trace_v2 = self.core.db.query(TraceV2).filter(TraceV2.trace_id == trace_id).first()
+        legacy = self.core.db.query(Trace).filter(Trace.observation_id == trace_id).first()
         if not trace_v2 and not legacy:
             raise HTTPException(status_code=404, detail="Trace not found")
 
         payload = _v2_trace_payload(self.core.db, trace_v2, include_raw=True) if trace_v2 else legacy_trace_payload(legacy, include_raw=True)
         children = (
             self.core.db.query(Observation)
-            .filter(Observation.trace_id == run_id)
+            .filter(Observation.trace_id == trace_id)
             .order_by(Observation.start_time.asc())
             .limit(200)
             .all()
@@ -29,7 +29,7 @@ class TraceDetailReadService:
         else:
             legacy_children = (
                 self.core.db.query(Trace)
-                .filter(Trace.parent_run_id == run_id)
+                .filter(Trace.trace_id == trace_id)
                 .order_by(Trace.start_time.asc())
                 .limit(200)
                 .all()

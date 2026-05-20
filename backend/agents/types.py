@@ -22,7 +22,7 @@ class AgentResult:
     agent_name: str = "chat_agent"
     prompt_name: str = "chat"
     prompt_version: str = "unknown"
-    trace_run_id: str | None = None
+    observation_id: str | None = None
     # Set by an agent to request a handoff to another intent.
     # The router checks this and re-routes with _hop_count + 1.
     # retrieval_agent → "research" when comprehensive coverage is needed but retrieval finds nothing

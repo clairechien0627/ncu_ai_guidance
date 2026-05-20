@@ -146,7 +146,6 @@ class TraceRepository:
 
         row.name = body.get("name") or row.name or "trace"
         row.thread_id = body.get("thread_id")
-        row.session_id = body.get("session_id") or body.get("thread_id")
         row.user_id = body.get("user_id")
         row.environment = body.get("environment") or "default"
         # Only overwrite input/output if explicitly provided — preserves values from earlier upsert
@@ -182,6 +181,7 @@ class ObservationRepository:
             db.add(row)
 
         row.trace_id = body.get("trace_id") or row.trace_id
+        row.thread_id = body.get("thread_id") or row.thread_id
         row.parent_observation_id = body.get("parent_observation_id")
         row.type = _normalize_observation_type(body.get("type") or row.type)
         row.name = body.get("name") or row.name or "observation"
@@ -223,6 +223,7 @@ class ObservationRepository:
         row.output = _json_text(body.get("output"))
         row.metadata_json = _json_text(body.get("metadata"))
         row.level = body.get("level") or ("ERROR" if body.get("status_message") else "DEFAULT")
+        row.status = "error" if row.level == "ERROR" else "success"
         row.status_message = body.get("status_message")
         row.start_time = _dt(body.get("start_time")) or row.start_time or _utcnow()
         row.completion_start_time = _dt(body.get("completion_start_time"))
@@ -389,7 +390,7 @@ class ScoreRepository:
 
     @staticmethod
     def sync_legacy_trace_cache(db: Session, trace_id: str) -> None:
-        trace = db.query(Trace).filter(Trace.run_id == trace_id).first()
+        trace = db.query(Trace).filter(Trace.observation_id == trace_id).first()
         if trace is None:
             return
 
@@ -474,7 +475,7 @@ def observation_to_trace_payload(obs: Observation) -> dict:
         "id": obs.observation_id,
         "run_type": obs.type,
         "name": obs.name,
-        "parent_run_id": obs.parent_observation_id or obs.trace_id,
+        "parent_observation_id": obs.parent_observation_id or obs.trace_id,
         "thread_id": None,
         "start_time": obs.start_time.isoformat() + "Z" if obs.start_time else None,
         "end_time": obs.end_time.isoformat() + "Z" if obs.end_time else None,

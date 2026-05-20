@@ -47,8 +47,8 @@ class TraceReadService:
     def compare_prompt_versions(self, v1: str, v2: str, *, limit: int = 200) -> dict:
         return self._list.compare_prompt_versions(v1, v2, limit=limit)
 
-    def trace_detail(self, run_id: str) -> dict:
-        return self._detail.trace_detail(run_id)
+    def trace_detail(self, trace_id: str) -> dict:
+        return self._detail.trace_detail(trace_id)
 
     def stats(self, *, days: int = 7) -> dict:
         return self._stats.stats(days=days)

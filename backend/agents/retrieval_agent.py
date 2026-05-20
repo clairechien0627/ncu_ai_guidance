@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator, Callable
 
 from .runner import run_tool_agent as _run_agent
 from .runner import run_tool_agent_stream as _run_agent_stream
+from .no_tool_runner import write_agent_span
 from prompting.loader import load_stack
 
 from .types import AgentResult
@@ -40,15 +41,17 @@ async def answer(
     on_stage: Callable[[str], None] | None = None,
     recursion_limit: int = 30,
     metadata: dict[str, str | int] | None = None,
-    run_id: str | None = None,
+    observation_id: str | None = None,
     include_document_abstracts: bool = True,
     max_searches: int | None = None,
     max_consecutive_empty: int | None = None,
-    parent_run_id: str | None = None,
+    trace_id: str | None = None,
     use_mini: bool = False,
     original_intent: str | None = None,
     resolved_intent: str | None = None,
 ) -> AgentResult:
+    from datetime import datetime, timezone as _tz
+    import uuid as _uuid
     stack = load_stack(STACK_NAME)
     metadata = metadata or {
         "task_type": "retrieval_qa",
@@ -60,13 +63,28 @@ async def answer(
         metadata["original_intent"] = original_intent
     if resolved_intent and "resolved_intent" not in metadata:
         metadata["resolved_intent"] = resolved_intent
+
+    observation_id = observation_id or str(_uuid.uuid4())
+    agent_start = datetime.now(_tz.utc)
+    if trace_id:
+        write_agent_span(
+            observation_id=observation_id,
+            trace_id=trace_id,
+            thread_id=thread_id,
+            parent_observation_id=trace_id,
+            name="Retrieval Agent",
+            start_time=agent_start,
+            input_data={"messages": [{"role": "user", "content": user_message}]},
+            extra_metadata={"task_type": "retrieval_qa", "agent_name": AGENT_NAME},
+        )
+
     effective_prompt = task_prompt if task_prompt is not None else stack.contents
     response, sources = await _run_agent(
         user_message,
         thread_id,
         document_ids,
         metadata=metadata,
-        run_id=run_id,
+        observation_id=observation_id,
         task_prompt=effective_prompt,
         on_stage=on_stage,
         recursion_limit=recursion_limit,
@@ -74,14 +92,23 @@ async def answer(
         include_research_context=False,
         max_searches=max_searches,
         max_consecutive_empty=max_consecutive_empty,
-        parent_run_id=parent_run_id,
+        trace_id=trace_id,
+        parent_observation_id=observation_id,
         use_mini=use_mini,
     )
-    # Escalate to research_agent when retrieval fails on a question that clearly
-    # asked for comprehensive multi-aspect coverage. Only escalate when:
-    # 1. Documents are attached (not a pure chat question)
-    # 2. No sources were found (retrieval genuinely failed)
-    # 3. The question contains research-level keywords
+    if trace_id:
+        write_agent_span(
+            observation_id=observation_id,
+            trace_id=trace_id,
+            thread_id=thread_id,
+            parent_observation_id=trace_id,
+            name="Retrieval Agent",
+            start_time=agent_start,
+            end_time=datetime.now(_tz.utc),
+            input_data={"messages": [{"role": "user", "content": user_message}]},
+            output_data={"answer": response, "sources": sources},
+            extra_metadata={"task_type": "retrieval_qa", "agent_name": AGENT_NAME},
+        )
     next_intent = None
     if (
         document_ids
@@ -98,7 +125,7 @@ async def answer(
         agent_name=metadata.get("agent_name", AGENT_NAME),
         prompt_name=metadata.get("prompt_name", PROMPT_NAME),
         prompt_version=metadata.get("prompt_version", "unknown"),
-        trace_run_id=run_id,
+        observation_id=observation_id,
         next_intent=next_intent,
     )
 
@@ -111,8 +138,8 @@ async def stream(
     route_intent: str = "retrieval",
     task_prompt: str | list[str] | None = None,
     metadata: dict[str, str | int] | None = None,
-    run_id: str | None = None,
-    parent_run_id: str | None = None,
+    observation_id: str | None = None,
+    trace_id: str | None = None,
     include_document_abstracts: bool = True,
     max_searches: int | None = None,
     max_consecutive_empty: int | None = None,
@@ -138,8 +165,8 @@ async def stream(
         document_ids,
         metadata=metadata,
         task_prompt=effective_prompt,
-        run_id=run_id,
-        parent_run_id=parent_run_id,
+        observation_id=observation_id,
+        trace_id=trace_id,
         include_document_abstracts=include_document_abstracts,
         include_research_context=False,
         max_searches=max_searches,

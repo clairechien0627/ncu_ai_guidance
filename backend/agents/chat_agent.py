@@ -13,7 +13,7 @@ from langfuse import observe, propagate_attributes
 
 from config import settings
 from observability import ainvoke_traced_generation, update_current_observation_io
-from .no_tool_runner import run_no_tool_agent, stream_no_tool_agent
+from .no_tool_runner import run_no_tool_agent, stream_no_tool_agent, write_agent_span
 from .request_context import get_user_id
 from prompting.loader import load_stack
 
@@ -64,20 +64,20 @@ def _llm(use_mini: bool = False) -> AzureChatOpenAI:
 
 
 def _write_composition_trace(
-    run_id: str,
+    observation_id: str,
     thread_id: str,
     document_ids: list[int] | None,
     metadata: dict,
     inputs: dict,
     *,
-    parent_run_id: str | None = None,
+    trace_id: str | None = None,
     output: dict | None = None,
     error: str | None = None,
 ) -> None:
     """Persist the future router-controlled final composition step locally."""
     import os
     # Write observation to v2 when this run is a child of a router trace
-    if parent_run_id:
+    if trace_id:
         try:
             from services.trace_ingestion import TraceEventIngestor
             from datetime import datetime as _dt, timezone as _tz
@@ -85,8 +85,8 @@ def _write_composition_trace(
             TraceEventIngestor.enqueue_sync([{
                 "event_type": "observation-create",
                 "body": {
-                    "observation_id": run_id,
-                    "trace_id": parent_run_id,
+                    "observation_id": observation_id,
+                    "trace_id": trace_id,
                     "type": "SPAN",
                     "name": "chat_agent.compose_final_response",
                     "start_time": now_iso,
@@ -110,11 +110,11 @@ def _write_composition_trace(
     try:
         with db_session() as db:
             now = datetime.now(timezone.utc)
-            trace = db.query(Trace).filter(Trace.run_id == run_id).first()
+            trace = db.query(Trace).filter(Trace.observation_id == observation_id).first()
             if trace is None:
                 trace = Trace(
-                    run_id=run_id,
-                    parent_run_id=parent_run_id,
+                    observation_id=observation_id,
+                    trace_id=trace_id,
                     run_type="llm",
                     name="chat_agent.compose_final_response",
                     start_time=now,
@@ -158,8 +158,8 @@ async def compose_final_response(
     task_result: AgentResult,
     thread_id: str,
     document_ids: list[int] | None = None,
-    run_id: str | None = None,
-    parent_run_id: str | None = None,
+    observation_id: str | None = None,
+    trace_id: str | None = None,
     use_mini: bool = False,
 ) -> AgentResult:
     """Format a task-agent result for the user without routing or tool access.
@@ -168,7 +168,7 @@ async def compose_final_response(
     chat calls; this one composes an already-computed task result and is meant
     for router-controlled plans.
     """
-    run_id = run_id or str(_uuid.uuid4())
+    observation_id = observation_id or str(_uuid.uuid4())
     stack = load_stack(STACK_NAME)
     metadata = {
         "task_type": COMPOSITION_TASK_TYPE,
@@ -185,8 +185,8 @@ async def compose_final_response(
         "sources": task_result.sources,
     }
     await asyncio.to_thread(
-        _write_composition_trace, run_id, thread_id, document_ids, metadata, inputs,
-        parent_run_id=parent_run_id,
+        _write_composition_trace, observation_id, thread_id, document_ids, metadata, inputs,
+        trace_id=trace_id,
     )
     system_messages = [SystemMessage(content=content) for content in stack.contents]
     system_messages.append(SystemMessage(content=(
@@ -223,8 +223,8 @@ async def compose_final_response(
         content = str(getattr(response, "content", response)).strip()
         output = {"answer": content, "sources": task_result.sources}
         await asyncio.to_thread(
-            _write_composition_trace, run_id, thread_id, document_ids, metadata, inputs,
-            parent_run_id=parent_run_id, output=output,
+            _write_composition_trace, observation_id, thread_id, document_ids, metadata, inputs,
+            trace_id=trace_id, output=output,
         )
         return AgentResult(
             response=content,
@@ -234,17 +234,17 @@ async def compose_final_response(
             agent_name=AGENT_NAME,
             prompt_name=str(metadata.get("prompt_name", PROMPT_NAME)),
             prompt_version=str(metadata.get("prompt_version", "unknown")),
-            trace_run_id=run_id,
+            observation_id=observation_id,
             next_intent=None,
         )
     except Exception as exc:
         _write_composition_trace(
-            run_id,
+            observation_id,
             thread_id,
             document_ids,
             metadata,
             inputs,
-            parent_run_id=parent_run_id,
+            trace_id=trace_id,
             error=str(exc),
         )
         raise
@@ -256,8 +256,8 @@ async def answer(
     thread_id: str,
     document_ids: list[int] | None = None,
     *,
-    run_id: str | None = None,
-    parent_run_id: str | None = None,
+    observation_id: str | None = None,
+    trace_id: str | None = None,
     on_stage: Callable[[str], None] | None = None,
     use_mini: bool = False,
     original_intent: str | None = None,
@@ -275,7 +275,22 @@ async def answer(
     if resolved_intent:
         meta["resolved_intent"] = resolved_intent
     await _emit_stage(on_stage, "chat_agent: composing")
-    response, sources, meta, actual_run_id = await run_no_tool_agent(
+    from datetime import datetime, timezone as _tz
+    import uuid as _uuid
+    observation_id = observation_id or str(_uuid.uuid4())
+    agent_start = datetime.now(_tz.utc)
+    if trace_id:
+        write_agent_span(
+            observation_id=observation_id,
+            trace_id=trace_id,
+            thread_id=thread_id,
+            parent_observation_id=trace_id,
+            name="Chat Agent",
+            start_time=agent_start,
+            input_data={"messages": [{"role": "user", "content": user_message}]},
+            extra_metadata={"task_type": "chat_turn", "agent_name": AGENT_NAME},
+        )
+    response, sources, meta, observation_id = await run_no_tool_agent(
         user_message=user_message,
         thread_id=thread_id,
         document_ids=document_ids,
@@ -284,8 +299,8 @@ async def answer(
         agent_name=AGENT_NAME,
         task_type="chat_turn",
         route_intent="chat",
-        run_id=run_id,
-        parent_run_id=parent_run_id,
+        observation_id=observation_id,
+        trace_id=trace_id,
         use_mini=use_mini,
         extra_system_messages=[
             "You do not have retrieval tools in this step. If the request "
@@ -296,6 +311,20 @@ async def answer(
         original_intent=original_intent,
         resolved_intent=resolved_intent,
     )
+    # Update Chat Agent SPAN with output and end time
+    if trace_id:
+        write_agent_span(
+            observation_id=observation_id,
+            trace_id=trace_id,
+            thread_id=thread_id,
+            parent_observation_id=trace_id,
+            name="Chat Agent",
+            start_time=agent_start,
+            end_time=datetime.now(_tz.utc),
+            input_data={"messages": [{"role": "user", "content": user_message}]},
+            output_data={"answer": response, "sources": sources},
+            extra_metadata={"task_type": "chat_turn", "agent_name": AGENT_NAME},
+        )
     update_current_observation_io(
         input={
             "message": user_message,
@@ -319,7 +348,7 @@ async def answer(
         agent_name=AGENT_NAME,
         prompt_name=str(meta.get("prompt_name", PROMPT_NAME)),
         prompt_version=str(meta.get("prompt_version", "unknown")),
-        trace_run_id=actual_run_id,
+        observation_id=observation_id,
         next_intent=None,
     )
 
@@ -329,8 +358,8 @@ async def stream(
     thread_id: str,
     document_ids: list[int] | None = None,
     *,
-    run_id: str | None = None,
-    parent_run_id: str | None = None,
+    observation_id: str | None = None,
+    trace_id: str | None = None,
     on_stage: Callable[[str], None] | None = None,
     use_mini: bool = False,
     original_intent: str | None = None,
@@ -346,8 +375,8 @@ async def stream(
         agent_name=AGENT_NAME,
         task_type="chat_turn",
         route_intent="chat",
-        run_id=run_id,
-        parent_run_id=parent_run_id,
+        observation_id=observation_id,
+        trace_id=trace_id,
         use_mini=use_mini,
         extra_system_messages=[
             "You do not have retrieval tools in this step. If the request "

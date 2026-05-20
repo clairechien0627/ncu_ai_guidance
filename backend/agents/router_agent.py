@@ -35,7 +35,7 @@ def _fire_and_forget(coro) -> None:
 
 
 def _write_router_trace(
-    run_id: str,
+    trace_id: str,
     thread_id: str,
     document_ids: list[int] | None,
     route: AgentRoute,
@@ -46,7 +46,7 @@ def _write_router_trace(
     error: str | None = None,
     user_id: str | None = None,
 ) -> None:
-    """Write or update a thin router-level trace entry (parent_run_id=None)."""
+    """Write or update a thin router-level trace entry (trace_id=None)."""
     import os
     from db import db_session, Trace
     from observability.tracer import _get_default_environment
@@ -58,9 +58,9 @@ def _write_router_trace(
     # v2 trace-create/update (always) — upsert semantics via outbox
     try:
         v2_body: dict = {
-            "trace_id": run_id,
+            "trace_id": trace_id,
             "name": "router_agent",
-            "session_id": thread_id,
+            "thread_id": thread_id,
             "user_id": user_id,
             "environment": env,
             "start_time": now.isoformat(),
@@ -79,7 +79,26 @@ def _write_router_trace(
             v2_body["end_time"] = end_time.isoformat()
         if error:
             v2_body["level"] = "ERROR"
-        TraceEventIngestor.enqueue_sync([{"event_type": "trace-create", "body": v2_body}])
+
+        events: list[dict] = [{"event_type": "trace-create", "body": v2_body}]
+        # Root observation — router_agent span (observation_id == trace_id so children can reference it)
+        router_obs: dict = {
+            "observation_id": trace_id,
+            "trace_id": trace_id,
+            "type": "SPAN",
+            "name": "Router",
+            "level": "ERROR" if error else "DEFAULT",
+            "status_message": error,
+            "start_time": now.isoformat(),
+        }
+        if user_message:
+            router_obs["input"] = {"messages": [{"role": "user", "content": user_message}]}
+        if output:
+            router_obs["output"] = {"answer": output}
+        if end_time:
+            router_obs["end_time"] = end_time.isoformat()
+        events.append({"event_type": "observation-create", "body": router_obs})
+        TraceEventIngestor.enqueue_sync(events)
     except Exception as exc:
         logger.warning("Router v2 trace enqueue failed: %s", exc)
 
@@ -87,11 +106,11 @@ def _write_router_trace(
     if os.environ.get("LEGACY_TRACE_WRITE", "true").lower() not in ("0", "false", "no"):
         try:
             with db_session() as db:
-                existing = db.query(Trace).filter(Trace.run_id == run_id).first()
+                existing = db.query(Trace).filter(Trace.observation_id == trace_id).first()
                 if existing is None:
                     db.add(Trace(
-                        run_id=run_id,
-                        parent_run_id=None,
+                        observation_id=trace_id,
+                        trace_id=None,
                         run_type="chain",
                         name="router_agent",
                         start_time=now,
@@ -222,8 +241,8 @@ class ExecutionStep:
 
     intent: str
     agent_name: str
-    run_id: str
-    parent_run_id: str
+    observation_id: str
+    trace_id: str
     kind: str = "primary"
     reason: str = ""
 
@@ -236,7 +255,7 @@ class ExecutionPlan:
     composition, and optional background evaluation.
     """
 
-    router_run_id: str
+    trace_id: str
     route: AgentRoute
     steps: tuple[ExecutionStep, ...]
     evaluate_after: bool = False
@@ -379,8 +398,8 @@ def _keyword_classify(message: str, has_docs: bool) -> str:
 def _build_execution_plan(
     route: AgentRoute,
     *,
-    router_run_id: str,
-    task_run_id: str | None = None,
+    trace_id: str,
+    observation_id: str | None = None,
     collect_evidence: bool = False,
 ) -> ExecutionPlan:
     """Build the router-owned execution plan for a request."""
@@ -391,16 +410,16 @@ def _build_execution_plan(
         steps.append(ExecutionStep(
             intent="retrieval",
             agent_name="retrieval_agent",
-            run_id=str(_uuid_mod.uuid4()),
-            parent_run_id=router_run_id,
+            observation_id=str(_uuid_mod.uuid4()),
+            trace_id=trace_id,
             kind="evidence_collection",
             reason="question_requires_document_evidence",
         ))
     steps.append(ExecutionStep(
         intent=intent,
         agent_name=agent_name,
-        run_id=task_run_id or str(_uuid_mod.uuid4()),
-        parent_run_id=router_run_id,
+        observation_id=observation_id or str(_uuid_mod.uuid4()),
+        trace_id=trace_id,
         kind="primary",
         reason=f"route_intent={intent}",
     ))
@@ -408,13 +427,13 @@ def _build_execution_plan(
         steps.append(ExecutionStep(
             intent="chat",
             agent_name="chat_agent",
-            run_id=str(_uuid_mod.uuid4()),
-            parent_run_id=router_run_id,
+            observation_id=str(_uuid_mod.uuid4()),
+            trace_id=trace_id,
             kind="composition",
             reason="final_composition",
         ))
     return ExecutionPlan(
-        router_run_id=router_run_id,
+        trace_id=trace_id,
         route=route,
         steps=tuple(steps),
         evaluate_after=route.evaluate_after,
@@ -479,7 +498,6 @@ async def _llm_classify_intent(message: str, has_docs: bool) -> RouterDecision:
         return RouterDecision(intent=fallback, evaluate_after=False, reason="fallback")
 
 
-@observe(as_type="chain")
 async def classify_intent(
     message: str,
     document_ids: list[int] | None = None,
@@ -532,15 +550,15 @@ async def _update_memory(
 async def _run_evaluation_agent(
     thread_id: str,
     *,
-    run_id: str | None = None,
-    parent_run_id: str | None = None,
-    exclude_run_id: str | None = None,
+    observation_id: str | None = None,
+    trace_id: str | None = None,
+    exclude_observation_id: str | None = None,
 ) -> AgentResult:
     with propagate_attributes(session_id=thread_id, user_id=get_user_id()) if thread_id else contextlib.nullcontext():
         from agents.evaluation_agent import evaluate_latest_trace_for_thread, format_evaluation_for_user
         result = await evaluate_latest_trace_for_thread(
             thread_id,
-            exclude_run_id=exclude_run_id,
+            exclude_observation_id=exclude_observation_id,
         )
         return AgentResult(
             response=format_evaluation_for_user(result),
@@ -550,7 +568,7 @@ async def _run_evaluation_agent(
             agent_name="evaluation_agent",
             prompt_name="evaluation_agent",
             prompt_version=prompt_version("evaluation_agent"),
-            trace_run_id=run_id,
+            observation_id=observation_id,
         )
 
 
@@ -560,8 +578,8 @@ async def run_research_agent(
     thread_id: str,
     document_ids: list[int] | None,
     *,
-    run_id: str | None,
-    parent_run_id: str | None = None,
+    observation_id: str | None,
+    trace_id: str | None = None,
     on_stage=None,
     on_token=None,
     original_intent: str | None = None,
@@ -586,12 +604,12 @@ async def run_research_agent(
             document_ids=document_ids or [],
             task_type="research_task",
             metadata=metadata,
-            run_id=run_id,
+            observation_id=observation_id,
             on_stage=on_stage,
             on_token=on_token,
             max_searches=10,
             max_consecutive_no_new=2,
-            parent_run_id=parent_run_id,
+            trace_id=trace_id,
             bypass_cache=bypass_cache,
         )
 
@@ -602,8 +620,8 @@ async def run_chat_agent(
     thread_id: str,
     document_ids: list[int] | None,
     *,
-    run_id: str | None,
-    parent_run_id: str | None = None,
+    observation_id: str | None,
+    trace_id: str | None = None,
     on_stage=None,
     use_mini: bool = False,
     original_intent: str | None = None,
@@ -615,8 +633,8 @@ async def run_chat_agent(
             user_message,
             thread_id,
             document_ids,
-            run_id=run_id,
-            parent_run_id=parent_run_id,
+            observation_id=observation_id,
+            trace_id=trace_id,
             on_stage=on_stage,
             use_mini=use_mini,
             original_intent=original_intent,
@@ -631,7 +649,7 @@ async def route_agent_message(
     document_ids: list[int] | None = None,
     *,
     route: AgentRoute | None = None,
-    run_id: str | None = None,
+    trace_id: str | None = None,
     _hop_count: int = 0,
     use_mini: bool = False,
 ) -> AgentResult:
@@ -646,36 +664,36 @@ async def route_agent_message(
                 thread_id,
             )
             return await chat_agent.answer(user_message, thread_id, document_ids,
-                                           run_id=run_id, use_mini=use_mini)
+                                           use_mini=use_mini)
 
         route = route or await classify_intent(user_message, document_ids, thread_id)
 
         # Router is the root trace; task agents become its children.
-        router_run_id = run_id or str(_uuid_mod.uuid4())
+        trace_id = trace_id or str(_uuid_mod.uuid4())
         plan = _build_execution_plan(
             route,
-            router_run_id=router_run_id,
+            trace_id=trace_id,
             collect_evidence=bool(document_ids) and _normalise_intent(route.intent) == "question",
         )
         step = plan.target_step
         route_intent = _normalise_intent(route.intent)
-        await asyncio.to_thread(_write_router_trace, router_run_id, thread_id, document_ids, route,
+        await asyncio.to_thread(_write_router_trace, trace_id, thread_id, document_ids, route,
                                 user_message=user_message, user_id=get_user_id())
 
         try:
             if route_intent == "evaluation":
                 result = await _run_evaluation_agent(
                     thread_id,
-                    run_id=step.run_id,
-                    parent_run_id=step.parent_run_id,
+                    observation_id=step.observation_id,
+                    trace_id=step.trace_id,
                 )
             elif route_intent == "research":
                 result = await run_research_agent(
                     user_message,
                     thread_id,
                     document_ids,
-                    run_id=step.run_id,
-                    parent_run_id=step.parent_run_id,
+                    observation_id=step.observation_id,
+                    trace_id=step.trace_id,
                     original_intent=route.original_intent,
                     resolved_intent=route.resolved_intent,
                 )
@@ -689,8 +707,8 @@ async def route_agent_message(
                         thread_id,
                         document_ids,
                         route_intent="question",
-                        run_id=evidence_step.run_id,
-                        parent_run_id=evidence_step.parent_run_id,
+                        observation_id=evidence_step.observation_id,
+                        trace_id=evidence_step.trace_id,
                         use_mini=use_mini,
                         original_intent=route.original_intent,
                         resolved_intent=route.resolved_intent,
@@ -701,8 +719,8 @@ async def route_agent_message(
                     user_message,
                     thread_id,
                     document_ids,
-                    run_id=step.run_id,
-                    parent_run_id=step.parent_run_id,
+                    observation_id=step.observation_id,
+                    trace_id=step.trace_id,
                     use_mini=use_mini,
                     original_intent=route.original_intent,
                     resolved_intent=route.resolved_intent,
@@ -715,8 +733,8 @@ async def route_agent_message(
                     thread_id,
                     document_ids,
                     route_intent=route_intent,
-                    run_id=step.run_id,
-                    parent_run_id=step.parent_run_id,
+                    observation_id=step.observation_id,
+                    trace_id=step.trace_id,
                     use_mini=use_mini,
                     original_intent=route.original_intent,
                     resolved_intent=route.resolved_intent,
@@ -726,15 +744,15 @@ async def route_agent_message(
                     user_message,
                     thread_id,
                     document_ids,
-                    run_id=step.run_id,
-                    parent_run_id=step.parent_run_id,
+                    observation_id=step.observation_id,
+                    trace_id=step.trace_id,
                     use_mini=use_mini,
                     original_intent=route.original_intent,
                     resolved_intent=route.resolved_intent,
                 )
         except Exception as exc:
             await asyncio.to_thread(
-                _write_router_trace, router_run_id, thread_id, document_ids, route,
+                _write_router_trace, trace_id, thread_id, document_ids, route,
                 end_time=datetime.now(timezone.utc), error=str(exc), user_id=get_user_id(),
             )
             raise
@@ -746,13 +764,13 @@ async def route_agent_message(
                 thread_id,
                 document_ids,
                 route=handoff_route,
-                run_id=router_run_id,
+                trace_id=trace_id,
                 _hop_count=_hop_count + 1,
                 use_mini=use_mini,
             )
 
         await asyncio.to_thread(
-            _write_router_trace, router_run_id, thread_id, document_ids, route,
+            _write_router_trace, trace_id, thread_id, document_ids, route,
             output=result.response if result else None,
             end_time=datetime.now(timezone.utc), user_id=get_user_id(),
         )
@@ -764,16 +782,16 @@ async def route_agent_message(
                 task_result=result,
                 thread_id=thread_id,
                 document_ids=document_ids,
-                run_id=composition_step.run_id,
-                parent_run_id=composition_step.parent_run_id,
+                observation_id=composition_step.observation_id,
+                trace_id=composition_step.trace_id,
                 use_mini=use_mini,
             )
 
         if plan.evaluate_after:
             _fire_and_forget(_run_evaluation_agent(
                 thread_id,
-                parent_run_id=plan.router_run_id,
-                exclude_run_id=result.trace_run_id,
+                trace_id=plan.trace_id,
+                exclude_observation_id=result.observation_id,
             ))
 
         # Update memory per intent policy
@@ -792,8 +810,8 @@ async def route_agent_stream(
     document_ids: list[int] | None = None,
     *,
     route: AgentRoute | None = None,
-    run_id: str | None = None,
-    task_run_id: str | None = None,
+    trace_id: str | None = None,
+    observation_id: str | None = None,
     _hop_count: int = 0,
     use_mini: bool = False,
 ) -> AsyncIterator[tuple[str, bool, list[str]]]:
@@ -808,30 +826,30 @@ async def route_agent_stream(
                 thread_id,
             )
             async for item in chat_agent.stream(user_message, thread_id, document_ids,
-                                                run_id=run_id, use_mini=use_mini):
+                                                use_mini=use_mini):
                 yield item
             return
 
         route = route or await classify_intent(user_message, document_ids, thread_id)
 
-        router_run_id = run_id or str(_uuid_mod.uuid4())
+        trace_id = trace_id or str(_uuid_mod.uuid4())
         plan = _build_execution_plan(
             route,
-            router_run_id=router_run_id,
-            task_run_id=task_run_id,
+            trace_id=trace_id,
+            observation_id=observation_id,
             collect_evidence=bool(document_ids) and _normalise_intent(route.intent) == "question",
         )
         step = plan.target_step
         route_intent = _normalise_intent(route.intent)
-        await asyncio.to_thread(_write_router_trace, router_run_id, thread_id, document_ids, route, user_id=get_user_id())
+        await asyncio.to_thread(_write_router_trace, trace_id, thread_id, document_ids, route, user_id=get_user_id())
 
         if route_intent == "evaluation":
             result = await _run_evaluation_agent(
                 thread_id,
-                run_id=step.run_id,
-                parent_run_id=step.parent_run_id,
+                observation_id=step.observation_id,
+                trace_id=step.trace_id,
             )
-            await asyncio.to_thread(_write_router_trace, router_run_id, thread_id, document_ids, route,
+            await asyncio.to_thread(_write_router_trace, trace_id, thread_id, document_ids, route,
                                     end_time=datetime.now(timezone.utc), user_id=get_user_id())
             yield result.response, False, []
             yield "", True, []
@@ -844,8 +862,8 @@ async def route_agent_stream(
                 user_message,
                 thread_id,
                 document_ids,
-                run_id=step.run_id,
-                parent_run_id=step.parent_run_id,
+                observation_id=step.observation_id,
+                trace_id=step.trace_id,
                 original_intent=route.original_intent,
                 resolved_intent=route.resolved_intent,
             )
@@ -864,8 +882,8 @@ async def route_agent_stream(
                     thread_id,
                     document_ids,
                     route_intent="question",
-                    run_id=evidence_step.run_id,
-                    parent_run_id=evidence_step.parent_run_id,
+                    observation_id=evidence_step.observation_id,
+                    trace_id=evidence_step.trace_id,
                     use_mini=use_mini,
                     original_intent=route.original_intent,
                     resolved_intent=route.resolved_intent,
@@ -874,8 +892,8 @@ async def route_agent_stream(
                 evidence_sources = evidence.sources
             async for item in question_agent.stream(
                 user_message, thread_id, document_ids,
-                run_id=step.run_id,
-                parent_run_id=step.parent_run_id,
+                observation_id=step.observation_id,
+                trace_id=step.trace_id,
                 use_mini=use_mini,
                 original_intent=route.original_intent,
                 resolved_intent=route.resolved_intent,
@@ -896,8 +914,8 @@ async def route_agent_stream(
                 thread_id,
                 document_ids,
                 route_intent=route_intent,
-                run_id=step.run_id,
-                parent_run_id=step.parent_run_id,
+                observation_id=step.observation_id,
+                trace_id=step.trace_id,
                 use_mini=use_mini,
                 original_intent=route.original_intent,
                 resolved_intent=route.resolved_intent,
@@ -913,8 +931,8 @@ async def route_agent_stream(
         else:
             async for item in chat_agent.stream(
                 user_message, thread_id, document_ids,
-                run_id=step.run_id,
-                parent_run_id=step.parent_run_id,
+                observation_id=step.observation_id,
+                trace_id=step.trace_id,
                 use_mini=use_mini,
                 original_intent=route.original_intent,
                 resolved_intent=route.resolved_intent,
@@ -928,12 +946,12 @@ async def route_agent_stream(
                 else:
                     yield item
 
-        await asyncio.to_thread(_write_router_trace, router_run_id, thread_id, document_ids, route,
+        await asyncio.to_thread(_write_router_trace, trace_id, thread_id, document_ids, route,
                                 end_time=datetime.now(timezone.utc), user_id=get_user_id())
 
         if plan.evaluate_after:
             _fire_and_forget(_run_evaluation_agent(
-                thread_id, parent_run_id=plan.router_run_id
+                thread_id, trace_id=plan.trace_id
             ))
 
         yield "", True, last_sources

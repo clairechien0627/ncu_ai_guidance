@@ -22,6 +22,7 @@ from .runtime_prompts import RESEARCH_BASE_STACK, research_base_stack_metadata
 from .state import ResearchGraphState, ResearchState, SearchStep
 from .task_planner import create_research_plan, fallback_research_plan
 from ..types import AgentResult
+from ..no_tool_runner import write_agent_span
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +223,7 @@ async def _run_graph_streaming(
                 if msg.content and metadata.get("langgraph_node") == "writer":
                     on_token(msg.content)
     except GraphDrained:
-        logger.info("research graph drained at superstep boundary (run_id=%s)", state.get("run_id"))
+        logger.info("research graph drained at superstep boundary (observation_id=%s)", state.get("observation_id"))
     finally:
         _active_run_controls.discard(control)
     return state
@@ -515,7 +516,7 @@ def _trace_display(
 
 def _write_trace(
     *,
-    run_id: str,
+    observation_id: str,
     thread_id: str,
     document_ids: list[int],
     metadata: dict,
@@ -529,7 +530,7 @@ def _write_trace(
     messages: list[dict] | None = None,
     trace_summary: dict | None = None,
     error: str | None = None,
-    parent_run_id: str | None = None,
+    trace_id: str | None = None,
 ) -> None:
     import os
     if os.environ.get("LEGACY_TRACE_WRITE", "true").lower() in ("0", "false", "no"):
@@ -541,18 +542,18 @@ def _write_trace(
             display = _trace_display(state, answer, sources, chunks_by_query, messages, metadata, trace_summary)
 
             # Upsert pattern: create the row if it doesn't exist, update otherwise.
-            # The try/except handles the rare concurrent-insert race on run_id.
-            trace = db.query(Trace).filter(Trace.run_id == run_id).first()
+            # The try/except handles the rare concurrent-insert race on observation_id.
+            trace = db.query(Trace).filter(Trace.observation_id == observation_id).first()
             if trace is None:
-                trace = Trace(run_id=run_id, run_type="chain", name="research_agent")
+                trace = Trace(observation_id=observation_id, run_type="chain", name="research_agent")
                 db.add(trace)
                 try:
                     db.flush()
                 except IntegrityError:
                     db.rollback()
-                    trace = db.query(Trace).filter(Trace.run_id == run_id).first()
+                    trace = db.query(Trace).filter(Trace.observation_id == observation_id).first()
 
-            trace.parent_run_id = parent_run_id
+            trace.trace_id = trace_id
             trace.inputs = json.dumps(
                 {
                     "messages": [{"type": "human", "content": state.question}],
@@ -604,23 +605,23 @@ def _write_trace(
         raise
 
 
-async def _async_quality_check(*, run_id: str, answer: str, document_ids: list[int]) -> None:
+async def _async_quality_check(*, observation_id: str, answer: str, document_ids: list[int]) -> None:
     """Non-blocking evaluation after high-value research output completes."""
-    if not run_id or not answer or len(answer.strip()) < 100:
+    if not observation_id or not answer or len(answer.strip()) < 100:
         return
     try:
-        from agents.evaluation_agent import evaluate_trace_by_run_id
+        from agents.evaluation_agent import evaluate_trace_by_observation_id
 
-        result = await evaluate_trace_by_run_id(run_id)
+        result = await evaluate_trace_by_observation_id(observation_id)
         if result and result.overall < 2.5:
             logger.warning(
-                "research evaluation below threshold (score=%.2f, run_id=%s): %s",
+                "research evaluation below threshold (score=%.2f, observation_id=%s): %s",
                 result.overall,
-                run_id,
+                observation_id,
                 result.verdict,
             )
     except Exception as exc:
-        logger.debug("_async_quality_check failed for run_id=%s: %s", run_id, exc)
+        logger.debug("_async_quality_check failed for observation_id=%s: %s", observation_id, exc)
 
 
 async def _emit_stage(on_stage, msg: str) -> None:
@@ -672,7 +673,7 @@ def _build_initial_graph_state(
     question: str,
     document_ids: list[int],
     context: str,
-    run_id: str,
+    observation_id: str,
     thread_id: str,
     metadata: dict,
     max_searches: int,
@@ -694,7 +695,7 @@ def _build_initial_graph_state(
         "question": question,
         "document_ids": document_ids,
         "document_context": context[:2000],
-        "run_id": run_id,
+        "observation_id": observation_id,
         "thread_id": thread_id,
         "metadata": graph_metadata,
         "max_searches": effective_max_searches,
@@ -739,7 +740,7 @@ async def run_research_task(
     question: str,
     thread_id: str,
     document_ids: list[int],
-    run_id: str,
+    observation_id: str,
     metadata: dict,
     task_type: str = "document_extraction",
     route_intent: str | None = None,
@@ -749,7 +750,7 @@ async def run_research_task(
     max_searches_per_slot: int = 7,
     max_consecutive_no_new: int = 4,
     min_evidence_per_slot: int | None = None,
-    parent_run_id: str | None = None,
+    trace_id: str | None = None,
     bypass_cache: bool = False,
 ) -> AgentResult:
     # Document extraction requires at least 1 evidence note per slot before the
@@ -757,6 +758,18 @@ async def run_research_task(
     if min_evidence_per_slot is None:
         min_evidence_per_slot = 1 if task_type == "document_extraction" else 0
     started_at = _utcnow()
+
+    if trace_id:
+        write_agent_span(
+            observation_id=observation_id,
+            trace_id=trace_id,
+            thread_id=thread_id,
+            parent_observation_id=trace_id,
+            name="Research Agent",
+            start_time=started_at,
+            input_data={"messages": [{"role": "user", "content": question}]},
+            extra_metadata={"task_type": task_type, "agent_name": "research_agent"},
+        )
 
     metadata = dict(metadata)
     metadata.setdefault("task_type", task_type)
@@ -779,7 +792,7 @@ async def run_research_task(
     )
     initial_state = _build_initial_graph_state(
         question=question, document_ids=document_ids, context=context,
-        run_id=run_id, thread_id=thread_id, metadata=metadata,
+        observation_id=observation_id, thread_id=thread_id, metadata=metadata,
         max_searches=max_searches, max_searches_per_slot=max_searches_per_slot,
         max_consecutive_no_new=max_consecutive_no_new,
         min_evidence_per_slot=min_evidence_per_slot,
@@ -824,13 +837,36 @@ async def run_research_task(
         _cp = None
         _st = None
     _graph = get_or_build_research_graph(checkpointer=_cp, store=_st)
+
+    tracer = None
+    if trace_id:
+        from observability.tracer import LocalTracer
+        tracer = LocalTracer(
+            thread_id=thread_id,
+            document_ids=document_ids,
+            task_type=metadata.get("task_type") or task_type,
+            route_intent=metadata.get("route_intent") or route_intent,
+            agent_name=metadata.get("agent_name") or "research_agent",
+            prompt_name=metadata.get("prompt_name"),
+            prompt_version=metadata.get("prompt_version"),
+            base_prompt_name=metadata.get("base_prompt_name"),
+            task_prompt_name=metadata.get("task_prompt_name"),
+            prompt_stack_name=metadata.get("prompt_stack_name"),
+            original_intent=metadata.get("original_intent"),
+            resolved_intent=metadata.get("resolved_intent"),
+            trace_id=trace_id,
+            parent_observation_id=observation_id,
+        )
+
     graph_config: dict = {
         "configurable": {
             "llm": llm,
             "on_stage": on_stage,
-            "thread_id": run_id,
+            "thread_id": observation_id,
         }
     }
+    if tracer:
+        graph_config["callbacks"] = [tracer]
     if plan_llm_calls == 0:
         # Task planning fell back to defaults → mark the entire graph run as WARNING
         graph_config["metadata"] = {
@@ -880,19 +916,33 @@ async def run_research_task(
             except Exception as exc:
                 logger.debug("document research cache save failed: %s", exc)
 
+        ended_at = _utcnow()
         _write_trace(
-            run_id=run_id, thread_id=thread_id, document_ids=document_ids,
-            metadata=metadata, started_at=started_at, ended_at=_utcnow(),
+            observation_id=observation_id, thread_id=thread_id, document_ids=document_ids,
+            metadata=metadata, started_at=started_at, ended_at=ended_at,
             state=final_state, answer=answer, sources=sources,
             chunks_by_query=chunks_by_query, llm_call_count=result["llm_call_count"],
             messages=messages, trace_summary=result.get("trace_summary") or None,
-            parent_run_id=parent_run_id,
+            trace_id=trace_id,
         )
+        if trace_id:
+            write_agent_span(
+                observation_id=observation_id,
+                trace_id=trace_id,
+                thread_id=thread_id,
+                parent_observation_id=trace_id,
+                name="Research Agent",
+                start_time=started_at,
+                end_time=ended_at,
+                input_data={"messages": [{"role": "user", "content": question}]},
+                output_data={"answer": answer, "sources": sources},
+                extra_metadata={"task_type": task_type, "agent_name": "research_agent"},
+            )
 
         # Fire-and-forget quality check — does not block the response.
         # Task is tracked in _background_tasks so main.py shutdown can await it.
         _task = asyncio.create_task(
-            _async_quality_check(run_id=run_id, answer=answer, document_ids=document_ids)
+            _async_quality_check(observation_id=observation_id, answer=answer, document_ids=document_ids)
         )
         _background_tasks.add(_task)
         _task.add_done_callback(_background_tasks.discard)
@@ -904,11 +954,11 @@ async def run_research_task(
             agent_name=str(metadata.get("agent_name") or "research_agent"),
             prompt_name=str(metadata.get("prompt_name") or "research_writer"),
             prompt_version=str(metadata.get("prompt_version") or "unknown"),
-            trace_run_id=run_id,
+            observation_id=observation_id,
             coverage_result=coverage_result,
         )
     except Exception as exc:
-        logger.exception("run_research_task failed (run_id=%s)", run_id)
+        logger.exception("run_research_task failed (observation_id=%s)", observation_id)
         err_state = ResearchState(
             question=question, document_ids=document_ids, document_context=context,
             task_goal=task_goal, coverage_items=coverage_items,
@@ -916,12 +966,26 @@ async def run_research_task(
             slot_status={slot: "NOT_FILLED" for slot in coverage_ids},
             evidence={slot: [] for slot in coverage_ids},
         )
+        err_ended_at = _utcnow()
         _write_trace(
-            run_id=run_id, thread_id=thread_id, document_ids=document_ids,
-            metadata=metadata, started_at=started_at, ended_at=_utcnow(),
+            observation_id=observation_id, thread_id=thread_id, document_ids=document_ids,
+            metadata=metadata, started_at=started_at, ended_at=err_ended_at,
             state=err_state, answer="", sources=[], chunks_by_query=[],
-            llm_call_count=0, error=str(exc), parent_run_id=parent_run_id,
+            llm_call_count=0, error=str(exc), trace_id=trace_id,
         )
+        if trace_id:
+            write_agent_span(
+                observation_id=observation_id,
+                trace_id=trace_id,
+                thread_id=thread_id,
+                parent_observation_id=trace_id,
+                name="Research Agent",
+                start_time=started_at,
+                end_time=err_ended_at,
+                input_data={"messages": [{"role": "user", "content": question}]},
+                error=str(exc),
+                extra_metadata={"task_type": task_type, "agent_name": "research_agent"},
+            )
         raise
 
 
@@ -930,7 +994,7 @@ async def run_research_summary(
     question: str,
     thread_id: str,
     document_ids: list[int],
-    run_id: str,
+    observation_id: str,
     metadata: dict,
     on_stage: Callable[[str], None] | None = None,
     max_searches: int = 10,
@@ -941,7 +1005,7 @@ async def run_research_summary(
         question=question,
         thread_id=thread_id,
         document_ids=document_ids,
-        run_id=run_id,
+        observation_id=observation_id,
         metadata=metadata,
         task_type="document_extraction",
         route_intent=None,

@@ -51,12 +51,12 @@ def _json_obj(value):
 
 
 def _agent_execution_root():
-    router_run_ids = (
-        select(Trace.run_id).where(Trace.agent_name == "router_agent").scalar_subquery()
+    router_observation_ids = (
+        select(Trace.observation_id).where(Trace.agent_name == "router_agent").scalar_subquery()
     )
     return or_(
-        Trace.parent_run_id.in_(router_run_ids),
-        and_(Trace.parent_run_id.is_(None), Trace.agent_name != "router_agent"),
+        Trace.trace_id.in_(router_observation_ids),
+        and_(Trace.trace_id.is_(None), Trace.agent_name != "router_agent"),
     )
 
 
@@ -102,7 +102,7 @@ def _trace_payload(trace: Trace) -> tuple[str, str, list[str], dict, dict]:
             break
     if not user_task:
         user_task = json.dumps(inputs, ensure_ascii=False)[:1200] if inputs else ""
-    extra_context = {"run_id": trace.run_id, "agent_name": trace.agent_name}
+    extra_context = {"run_id": trace.observation_id, "agent_name": trace.agent_name}
     return user_task, answer, sources, trace_summary, extra_context
 
 
@@ -269,13 +269,13 @@ class EvaluationRunService:
                     _agent_execution_root(),
                     Trace.quality_score.is_(None),
                     Trace.error.is_(None),
-                    Trace.run_id.notin_(already) if already else True,
+                    Trace.observation_id.notin_(already) if already else True,
                 )
                 .order_by(Trace.start_time.desc())
                 .limit(limit - len(trace_ids))
                 .all()
             )
-            trace_ids += [t.run_id for t in legacy]
+            trace_ids += [t.observation_id for t in legacy]
         if not trace_ids:
             return None
         eval_run_id = f"eval-{uuid.uuid4().hex}"
@@ -407,7 +407,7 @@ class EvaluationRunService:
         metadata: dict | None = None,
     ) -> object | None:
         with db_session() as db:
-            trace = db.query(Trace).filter(Trace.run_id == trace_id).first()
+            trace = db.query(Trace).filter(Trace.observation_id == trace_id).first()
             if trace is None:
                 return None
             run = EvaluationRunService.create_single_trace(
@@ -492,7 +492,7 @@ class EvaluationRunService:
             if item.status == "completed":
                 return
             run = db.query(EvaluationRun).filter(EvaluationRun.eval_run_id == item.eval_run_id).first()
-            trace = db.query(Trace).filter(Trace.run_id == item.trace_id).first()
+            trace = db.query(Trace).filter(Trace.observation_id == item.trace_id).first()
             dataset_item = None
             if item.dataset_item_id:
                 dataset_item = db.query(DatasetItem).filter(DatasetItem.dataset_item_id == item.dataset_item_id).first()
@@ -559,16 +559,16 @@ class EvaluationRunService:
 
             with db_session() as db:
                 item = db.query(EvaluationRunItem).filter(EvaluationRunItem.eval_item_id == eval_item_id).first()
-                trace = db.query(Trace).filter(Trace.run_id == item.trace_id).first() if item else None
+                trace = db.query(Trace).filter(Trace.observation_id == item.trace_id).first() if item else None
                 if item is None or trace is None:
                     return
                 # Ensure the trace exists in traces_v2 before writing scores
                 # (FK constraint: scores.trace_id → traces_v2.trace_id)
-                if trace is not None and TraceRepository.get_trace(db, trace.run_id) is None:
+                if trace is not None and TraceRepository.get_trace(db, trace.observation_id) is None:
                     TraceRepository.upsert_trace(db, {
-                        "trace_id": trace.run_id,
+                        "trace_id": trace.observation_id,
                         "name": trace.agent_name or trace.name or "trace",
-                        "session_id": trace.thread_id,
+                        "thread_id": trace.thread_id,
                         "user_id": trace.user_id,
                         "environment": trace.environment or "default",
                         "start_time": trace.start_time.isoformat() if trace.start_time else None,
@@ -577,7 +577,7 @@ class EvaluationRunService:
                 for payload in score_payloads:
                     ScoreRepository.upsert_score(db, payload, sync_legacy_cache=False)
                 if item.dataset_item_id is None and trace is not None:
-                    ScoreRepository.sync_legacy_trace_cache(db, trace.run_id)
+                    ScoreRepository.sync_legacy_trace_cache(db, trace.observation_id)
                 # Write evaluation result as a local observation so it shows in trace detail
                 if trace_id:
                     try:

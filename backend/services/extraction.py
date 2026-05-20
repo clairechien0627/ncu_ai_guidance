@@ -28,7 +28,7 @@ async def _emit_stage(on_stage, msg: str) -> None:
         pass
 
 
-def _extraction_session_id(document_id: int) -> str:
+def _extraction_thread_id(document_id: int) -> str:
     return f"document-extraction:{document_id}"
 
 
@@ -104,11 +104,11 @@ def _get_document_abstract(document_id: int) -> str | None:
         return row[0] if row and row[0] else None
 
 
-def _save_quality_score(run_id: str, score: float, note: str) -> None:
+def _save_quality_score(observation_id: str, score: float, note: str) -> None:
     from db import db_session, Trace
 
     with db_session() as db:
-        trace = db.query(Trace).filter(Trace.run_id == run_id).first()
+        trace = db.query(Trace).filter(Trace.observation_id == observation_id).first()
         if trace:
             trace.quality_score = score
             trace.user_feedback = note[:500]
@@ -131,10 +131,10 @@ async def run_document_research_step1(
     document_id: int,
     on_stage: Callable[[str], None] | None = None,
 ) -> tuple[str, list[str], str]:
-    """Run the expensive research graph only and return raw answer, sources, run_id."""
-    run_id = str(uuid.uuid4())
-    thread_id = _extraction_session_id(document_id)
-    logger.info("Step 1: agent RAG for document %d (run_id=%s)", document_id, run_id)
+    """Run the expensive research graph only and return (raw_answer, sources, observation_id)."""
+    observation_id = str(uuid.uuid4())
+    thread_id = _extraction_thread_id(document_id)
+    logger.info("Step 1: agent RAG for document %d (observation_id=%s)", document_id, observation_id)
     await _emit_stage(on_stage, "Step 1 研究檢索中")
     trace_meta = summary_trace_metadata(thread_id, [document_id], stack_name="research_runtime")
     trace_meta.update({
@@ -150,12 +150,12 @@ async def run_document_research_step1(
         thread_id=thread_id,
         document_ids=[document_id],
         metadata=trace_meta,
-        run_id=run_id,
+        observation_id=observation_id,
         on_stage=on_stage,
         max_searches=10,
         max_consecutive_no_new=2,
     )
-    return summary_result.response, summary_result.sources, run_id
+    return summary_result.response, summary_result.sources, observation_id
 
 
 @observe(as_type="chain", name="Structure Summary Fields")
@@ -214,15 +214,14 @@ async def extract_document_summary_with_raw(
     on_stage: Callable[[str], None] | None = None,
 ) -> tuple[dict, str, str, list[str]]:
     """Step 1: agent does full ReAct RAG. Step 2: structure the free-text answer into Pydantic.
-    Returns (summary_dict, run_id, raw_answer, raw_sources)."""
+    Returns (summary_dict, observation_id, raw_answer, raw_sources)."""
 
-    with propagate_attributes(session_id=_extraction_session_id(document_id)):
-        answer, _sources, run_id = await run_document_research_step1(document_id, on_stage=on_stage)
+    with propagate_attributes(session_id=_extraction_thread_id(document_id)):
+        answer, _sources, observation_id = await run_document_research_step1(document_id, on_stage=on_stage)
 
         if not answer or answer.strip() == "Unable to generate a response.":
-            return _empty_summary(), run_id, answer, _sources
+            return _empty_summary(), observation_id, answer, _sources
 
-        # Step 2 & 3 — run in parallel; both only read the step1 answer text
         logger.info("Step 2+3: structuring and question generation in parallel for document %d", document_id)
         core_result, question_result = await asyncio.gather(
             structure_research_step2(answer),
@@ -232,22 +231,22 @@ async def extract_document_summary_with_raw(
         result = {**core_result, **question_result}
 
         if os.getenv("ENABLE_QUALITY_CHECK", "false").lower() == "true":
-            result, run_id, answer, _sources = await _run_quality_check(
+            result, observation_id, answer, _sources = await _run_quality_check(
                 result=result,
-                run_id=run_id,
+                observation_id=observation_id,
                 answer=answer,
                 sources=_sources,
                 document_id=document_id,
                 on_stage=on_stage,
             )
-        return result, run_id, answer, _sources
+        return result, observation_id, answer, _sources
 
 
 @observe(as_type="chain", name="Step 4 Quality Check")
 async def _run_quality_check(
     *,
     result: dict,
-    run_id: str,
+    observation_id: str,
     answer: str,
     sources: list[str],
     document_id: int,
@@ -263,7 +262,7 @@ async def _run_quality_check(
     score, note = await score_extraction(result, abstract_text)
 
     update_current_observation_io(
-        input={"document_id": document_id, "run_id": run_id},
+        input={"document_id": document_id, "observation_id": observation_id},
         output={"quality_score": score, "quality_note": note, "retried": False},
     )
 
@@ -271,7 +270,7 @@ async def _run_quality_check(
     if score < 2.5:
         logger.warning("Quality score %.1f below threshold for doc %d; retrying step 1", score, document_id)
         await _emit_stage(on_stage, "品質未達標，重新搜尋")
-        answer2, sources2, run_id2 = await run_document_research_step1(document_id, on_stage=on_stage)
+        answer2, sources2, observation_id2 = await run_document_research_step1(document_id, on_stage=on_stage)
         if answer2 and answer2.strip() != "Unable to generate a response.":
             core2, question2 = await asyncio.gather(
                 structure_research_step2(answer2),
@@ -282,12 +281,12 @@ async def _run_quality_check(
             if score2 > score:
                 logger.info("Retry improved quality %.1f → %.1f for doc %d", score, score2, document_id)
                 result, score, note = result2, score2, note2
-                answer, sources, run_id = answer2, sources2, run_id2
+                answer, sources, observation_id = answer2, sources2, observation_id2
                 update_current_observation_io(
                     output={"quality_score": score, "quality_note": note, "retried": True},
                 )
 
     result["quality_score"] = score
     result["quality_note"] = note
-    await asyncio.to_thread(_save_quality_score, run_id, score, note)
-    return result, run_id, answer, sources
+    await asyncio.to_thread(_save_quality_score, observation_id, score, note)
+    return result, observation_id, answer, sources

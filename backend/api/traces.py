@@ -26,15 +26,15 @@ def _agent_execution_root():
     SQLAlchemy filter condition that matches each routed agent execution root.
 
     Supports both old data where the task agent was the DB root
-    (parent_run_id=None) and new data where the task agent is a child of
+    (trace_id=None) and new data where the task agent is a child of
     router_agent.
     """
-    router_run_ids = (
-        select(Trace.run_id).where(Trace.agent_name == "router_agent").scalar_subquery()
+    router_observation_ids = (
+        select(Trace.observation_id).where(Trace.agent_name == "router_agent").scalar_subquery()
     )
     return or_(
-        Trace.parent_run_id.in_(router_run_ids),
-        and_(Trace.parent_run_id.is_(None), Trace.agent_name != "router_agent"),
+        Trace.trace_id.in_(router_observation_ids),
+        and_(Trace.trace_id.is_(None), Trace.agent_name != "router_agent"),
     )
 
 
@@ -188,7 +188,7 @@ def _parse_quality_detail(value) -> dict | None:
 
 def _trace_payload(t: Trace, *, include_raw: bool = False) -> dict:
     payload = {
-        "id": t.run_id,
+        "id": t.observation_id,
         "name": t.name,
         "status": "error" if t.error else "success",
         "start_time": t.start_time.isoformat() + "Z" if t.start_time else None,
@@ -199,6 +199,10 @@ def _trace_payload(t: Trace, *, include_raw: bool = False) -> dict:
         "output": None,
         "url": None,
         "display": _display(t),
+        "prompt_tokens": t.prompt_tokens,
+        "completion_tokens": t.completion_tokens,
+        "input_cost": t.input_cost,
+        "output_cost": t.output_cost,
         **_trace_meta(t),
         "runtime_prompt_metadata": _prompt_metadata_from_display(t),
     }
@@ -216,13 +220,11 @@ def _trace_payload(t: Trace, *, include_raw: bool = False) -> dict:
     if include_raw:
         payload.update({
             "run_type": t.run_type,
-            "parent_run_id": t.parent_run_id,
+            "trace_id": t.trace_id,
             "thread_id": t.thread_id,
             "document_ids": _parse_json(t.document_ids),
             "inputs_raw": _parse_json(t.inputs),
             "outputs_raw": _parse_json(t.outputs),
-            "prompt_tokens": t.prompt_tokens,
-            "completion_tokens": t.completion_tokens,
         })
     return payload
 
@@ -279,7 +281,7 @@ def list_environments(db: Session = Depends(get_db)):
 
 
 class BatchDeleteTracesRequest(BaseModel):
-    ids: list[str]  # run_ids
+    ids: list[str]  # trace_ids to delete
 
 
 @router.delete("/api/traces/batch")
@@ -287,13 +289,13 @@ def batch_delete_traces(
     payload: BatchDeleteTracesRequest,
     db: Session = Depends(get_db),
 ):
-    run_ids = payload.ids
-    if not run_ids:
+    trace_ids = payload.ids
+    if not trace_ids:
         return {"deleted": 0}
-    db.query(Score).filter(Score.trace_id.in_(run_ids)).delete(synchronize_session=False)
-    db.query(Observation).filter(Observation.trace_id.in_(run_ids)).delete(synchronize_session=False)
-    db.query(TraceV2).filter(TraceV2.trace_id.in_(run_ids)).delete(synchronize_session=False)
-    deleted = db.query(Trace).filter(Trace.run_id.in_(run_ids)).delete(synchronize_session=False)
+    db.query(Score).filter(Score.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+    db.query(Observation).filter(Observation.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+    db.query(TraceV2).filter(TraceV2.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+    deleted = db.query(Trace).filter(Trace.observation_id.in_(trace_ids)).delete(synchronize_session=False)
     db.commit()
     return {"deleted": deleted}
 
@@ -533,7 +535,7 @@ def slow_runs(limit: int = 40, min_latency: float = 10, db: Session = Depends(ge
     return TraceReadService(db).slow_runs(limit=limit, min_latency=min_latency)
 
 
-# ── 靜態路徑端點（必須在 /{run_id} 動態路由之前） ────────────────────────────
+# ── 靜態路徑端點（必須在 /{observation_id} 動態路由之前） ────────────────────────────
 
 @router.get("/api/traces/timeline")
 def trace_timeline(
@@ -907,10 +909,10 @@ async def test_route(body: TestRouteRequest):
     }
 
 
-# ── Sessions ──────────────────────────────────────────────────────────────────
+# ── Threads ───────────────────────────────────────────────────────────────────
 
-@router.get("/api/traces/sessions")
-def list_sessions(
+@router.get("/api/traces/threads")
+def list_threads(
     limit: int = 50,
     offset: int = 0,
     route_intent: str | None = None,
@@ -935,8 +937,8 @@ def list_sessions(
     )
 
 
-@router.get("/api/traces/sessions/{thread_id}")
-def get_session_detail(thread_id: str, db: Session = Depends(get_db)):
+@router.get("/api/traces/threads/{thread_id}")
+def get_thread_detail(thread_id: str, db: Session = Depends(get_db)):
     return TraceReadService(db).session_detail(thread_id)
 
 
@@ -969,14 +971,14 @@ def get_user_detail(user_id: str, db: Session = Depends(get_db)):
 
 # ── 動態路由（必須在所有靜態路徑之後） ────────────────────────────────────────
 
-@router.get("/api/traces/{run_id}")
-def get_trace_detail(run_id: str, db: Session = Depends(get_db)):
-    return TraceReadService(db).trace_detail(run_id)
+@router.get("/api/traces/{observation_id}")
+def get_trace_detail(observation_id: str, db: Session = Depends(get_db)):
+    return TraceReadService(db).trace_detail(observation_id)
 
 
-@router.patch("/api/traces/{run_id}/feedback")
-def update_trace_feedback(run_id: str, body: TraceFeedbackRequest, db: Session = Depends(get_db)):
-    trace = db.query(Trace).filter(Trace.run_id == run_id).first()
+@router.patch("/api/traces/{observation_id}/feedback")
+def update_trace_feedback(observation_id: str, body: TraceFeedbackRequest, db: Session = Depends(get_db)):
+    trace = db.query(Trace).filter(Trace.observation_id == observation_id).first()
     if not trace:
         raise HTTPException(status_code=404, detail="Trace not found")
     if body.quality_score is not None and not 0 <= body.quality_score <= 5:
@@ -986,8 +988,8 @@ def update_trace_feedback(run_id: str, body: TraceFeedbackRequest, db: Session =
     trace.user_feedback = body.user_feedback.strip() if body.user_feedback else None
     if body.quality_score is not None:
         ScoreRepository.upsert_score(db, {
-            "score_id": f"{run_id}:overall:annotation",
-            "trace_id": run_id,
+            "score_id": f"{observation_id}:overall:annotation",
+            "trace_id": observation_id,
             "name": "overall",
             "value": body.quality_score,
             "data_type": "NUMERIC",
@@ -997,8 +999,8 @@ def update_trace_feedback(run_id: str, body: TraceFeedbackRequest, db: Session =
         }, sync_legacy_cache=False)
     if trace.user_feedback:
         ScoreRepository.upsert_score(db, {
-            "score_id": f"{run_id}:feedback:annotation",
-            "trace_id": run_id,
+            "score_id": f"{observation_id}:feedback:annotation",
+            "trace_id": observation_id,
             "name": "feedback",
             "string_value": trace.user_feedback,
             "data_type": "TEXT",

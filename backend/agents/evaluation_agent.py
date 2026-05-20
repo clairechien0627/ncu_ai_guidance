@@ -202,47 +202,47 @@ def _trace_payload(trace: Trace) -> tuple[str, str, list[str], dict]:
     return user_task, answer, sources, trace_summary
 
 
-async def evaluate_trace_by_run_id(run_id: str) -> EvaluationResult | None:
+async def evaluate_trace_by_observation_id(observation_id: str) -> EvaluationResult | None:
     """Evaluate a root trace and persist score/detail back to the Trace row."""
     try:
         from services.evaluation_runs import EvaluationRunService
         result = await EvaluationRunService.evaluate_single_trace(
-            run_id,
+            observation_id,
             evaluator=evaluate_output,
             name="background-evaluation",
             scope="single_trace",
-            metadata={"source": "evaluate_trace_by_run_id"},
+            metadata={"source": "evaluate_trace_by_observation_id"},
         )
         return result if isinstance(result, EvaluationResult) else None
     except Exception as exc:
-        logger.warning("evaluate_trace_by_run_id failed for %s: %s", run_id, exc)
+        logger.warning("evaluate_trace_by_observation_id failed for %s: %s", observation_id, exc)
         return None
 
 
-async def evaluate_latest_trace_for_thread(thread_id: str, *, exclude_run_id: str | None = None) -> EvaluationResult | None:
+async def evaluate_latest_trace_for_thread(thread_id: str, *, exclude_observation_id: str | None = None) -> EvaluationResult | None:
     """Evaluate the latest completed task-agent trace for a conversation thread."""
     def _find():
         from sqlalchemy import or_, and_, select
         with db_session() as db:
-            router_run_ids = select(Trace.run_id).where(Trace.agent_name == "router_agent").scalar_subquery()
+            router_observation_ids = select(Trace.observation_id).where(Trace.agent_name == "router_agent").scalar_subquery()
             agent_execution_root = or_(
-                Trace.parent_run_id.in_(router_run_ids),
-                and_(Trace.parent_run_id.is_(None), Trace.agent_name != "router_agent"),
+                Trace.trace_id.in_(router_observation_ids),
+                and_(Trace.trace_id.is_(None), Trace.agent_name != "router_agent"),
             )
             query = db.query(Trace).filter(
                 agent_execution_root,
                 Trace.thread_id == thread_id,
                 Trace.error.is_(None),
             )
-            if exclude_run_id:
-                query = query.filter(Trace.run_id != exclude_run_id)
+            if exclude_observation_id:
+                query = query.filter(Trace.observation_id != exclude_observation_id)
             trace = query.order_by(Trace.start_time.desc()).first()
-            return trace.run_id if trace else None
+            return trace.observation_id if trace else None
 
-    run_id = await asyncio.to_thread(_find)
-    if not run_id:
+    observation_id = await asyncio.to_thread(_find)
+    if not observation_id:
         return None
-    return await evaluate_trace_by_run_id(run_id)
+    return await evaluate_trace_by_observation_id(observation_id)
 
 
 def format_evaluation_for_user(result: EvaluationResult | None) -> str:

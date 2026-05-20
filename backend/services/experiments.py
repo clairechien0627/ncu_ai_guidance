@@ -85,7 +85,7 @@ def _normalize_generator_result(result: object) -> tuple[Any, dict, str | None]:
     for key in ["sources", "task_type", "route_intent", "agent_name", "prompt_name", "prompt_version"]:
         if key in result and key not in context:
             context[key] = result[key]
-    trace_id = result.get("trace_id") or result.get("agent_trace_run_id")
+    trace_id = result.get("trace_id") or result.get("agent_observation_id")
     return output, context, trace_id
 
 
@@ -175,7 +175,7 @@ class RouterAgentCurrentAdapter(GeneratorAdapter):
                 "requested_config": requested_config,
                 "applied_config": applied_config,
             },
-            "trace_id": result.trace_run_id,
+            "trace_id": result.observation_id,
         }
 
 

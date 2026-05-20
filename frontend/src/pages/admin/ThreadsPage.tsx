@@ -7,7 +7,7 @@ import { TablePagination } from '../../components/admin/TablePagination'
 import { useAdminStore } from '../../stores/adminStore'
 import { ScoreBar } from '../../components/admin/ScoreBar'
 import { DrawerPanel } from '../../components/admin/DrawerPanel'
-import { SessionDetailContent } from '../../components/admin/SessionDetailContent'
+import { ThreadDetailContent } from '../../components/admin/ThreadDetailContent'
 
 const ROUTE_INTENT_OPTIONS = ['all', 'research', 'retrieval', 'chat', 'question', 'evaluation']
 
@@ -29,26 +29,25 @@ function fmtDate(iso: string | null) {
   return new Date(iso).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
-// ── Column layout ─────────────────────────────────────────────────────────────
 const COLS: ColDef[] = [
-  { width: 180, resizable: true, minWidth:150, maxWidth:210  },  // 0 Thread ID
-  { width: 100, resizable: false },  // 1 Task Type
-  { width: 110, resizable: false },  // 2 Created
-  { width: 100,  resizable: false },  // 3 Duration
-  { width: 80,  resizable: false },  // 4 Traces
-  { width: 80,  resizable: false },  // 5 Tokens
-  { width: 130, resizable: false },  // 6 Avg Quality
-  { width: 160, resizable: true, minWidth:120, maxWidth:200  },  // 7 Users
+  { width: 180, resizable: true, minWidth: 150, maxWidth: 210 },
+  { width: 100, resizable: false },
+  { width: 110, resizable: false },
+  { width: 100, resizable: false },
+  { width: 80,  resizable: false },
+  { width: 80,  resizable: false },
+  { width: 130, resizable: false },
+  { width: 160, resizable: true, minWidth: 120, maxWidth: 200 },
 ]
 
-export default function SessionsPage() {
+export default function ThreadsPage() {
   const { environment } = useAdminStore()
   const [filters, setFilters] = useState<SessionFilters>({})
   const [routeIntent, setRouteIntent] = useState('all')
   const [page, setPage] = useState(0)
   const [drawerThreadId, setDrawerThreadId] = useState<string | null>(null)
   const [limit, setLimit] = useState(50)
-  const { widths, div } = useLinkedColumnResize(COLS, 'adm-sessions-col-widths')
+  const { widths, div } = useLinkedColumnResize(COLS, 'adm-threads-col-widths')
   const sort = useTableSort<SessionItem>({
     created_at:        s => s.created_at,
     duration_seconds:  s => s.duration_seconds,
@@ -65,16 +64,15 @@ export default function SessionsPage() {
   }
 
   const { data, isLoading } = useQuery({
-    queryKey: ['sessions', activeFilters],
+    queryKey: ['threads', activeFilters],
     queryFn: () => getSessions(limit, activeFilters),
   })
-  const sessions = data?.sessions ?? []
+  const threads = data?.sessions ?? []
   const total = data?.total ?? 0
   const totalPages = Math.ceil(total / limit)
 
   return (
     <div>
-      {/* Filters */}
       <div className="adm-filters">
         <select className="adm-filter-select" value={routeIntent} onChange={e => { setRouteIntent(e.target.value); setPage(0) }}>
           {ROUTE_INTENT_OPTIONS.map(o => <option key={o} value={o}>{o === 'all' ? 'All task types' : o}</option>)}
@@ -86,10 +84,9 @@ export default function SessionsPage() {
           value={filters.date_to ?? ''}
           onChange={e => { setFilters(f => ({ ...f, date_to: e.target.value || undefined })); setPage(0) }} />
         <span className="adm-filter-spacer" />
-        <span style={{ fontSize: 12, color: 'var(--adm-text-3)' }}>{total} sessions</span>
+        <span style={{ fontSize: 12, color: 'var(--adm-text-3)' }}>{total} threads</span>
       </div>
 
-      {/* Table */}
       <div className="adm-table-wrap">
         <table className="adm-table" style={{ tableLayout: 'fixed' }}>
           <colgroup>{widths.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
@@ -108,9 +105,9 @@ export default function SessionsPage() {
           <tbody>
             {isLoading ? (
               <tr><td colSpan={8} className="adm-table-empty"><div className="adm-spinner" style={{ margin: '0 auto' }} /></td></tr>
-            ) : sessions.length === 0 ? (
-              <tr><td colSpan={8} className="adm-table-empty">No sessions found</td></tr>
-            ) : sort.apply(sessions).map((s: SessionItem) => (
+            ) : threads.length === 0 ? (
+              <tr><td colSpan={8} className="adm-table-empty">No threads found</td></tr>
+            ) : sort.apply(threads).map((s: SessionItem) => (
               <tr key={s.thread_id} className="adm-row--clickable" onClick={() => setDrawerThreadId(s.thread_id)}>
                 <td className="adm-cell-mono" title={s.thread_id}>{s.thread_id.length > 24 ? s.thread_id.slice(0, 24) + '…' : s.thread_id}</td>
                 <td>{s.task_type ? <span className="adm-badge adm-badge--info">{s.task_type}</span> : '—'}</td>
@@ -137,11 +134,11 @@ export default function SessionsPage() {
 
       <DrawerPanel
         open={!!drawerThreadId}
-        title={drawerThreadId ? `Session · ${drawerThreadId.slice(0, 20)}…` : ''}
+        title={drawerThreadId ? `Thread · ${drawerThreadId.slice(0, 20)}…` : ''}
         onClose={() => setDrawerThreadId(null)}
         width={600}
       >
-        {drawerThreadId && <SessionDetailContent threadId={drawerThreadId} />}
+        {drawerThreadId && <ThreadDetailContent threadId={drawerThreadId} />}
       </DrawerPanel>
     </div>
   )

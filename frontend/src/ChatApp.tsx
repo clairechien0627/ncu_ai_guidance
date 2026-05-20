@@ -182,7 +182,7 @@ export default function ChatApp() {
             agentName: m.agent_name,
             promptName: m.prompt_name,
             promptVersion: m.prompt_version,
-            traceRunId: m.trace_run_id,
+            traceRunId: m.trace_id,
           }
         }))
         setConversationId(id)

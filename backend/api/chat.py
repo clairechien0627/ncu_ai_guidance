@@ -111,7 +111,7 @@ def _hydrate_assistant_meta(conv_id: int, messages: list[dict], db: Session) -> 
     """Attach route/trace metadata to assistant messages using router-level traces by turn."""
     traces = (
         db.query(
-            Trace.run_id,
+            Trace.observation_id,
             Trace.task_type,
             Trace.route_intent,
             Trace.agent_name,
@@ -129,7 +129,7 @@ def _hydrate_assistant_meta(conv_id: int, messages: list[dict], db: Session) -> 
         item = dict(msg)
         if item.get("role") == "assistant":
             if assistant_turn < len(traces):
-                run_id, task_type, route_intent, agent_name, prompt_name, prompt_version = traces[assistant_turn]
+                observation_id, task_type, route_intent, agent_name, prompt_name, prompt_version = traces[assistant_turn]
                 if task_type:
                     item["task_type"] = task_type
                 if route_intent:
@@ -140,8 +140,8 @@ def _hydrate_assistant_meta(conv_id: int, messages: list[dict], db: Session) -> 
                     item["prompt_name"] = prompt_name
                 if prompt_version:
                     item["prompt_version"] = prompt_version
-                if run_id:
-                    item["trace_run_id"] = run_id
+                if observation_id:
+                    item["trace_id"] = observation_id
             assistant_turn += 1
         hydrated.append(item)
     return hydrated
@@ -164,7 +164,8 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
 
     conv = await asyncio.to_thread(_setup_conv)
 
-    set_user_id(req.user_id)
+    if req.user_id:
+        set_user_id(req.user_id)
     try:
         def _get_prev_intent():
             if not req.conversation_id:
@@ -179,14 +180,14 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
 
         prev_intent_sync = await asyncio.to_thread(_get_prev_intent)
         route = await classify_intent(req.message, req.document_ids, str(conv.id), previous_intent=prev_intent_sync)
-        router_run_id = str(uuid.uuid4())
+        trace_id = str(uuid.uuid4())
         use_mini = _should_use_mini(req.model, route.intent, req.document_ids)
         result = await route_agent_message(
             req.message,
             str(conv.id),
             req.document_ids,
             route=route,
-            run_id=router_run_id,
+            trace_id=trace_id,
             _hop_count=0,
             use_mini=use_mini,
         )
@@ -207,8 +208,8 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
         "prompt_version": result.prompt_version,
         "original_intent": route.original_intent,
         "resolved_intent": route.resolved_intent,
-        "trace_run_id": router_run_id,
-        "agent_trace_run_id": result.trace_run_id,
+        "trace_id": trace_id,
+        "agent_observation_id": result.observation_id,
     }
 
 
@@ -231,7 +232,8 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
     conv_id = conv.id
     is_new = req.conversation_id is None
 
-    set_user_id(req.user_id)
+    if req.user_id:
+        set_user_id(req.user_id)
     def _get_prev_intent():
         if not req.conversation_id:
             return None
@@ -246,7 +248,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
     prev_intent = await asyncio.to_thread(_get_prev_intent)
 
     route = await classify_intent(req.message, req.document_ids, str(conv_id), previous_intent=prev_intent)
-    router_run_id = str(uuid.uuid4())
+    trace_id = str(uuid.uuid4())
     use_mini = _should_use_mini(req.model, route.intent, req.document_ids)
 
     async def event_stream():
@@ -260,11 +262,11 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
             "prompt_version": route.prompt_version,
             "original_intent": route.original_intent,
             "resolved_intent": route.resolved_intent,
-            "trace_run_id": router_run_id,
-            "agent_trace_run_id": None,
+            "trace_id": trace_id,
+            "agent_observation_id": None,
         }
         yield f"data: {_json_dumps({'conversation_id': conv_id, **route_payload})}\n\n"
-        task_run_id = str(uuid.uuid4())
+        observation_id = str(uuid.uuid4())
         try:
             if route.intent == "research":
                 # Merged event queue: ("token", t) | ("stage", msg) | None (sentinel on done)
@@ -279,8 +281,8 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                 task = asyncio.create_task(
                     run_research_agent(
                         req.message, str(conv_id), req.document_ids,
-                        run_id=task_run_id,
-                        parent_run_id=router_run_id,
+                        observation_id=observation_id,
+                        trace_id=trace_id,
                         on_stage=_push_stage,
                         on_token=_push_token,
                         original_intent=route.original_intent,
@@ -318,7 +320,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                 result = task.result()
                 full_response = result.response
                 sources = result.sources
-                route_payload["agent_trace_run_id"] = result.trace_run_id
+                route_payload["agent_observation_id"] = result.observation_id
                 # Tokens were already streamed token-by-token; only send bulk
                 # response as fallback when the writer stream produced nothing.
                 if not streamed_tokens:
@@ -329,8 +331,8 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                     str(conv_id),
                     req.document_ids,
                     route=route,
-                    run_id=router_run_id,
-                    task_run_id=task_run_id,
+                    trace_id=trace_id,
+                    observation_id=observation_id,
                     use_mini=use_mini,
                 ):
                     if is_done == "interrupt":
@@ -341,7 +343,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
                     else:
                         full_response += token
                         yield f"data: {_json_dumps({'token': token})}\n\n"
-                route_payload["agent_trace_run_id"] = task_run_id
+                route_payload["agent_observation_id"] = observation_id
 
                 # ── Stream handoff: retrieval → research ─────────────────
         except Exception as e:

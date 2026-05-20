@@ -193,7 +193,8 @@ class LocalTracer(BaseCallbackHandler):
         prompt_stack_tokens: int | None = None,
         quality_score: float | None = None,
         user_feedback: str | None = None,
-        parent_run_id: str | None = None,
+        trace_id: str | None = None,
+        parent_observation_id: str | None = None,
         original_intent: str | None = None,
         resolved_intent: str | None = None,
         environment: str | None = None,
@@ -221,14 +222,15 @@ class LocalTracer(BaseCallbackHandler):
         self.prompt_stack_tokens = prompt_stack_tokens
         self.quality_score = quality_score
         self.user_feedback = user_feedback
-        self.parent_run_id = parent_run_id
+        self.trace_id = trace_id
+        self.parent_observation_id = parent_observation_id
         self.original_intent = original_intent
         self.resolved_intent = resolved_intent
         self.environment = environment or _get_default_environment()
         self.user_id = user_id
         self._tool_count = 0
         self._llm_call_count = 0
-        self._root_run_id: str | None = None
+        self._root_observation_id: str | None = None
 
     def _apply_metadata(self, metadata: dict | None) -> None:
         if not isinstance(metadata, dict):
@@ -265,15 +267,15 @@ class LocalTracer(BaseCallbackHandler):
     def on_chain_start(self, serialized, inputs, *, run_id, parent_run_id=None, **kwargs):
         self._apply_metadata(kwargs.get("metadata"))
         rid = str(run_id)
-        pid = str(parent_run_id) if parent_run_id else None
-        if pid is None and self._root_run_id is None:
-            self._root_run_id = rid
+        parent_obs_id = str(parent_run_id) if parent_run_id else None
+        if parent_obs_id is None and self._root_observation_id is None:
+            self._root_observation_id = rid
         s = serialized or {}
         name = s.get("name") or (s.get("id") or ["chain"])[-1]
         ev = self._ev(rid)
         ev.update({
             "run_id": rid,
-            "parent_run_id": pid,
+            "parent_observation_id": parent_obs_id,
             "run_type": "chain",
             "name": name,
             "inputs": _safe_json(inputs),
@@ -284,7 +286,7 @@ class LocalTracer(BaseCallbackHandler):
         rid = str(run_id)
         ev = self._ev(rid)
         ev.update({"outputs": _safe_json(outputs), "end_time": _utcnow()})
-        if rid == self._root_run_id:
+        if rid == self._root_observation_id:
             self._flush(outputs)
 
     def on_chain_error(self, error, *, run_id, **kwargs):
@@ -297,7 +299,7 @@ class LocalTracer(BaseCallbackHandler):
         rid = str(run_id)
         ev = self._ev(rid)
         ev.update({"end_time": _utcnow(), "error": err_str})
-        if rid == self._root_run_id:
+        if rid == self._root_observation_id:
             self._flush(None)
 
     # ── LLM ────────────────────────────────────────────────────────────────────
@@ -315,7 +317,7 @@ class LocalTracer(BaseCallbackHandler):
         ev = self._ev(rid)
         ev.update({
             "run_id": rid,
-            "parent_run_id": str(parent_run_id) if parent_run_id else None,
+            "parent_observation_id": str(parent_run_id) if parent_run_id else None,
             "run_type": "llm",
             "name": (serialized or {}).get("name", "LLM"),
             "inputs": json.dumps({"messages": msg_data}, ensure_ascii=False),
@@ -349,7 +351,7 @@ class LocalTracer(BaseCallbackHandler):
         ev = self._ev(rid)
         ev.update({
             "run_id": rid,
-            "parent_run_id": str(parent_run_id) if parent_run_id else None,
+            "parent_observation_id": str(parent_run_id) if parent_run_id else None,
             "run_type": "tool",
             "name": (serialized or {}).get("name", "tool"),
             "inputs": json.dumps({"input": str(input_str)}, ensure_ascii=False),
@@ -415,13 +417,13 @@ class LocalTracer(BaseCallbackHandler):
         for ev in self._events.values():
             if "run_id" not in ev or "run_type" not in ev:
                 continue
-            is_root = ev["run_id"] == self._root_run_id
-            parent_id = ev.get("parent_run_id")
-            if is_root and self.parent_run_id:
-                parent_id = self.parent_run_id
+            is_root = ev["run_id"] == self._root_observation_id
+            parent_id = ev.get("parent_observation_id")
+            if is_root and self.trace_id:
+                parent_id = self.trace_id
             rows.append({
                 "run_id": ev["run_id"],
-                "parent_run_id": parent_id,
+                "parent_observation_id": parent_id,
                 "run_type": ev["run_type"],
                 "name": ev.get("name", "unknown"),
                 "inputs": ev.get("inputs"),
@@ -464,7 +466,7 @@ class LocalTracer(BaseCallbackHandler):
 
     def _build_trace_events(self, rows: list[dict]) -> list[dict]:
         """Build normalized Trace System v2 events from legacy trace rows."""
-        root_row = next((row for row in rows if row["run_id"] == self._root_run_id), None)
+        root_row = next((row for row in rows if row["run_id"] == self._root_observation_id), None)
         if root_row is None:
             return []
 
@@ -538,19 +540,18 @@ class LocalTracer(BaseCallbackHandler):
                 "end_time": row.get("end_time"),
             }
 
-        if self.parent_run_id:
-            # Sub-agent tracer: all runs (including root) become observations under
-            # the parent trace so the hierarchy stays within a single Langfuse trace.
+        if self.trace_id:
+            # Sub-agent tracer: all runs become observations under the parent trace.
             events = []
             for row in rows:
-                is_root = row["run_id"] == self._root_run_id
-                # Root run → top-level observation (no parent observation)
+                is_root = row["run_id"] == self._root_observation_id
+                # Root run → parent is the agent SPAN (parent_observation_id), otherwise top-level
                 # Children → point to their actual LangChain parent (also an observation)
-                parent_obs = None if is_root else row.get("parent_run_id")
+                parent_obs = (self.parent_observation_id if is_root else row.get("parent_observation_id"))
                 events.append({
                     "event_id": f"observation-create:{row['run_id']}",
                     "event_type": "observation-create",
-                    "body": _obs_body(row, self.parent_run_id, parent_obs),
+                    "body": _obs_body(row, self.trace_id, parent_obs),
                 })
             return events
 
@@ -562,7 +563,6 @@ class LocalTracer(BaseCallbackHandler):
                 "trace_id": root_row["run_id"],
                 "name": root_row.get("name") or "trace",
                 "thread_id": self.thread_id,
-                "session_id": self.thread_id,
                 "user_id": self.user_id,
                 "environment": self.environment,
                 "input": _loads(root_row.get("inputs")),
@@ -574,11 +574,11 @@ class LocalTracer(BaseCallbackHandler):
             },
         }]
         for row in rows:
-            if row["run_id"] == self._root_run_id:
+            if row["run_id"] == self._root_observation_id:
                 continue
             # Direct children of root → parent_observation_id=None (root-level observations)
             # Deeper children → point to their direct LangChain parent
-            parent_obs = None if row.get("parent_run_id") == self._root_run_id else row.get("parent_run_id")
+            parent_obs = None if row.get("parent_observation_id") == self._root_observation_id else row.get("parent_observation_id")
             events.append({
                 "event_id": f"observation-create:{row['run_id']}",
                 "event_type": "observation-create",
@@ -608,7 +608,7 @@ class LocalTracer(BaseCallbackHandler):
                     # run_id already exists — update the existing row instead.
                     run_id = row.get("run_id")
                     if run_id:
-                        existing = db.query(Trace).filter(Trace.run_id == run_id).first()
+                        existing = db.query(Trace).filter(Trace.observation_id == run_id).first()
                         if existing:
                             for k, v in row.items():
                                 if k != "run_id" and v is not None:

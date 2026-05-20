@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from langfuse import observe
 from prompting.loader import load_stack
 
-from .no_tool_runner import run_no_tool_agent, stream_no_tool_agent
+from .no_tool_runner import run_no_tool_agent, stream_no_tool_agent, write_agent_span
 from observability import update_current_observation_io
 from .types import AgentResult
 
@@ -48,8 +48,8 @@ async def answer(
     thread_id: str,
     document_ids: list[int] | None = None,
     *,
-    run_id: str | None = None,
-    parent_run_id: str | None = None,
+    observation_id: str | None = None,
+    trace_id: str | None = None,
     use_mini: bool = False,
     original_intent: str | None = None,
     resolved_intent: str | None = None,
@@ -66,7 +66,21 @@ async def answer(
     if evidence_context:
         payload["evidence_context"] = evidence_context
 
-    response, sources, meta, actual_run_id = await run_no_tool_agent(
+    from datetime import datetime, timezone as _tz
+    observation_id = observation_id or str(uuid.uuid4())
+    agent_start = datetime.now(_tz.utc)
+    if trace_id:
+        write_agent_span(
+            observation_id=observation_id,
+            trace_id=trace_id,
+            thread_id=thread_id,
+            parent_observation_id=trace_id,
+            name="Question Agent",
+            start_time=agent_start,
+            input_data={"messages": [{"role": "user", "content": user_message}]},
+            extra_metadata={"task_type": "question_generation", "agent_name": AGENT_NAME},
+        )
+    response, sources, meta, observation_id = await run_no_tool_agent(
         user_message=user_message,
         thread_id=thread_id,
         document_ids=document_ids,
@@ -75,8 +89,8 @@ async def answer(
         agent_name=AGENT_NAME,
         task_type="question_generation",
         route_intent="question",
-        run_id=run_id,
-        parent_run_id=parent_run_id,
+        observation_id=observation_id,
+        trace_id=trace_id,
         use_mini=use_mini,
         extra_system_messages=extra_system_messages,
         payload=payload,
@@ -84,9 +98,22 @@ async def answer(
         original_intent=original_intent,
         resolved_intent=resolved_intent,
     )
+    if trace_id:
+        write_agent_span(
+            observation_id=observation_id,
+            trace_id=trace_id,
+            thread_id=thread_id,
+            parent_observation_id=trace_id,
+            name="Question Agent",
+            start_time=agent_start,
+            end_time=datetime.now(_tz.utc),
+            input_data={"messages": [{"role": "user", "content": user_message}]},
+            output_data={"answer": response, "sources": sources},
+            extra_metadata={"task_type": "question_generation", "agent_name": AGENT_NAME},
+        )
 
     if not _has_questions(response) or not _questions_have_varied_openings(response):
-        retry_run_id = str(uuid.uuid4()) if run_id else None
+        retry_observation_id = str(uuid.uuid4()) if observation_id else None
         r2, s2, _, _ = await run_no_tool_agent(
             user_message=user_message,
             thread_id=thread_id,
@@ -96,8 +123,8 @@ async def answer(
             agent_name=AGENT_NAME,
             task_type="question_generation",
             route_intent="question",
-            run_id=retry_run_id,
-            parent_run_id=parent_run_id or run_id,
+            observation_id=retry_observation_id,
+            trace_id=trace_id or observation_id,
             use_mini=use_mini,
             extra_system_messages=[
                 *extra_system_messages,
@@ -136,7 +163,7 @@ async def answer(
         agent_name=AGENT_NAME,
         prompt_name=str(meta.get("prompt_name", PROMPT_NAME)),
         prompt_version=str(meta.get("prompt_version", "unknown")),
-        trace_run_id=actual_run_id,
+        observation_id=observation_id,
         next_intent=None,
     )
 
@@ -146,8 +173,8 @@ async def stream(
     thread_id: str,
     document_ids: list[int] | None = None,
     *,
-    run_id: str | None = None,
-    parent_run_id: str | None = None,
+    observation_id: str | None = None,
+    trace_id: str | None = None,
     use_mini: bool = False,
     original_intent: str | None = None,
     resolved_intent: str | None = None,
@@ -173,8 +200,8 @@ async def stream(
         agent_name=AGENT_NAME,
         task_type="question_generation",
         route_intent="question",
-        run_id=run_id,
-        parent_run_id=parent_run_id,
+        observation_id=observation_id,
+        trace_id=trace_id,
         use_mini=use_mini,
         extra_system_messages=extra_system_messages,
         payload=payload,

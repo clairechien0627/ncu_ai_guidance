@@ -37,10 +37,51 @@ def _llm(use_mini: bool = False) -> AzureChatOpenAI:
     )
 
 
+def write_agent_span(
+    *,
+    observation_id: str,
+    trace_id: str,
+    thread_id: str | None = None,
+    parent_observation_id: str,
+    name: str,
+    start_time: datetime,
+    end_time: datetime | None = None,
+    input_data: dict | None = None,
+    output_data: dict | None = None,
+    error: str | None = None,
+    extra_metadata: dict | None = None,
+) -> None:
+    """Write an agent-level SPAN observation. Called by each agent before running no_tool."""
+    try:
+        from services.trace_ingestion import TraceEventIngestor
+        body: dict = {
+            "observation_id": observation_id,
+            "trace_id": trace_id,
+            "thread_id": thread_id,
+            "parent_observation_id": parent_observation_id,
+            "type": "SPAN",
+            "name": name,
+            "start_time": start_time.isoformat(),
+            "level": "ERROR" if error else "DEFAULT",
+            "status_message": error,
+        }
+        if end_time:
+            body["end_time"] = end_time.isoformat()
+        if input_data:
+            body["input"] = input_data
+        if output_data:
+            body["output"] = output_data
+        if extra_metadata:
+            body["metadata"] = extra_metadata
+        TraceEventIngestor.enqueue_sync([{"event_type": "observation-create", "body": body}])
+    except Exception:
+        pass
+
+
 def _write_trace(
     *,
-    run_id: str,
-    parent_run_id: str | None,
+    observation_id: str,
+    trace_id: str | None,
     thread_id: str,
     document_ids: list[int] | None,
     name: str,
@@ -50,31 +91,6 @@ def _write_trace(
     error: str | None = None,
 ) -> None:
     import os
-    # Write observation to v2 when this run is a child of a router trace
-    if parent_run_id:
-        try:
-            from services.trace_ingestion import TraceEventIngestor
-            from datetime import datetime, timezone
-            now_iso = datetime.now(timezone.utc).isoformat()
-            TraceEventIngestor.enqueue_sync([{
-                "event_type": "observation-create",
-                "body": {
-                    "observation_id": run_id,
-                    "trace_id": parent_run_id,
-                    "type": "SPAN",
-                    "name": name,
-                    "start_time": now_iso,
-                    "end_time": now_iso if (output or error) else None,
-                    "input": inputs,
-                    "output": output,
-                    "level": "ERROR" if error else "DEFAULT",
-                    "status_message": error,
-                    "metadata": {k: metadata[k] for k in ("agent_name", "task_type", "route_intent", "prompt_name") if k in metadata and metadata[k]},
-                },
-            }])
-        except Exception:
-            pass
-
     if os.environ.get("LEGACY_TRACE_WRITE", "true").lower() in ("0", "false", "no"):
         return
 
@@ -84,11 +100,11 @@ def _write_trace(
     try:
         with db_session() as db:
             now = datetime.now(timezone.utc)
-            trace = db.query(Trace).filter(Trace.run_id == run_id).first()
+            trace = db.query(Trace).filter(Trace.observation_id == observation_id).first()
             if trace is None:
                 trace = Trace(
-                    run_id=run_id,
-                    parent_run_id=parent_run_id,
+                    observation_id=observation_id,
+                    trace_id=trace_id,
                     run_type="llm",
                     name=name,
                     start_time=now,
@@ -180,8 +196,8 @@ async def run_no_tool_agent(
     agent_name: str,
     task_type: str,
     route_intent: str,
-    run_id: str | None = None,
-    parent_run_id: str | None = None,
+    observation_id: str | None = None,
+    trace_id: str | None = None,
     use_mini: bool = False,
     extra_system_messages: list[str] | None = None,
     payload: dict | None = None,
@@ -190,7 +206,7 @@ async def run_no_tool_agent(
     resolved_intent: str | None = None,
 ) -> tuple[str, list[str], dict, str]:
     """Run one no-tool LLM call and persist a local trace row."""
-    run_id = run_id or str(uuid.uuid4())
+    observation_id = observation_id or str(uuid.uuid4())
     messages, metadata, inputs = _prepare_no_tool_call(
         user_message=user_message,
         stack_name=stack_name,
@@ -204,16 +220,17 @@ async def run_no_tool_agent(
         resolved_intent=resolved_intent,
     )
     _write_trace(
-        run_id=run_id,
-        parent_run_id=parent_run_id,
+        observation_id=observation_id,
+        trace_id=trace_id,
         thread_id=thread_id,
         document_ids=document_ids,
-        name=f"{agent_name}.no_tool",
+        name=metadata.get("agent_name", agent_name).replace("_", " ").title(),
         metadata=metadata,
         inputs=inputs,
     )
 
     try:
+        llm_start = datetime.now(timezone.utc)
         with propagate_attributes(
             session_id=thread_id,
             user_id=get_user_id(),
@@ -226,27 +243,64 @@ async def run_no_tool_agent(
                 name=f"AzureChatOpenAI {agent_name}",
                 metadata=metadata,
             )
+        llm_end = datetime.now(timezone.utc)
         content = str(getattr(response, "content", response)).strip()
         result_sources = sources or []
         output = {"answer": content, "sources": result_sources}
+
+        # Extract token usage from LLM response
+        token_usage = getattr(response, "response_metadata", {}).get("token_usage", {})
+        if not token_usage:
+            token_usage = getattr(response, "usage_metadata", {}) or {}
+        prompt_tokens = token_usage.get("prompt_tokens") or token_usage.get("input_tokens")
+        completion_tokens = token_usage.get("completion_tokens") or token_usage.get("output_tokens")
+
+        # Write GENERATION observation (child of the agent SPAN)
+        if trace_id and (prompt_tokens or completion_tokens):
+            try:
+                from services.trace_ingestion import TraceEventIngestor as _TEI
+                llm_instance = _llm(use_mini=use_mini)
+                _TEI.enqueue_sync([{
+                    "event_type": "observation-create",
+                    "body": {
+                        "observation_id": str(uuid.uuid4()),
+                        "trace_id": trace_id,
+                        "thread_id": thread_id,
+                        "parent_observation_id": observation_id,
+                        "type": "GENERATION",
+                        "name": f"AzureChatOpenAI {agent_name}",
+                        "model": settings.azure_mini_deployment if use_mini else settings.azure_chat_deployment,
+                        "model_parameters": {"temperature": llm_instance.temperature},
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                        "total_tokens": (prompt_tokens or 0) + (completion_tokens or 0),
+                        "start_time": llm_start.isoformat(),
+                        "end_time": llm_end.isoformat(),
+                        "level": "DEFAULT",
+                        "metadata": {"prompt_name": prompt_name},
+                    },
+                }])
+            except Exception:
+                pass
+
         _write_trace(
-            run_id=run_id,
-            parent_run_id=parent_run_id,
+            observation_id=observation_id,
+            trace_id=trace_id,
             thread_id=thread_id,
             document_ids=document_ids,
-            name=f"{agent_name}.no_tool",
+            name=metadata.get("agent_name", agent_name).replace("_", " ").title(),
             metadata=metadata,
             inputs=inputs,
             output=output,
         )
-        return content, result_sources, metadata, run_id
+        return content, result_sources, metadata, observation_id
     except Exception as exc:
         _write_trace(
-            run_id=run_id,
-            parent_run_id=parent_run_id,
+            observation_id=observation_id,
+            trace_id=trace_id,
             thread_id=thread_id,
             document_ids=document_ids,
-            name=f"{agent_name}.no_tool",
+            name=metadata.get("agent_name", agent_name).replace("_", " ").title(),
             metadata=metadata,
             inputs=inputs,
             error=str(exc),
@@ -264,8 +318,8 @@ async def stream_no_tool_agent(
     agent_name: str,
     task_type: str,
     route_intent: str,
-    run_id: str | None = None,
-    parent_run_id: str | None = None,
+    observation_id: str | None = None,
+    trace_id: str | None = None,
     use_mini: bool = False,
     extra_system_messages: list[str] | None = None,
     payload: dict | None = None,
@@ -274,7 +328,7 @@ async def stream_no_tool_agent(
     resolved_intent: str | None = None,
 ) -> AsyncIterator[str]:
     """Stream one no-tool LLM call token-by-token and persist a local trace row."""
-    run_id = run_id or str(uuid.uuid4())
+    observation_id = observation_id or str(uuid.uuid4())
     messages, metadata, inputs = _prepare_no_tool_call(
         user_message=user_message,
         stack_name=stack_name,
@@ -288,46 +342,75 @@ async def stream_no_tool_agent(
         resolved_intent=resolved_intent,
     )
     _write_trace(
-        run_id=run_id,
-        parent_run_id=parent_run_id,
+        observation_id=observation_id,
+        trace_id=trace_id,
         thread_id=thread_id,
         document_ids=document_ids,
-        name=f"{agent_name}.no_tool",
+        name=metadata.get("agent_name", agent_name).replace("_", " ").title(),
         metadata=metadata,
         inputs=inputs,
     )
 
     content = ""
+    stream_start = datetime.now(timezone.utc)
+    completion_start_time: datetime | None = None
     try:
+        llm_instance = _llm(use_mini=use_mini)
         with propagate_attributes(
             session_id=thread_id,
             user_id=get_user_id(),
             version=metadata.get("prompt_version"),
         ) if thread_id else contextlib.nullcontext():
-            async for chunk in _llm(use_mini=use_mini).astream(messages):
+            async for chunk in llm_instance.astream(messages):
                 token = getattr(chunk, "content", None)
                 if token:
                     token_text = str(token)
+                    if completion_start_time is None:
+                        completion_start_time = datetime.now(timezone.utc)
                     content += token_text
                     yield token_text
+        stream_end = datetime.now(timezone.utc)
         result_sources = sources or []
         _write_trace(
-            run_id=run_id,
-            parent_run_id=parent_run_id,
+            observation_id=observation_id,
+            trace_id=trace_id,
             thread_id=thread_id,
             document_ids=document_ids,
-            name=f"{agent_name}.no_tool",
+            name=metadata.get("agent_name", agent_name).replace("_", " ").title(),
             metadata=metadata,
             inputs=inputs,
             output={"answer": content.strip(), "sources": result_sources},
         )
+        if trace_id:
+            try:
+                from services.trace_ingestion import TraceEventIngestor as _TEI
+                _TEI.enqueue_sync([{
+                    "event_type": "observation-create",
+                    "body": {
+                        "observation_id": str(uuid.uuid4()),
+                        "trace_id": trace_id,
+                        "thread_id": thread_id,
+                        "parent_observation_id": observation_id,
+                        "type": "GENERATION",
+                        "name": f"AzureChatOpenAI {agent_name}",
+                        "model": settings.azure_mini_deployment if use_mini else settings.azure_chat_deployment,
+                        "model_parameters": {"temperature": llm_instance.temperature},
+                        "start_time": stream_start.isoformat(),
+                        "completion_start_time": completion_start_time.isoformat() if completion_start_time else None,
+                        "end_time": stream_end.isoformat(),
+                        "level": "DEFAULT",
+                        "metadata": {"prompt_name": prompt_name},
+                    },
+                }])
+            except Exception:
+                pass
     except Exception as exc:
         _write_trace(
-            run_id=run_id,
-            parent_run_id=parent_run_id,
+            observation_id=observation_id,
+            trace_id=trace_id,
             thread_id=thread_id,
             document_ids=document_ids,
-            name=f"{agent_name}.no_tool",
+            name=metadata.get("agent_name", agent_name).replace("_", " ").title(),
             metadata=metadata,
             inputs=inputs,
             error=str(exc),

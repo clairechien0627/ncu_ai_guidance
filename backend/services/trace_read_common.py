@@ -30,12 +30,12 @@ QUALITY_DIMENSIONS = [
 
 
 def _agent_execution_root():
-    router_run_ids = (
-        select(Trace.run_id).where(Trace.agent_name == "router_agent").scalar_subquery()
+    router_observation_ids = (
+        select(Trace.observation_id).where(Trace.agent_name == "router_agent").scalar_subquery()
     )
     return or_(
-        Trace.parent_run_id.in_(router_run_ids),
-        and_(Trace.parent_run_id.is_(None), Trace.agent_name != "router_agent"),
+        Trace.trace_id.in_(router_observation_ids),
+        and_(Trace.trace_id.is_(None), Trace.agent_name != "router_agent"),
     )
 
 
@@ -186,16 +186,25 @@ def _build_v2_payload(
     if answer is None and isinstance(output_obj, dict):
         answer = output_obj.get("answer") or output_obj.get("content")
 
+    # Extract plain text from input: prefer messages[0].content, fall back to stringify
+    input_text: str | None = None
+    if isinstance(input_obj, dict):
+        messages = input_obj.get("messages") or []
+        if messages and isinstance(messages[0], dict):
+            input_text = _truncate(messages[0].get("content"))
+    input_text = input_text or _truncate(input_obj)
+
     payload = {
         "id": trace.trace_id,
         "name": trace.name,
+        "status": "error" if error else "ok",
         "level": worst_level or "DEFAULT",
         "start_time": trace.start_time.isoformat() + "Z" if trace.start_time else None,
         "end_time": trace.end_time.isoformat() + "Z" if trace.end_time else None,
         "latency": _latency(trace.start_time, trace.end_time),
         "error": error,
         "user_id": trace.user_id,
-        "input": _truncate(input_obj),
+        "input": input_text,
         "output": _truncate(answer if answer is not None else output_obj),
         "url": None,
         "display": display if include_display else None,
@@ -239,7 +248,7 @@ def _build_v2_payload(
     if include_raw:
         payload.update({
             "run_type": "chain",
-            "parent_run_id": None,
+            "trace_id": None,
             "document_ids": meta.get("document_ids"),
             "inputs_raw": input_obj,
             "outputs_raw": output_obj,
@@ -276,8 +285,9 @@ def legacy_trace_payload(t: Trace, *, include_raw: bool = False, include_display
         input_text = input_text or _truncate(inputs)
     output_text = _truncate(display.get("answer")) if isinstance(display, dict) else None
     payload = {
-        "id": t.run_id,
+        "id": t.observation_id,
         "name": t.name,
+        "status": "error" if t.error else "ok",
         "level": "ERROR" if t.error else "DEFAULT",
         "start_time": t.start_time.isoformat() + "Z" if t.start_time else None,
         "end_time": t.end_time.isoformat() + "Z" if t.end_time else None,
@@ -328,7 +338,7 @@ def legacy_trace_payload(t: Trace, *, include_raw: bool = False, include_display
     if include_raw:
         payload.update({
             "run_type": t.run_type,
-            "parent_run_id": t.parent_run_id,
+            "trace_id": t.trace_id,
             "document_ids": _parse_json(t.document_ids),
             "inputs_raw": _parse_json(t.inputs),
             "outputs_raw": _parse_json(t.outputs),

@@ -52,7 +52,7 @@ export interface ChatResponse {
   prompt_stack_tokens?: number | null
   original_intent?: string | null
   resolved_intent?: string | null
-  trace_run_id?: string | null
+  trace_id?: string | null
 }
 
 export const uploadDocument = async (file: File): Promise<UploadResponse> => {
@@ -122,7 +122,7 @@ export const getConversationMessages = async (
   agent_name?: string | null
   prompt_name?: string | null
   prompt_version?: string | null
-  trace_run_id?: string | null
+  trace_id?: string | null
 }[]> => {
   const { data } = await api.get(`/conversations/${convId}/messages`)
   return data
@@ -481,12 +481,12 @@ export const getSessions = async (
       params.set(key, String(value))
     }
   })
-  const { data } = await api.get<SessionsResponse>(`/traces/sessions?${params.toString()}`)
+  const { data } = await api.get<SessionsResponse>(`/traces/threads?${params.toString()}`)
   return data
 }
 
 export const getSessionDetail = async (threadId: string): Promise<SessionItem & { traces: TraceItem[] }> => {
-  const { data } = await api.get(`/traces/sessions/${encodeURIComponent(threadId)}`)
+  const { data } = await api.get(`/traces/threads/${encodeURIComponent(threadId)}`)
   return data
 }
 

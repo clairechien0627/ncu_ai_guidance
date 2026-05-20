@@ -282,7 +282,7 @@ class ResearchGraphState(TypedDict):
     question: str
     document_ids: list[int]
     document_context: str
-    run_id: str
+    observation_id: str
     thread_id: str
     metadata: dict
     max_searches: int

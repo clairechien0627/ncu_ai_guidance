@@ -468,7 +468,7 @@ def export_document(doc_id: int, db: Session = Depends(get_db)):
             except Exception:
                 pass
         traces_data.append({
-            "id": t.run_id,
+            "id": t.observation_id,
             "name": t.name,
             "status": "error" if t.error else "success",
             "start_time": t.start_time.isoformat() if t.start_time else None,

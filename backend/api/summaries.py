@@ -92,14 +92,12 @@ def list_summaries(slim: bool = False, db: Session = Depends(get_db)):
         {
             "id": d.id,
             "filename": d.filename,
-            "department": d.department_hint or "其他",
+            "department": (d.extraction.department_hint if d.extraction else None) or d.department_hint or "其他",
             "status": d.status,
             "batch_status": d.batch_status or "pending",
-            "summary": json.loads(d.summary_json) if d.summary_json else None,
-            "langsmith_run_id": d.langsmith_run_id,
-            "raw_research_answer": d.raw_research_answer,
-            "raw_research_sources": json.loads(d.raw_research_sources) if d.raw_research_sources else [],
-            "raw_research_run_id": d.raw_research_run_id,
+            "summary": json.loads(d.extraction.summary_json) if d.extraction and d.extraction.summary_json else None,
+            "raw_research_answer": d.extraction.raw_research_answer if d.extraction else None,
+            "raw_research_sources": json.loads(d.extraction.raw_research_sources) if d.extraction and d.extraction.raw_research_sources else [],
             "created_at": d.created_at,
             "abstract_text": d.abstract_text,
             "quality_issue": d.quality_issue,
@@ -194,10 +192,16 @@ async def batch_extract_all(background_tasks: BackgroundTasks, db: Session = Dep
 
 @router.post("/api/summaries/batch-reextract")
 async def batch_reextract(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    from db import DocumentExtraction
+    from sqlalchemy import exists as _exists
+    has_summary = _exists().where(
+        DocumentExtraction.document_id == Document.id,
+        DocumentExtraction.summary_json.isnot(None),
+    )
     broken = db.query(Document).filter(
         Document.status == "ready",
         Document.batch_status == "error",
-        Document.summary_json.isnot(None),
+        has_summary,
         Document.deleted_at.is_(None),
     ).all()
     for doc in broken:
