@@ -45,6 +45,7 @@ _active_jobs: list[dict] = []
 _job_subscribers: list[asyncio.Queue] = []
 _reindex_tasks: dict[int, asyncio.Task] = {}
 _extract_tasks: dict[int, asyncio.Task] = {}
+_worker_tasks: list[asyncio.Task] = []  # background worker handles for shutdown
 
 _reindex_work_queue: list[dict] = []
 _extract_work_queue: list[dict] = []
@@ -938,9 +939,20 @@ def init_workers():
     _reindex_event = asyncio.Event()
     _extract_condition = asyncio.Condition()
     _parse_condition = asyncio.Condition()
-    asyncio.create_task(_reindex_worker())
-    asyncio.create_task(_parse_worker())
-    asyncio.create_task(_extract_worker())
-    asyncio.create_task(_extract_worker())
+    _worker_tasks.clear()
+    _worker_tasks.append(asyncio.create_task(_reindex_worker(), name="reindex_worker"))
+    _worker_tasks.append(asyncio.create_task(_parse_worker(), name="parse_worker"))
+    _worker_tasks.append(asyncio.create_task(_extract_worker(), name="extract_worker_0"))
+    _worker_tasks.append(asyncio.create_task(_extract_worker(), name="extract_worker_1"))
     if redis_enabled():
-        asyncio.create_task(_redis_cancel_listener())
+        _worker_tasks.append(asyncio.create_task(_redis_cancel_listener(), name="redis_cancel_listener"))
+
+
+async def shutdown_workers() -> None:
+    """Cancel and await all background worker tasks."""
+    for task in _worker_tasks:
+        if not task.done():
+            task.cancel()
+    if _worker_tasks:
+        await asyncio.gather(*_worker_tasks, return_exceptions=True)
+    _worker_tasks.clear()

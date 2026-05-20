@@ -49,6 +49,10 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Runtime crash artifacts
+*.stackdump
+tempCodeRunnerFile.py
+
 AGENTS.md
 CLAUDE.md
 

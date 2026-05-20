@@ -42,16 +42,22 @@ def _init_tracing():
         logger.warning("Failed to initialize Langfuse: %s", exc)
 
 
-def _run_migrations():
-    """Apply pending Alembic migrations (idempotent, safe to run on every start)."""
+def _run_migrations() -> None:
+    """Apply pending Alembic migrations.
+
+    Raises on failure so the app never starts on a half-migrated schema.
+    create_tables() is called first only to bootstrap a brand-new empty DB;
+    Alembic then owns all schema evolution from that baseline.
+    """
+    from alembic.config import Config as AlembicConfig
+    from alembic import command as alembic_command
+    logging.getLogger("alembic").setLevel(logging.WARNING)
+    cfg = AlembicConfig(os.path.join(os.path.dirname(__file__), "alembic.ini"))
     try:
-        from alembic.config import Config as AlembicConfig
-        from alembic import command as alembic_command
-        logging.getLogger("alembic").setLevel(logging.WARNING)
-        cfg = AlembicConfig(os.path.join(os.path.dirname(__file__), "alembic.ini"))
         alembic_command.upgrade(cfg, "head")
     except Exception as exc:
-        logger.error("Alembic migration failed: %s", exc)
+        logger.critical("Alembic migration failed — refusing to start: %s", exc)
+        raise SystemExit(1) from exc
 
 
 def _reset_stuck_runs():
@@ -67,8 +73,8 @@ def _reset_stuck_runs():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _init_tracing()
-    create_tables()
-    _run_migrations()
+    create_tables()   # bootstrap empty DB; Alembic owns all evolution below
+    _run_migrations() # fail-fast if any migration cannot apply
     await setup_checkpointer()
     from services.memory_service import ensure_memory_collection
     from services.redis_service import init_redis, close_redis
@@ -86,6 +92,7 @@ async def lifespan(app: FastAPI):
     await stop_evaluation_worker()
     await stop_trace_ingestion_worker()
     job_service.mark_all_interrupted()
+    await job_service.shutdown_workers()
     await close_redis()
     # Signal all active research graph runs to stop at the next superstep boundary.
     from agents.research.agent import request_all_drain

@@ -727,6 +727,7 @@ async def run_tool_agent_stream(
     max_searches: int | None = None,
     max_consecutive_empty: int | None = None,
     trace_id: str | None = None,
+    parent_observation_id: str | None = None,
     use_mini: bool = False,
 ):
     """Async generator yielding (token, is_done, sources) tuples."""
@@ -734,7 +735,7 @@ async def run_tool_agent_stream(
     agent = _get_tool_agent(mini=use_mini)
     metadata = {**(metadata or {}), **(tracer_metadata or {})}
     with propagate_attributes(version=metadata.get("prompt_version")) if metadata.get("prompt_version") else contextlib.nullcontext():
-        tracer = _build_tracer(thread_id, document_ids, metadata, trace_id)
+        tracer = _build_tracer(thread_id, document_ids, metadata, trace_id, parent_observation_id)
     config_metadata = {**metadata, **langfuse_prompt_metadata_from_metadata(metadata)}
     config = {
         "configurable": {"thread_id": thread_id},
@@ -764,14 +765,6 @@ async def run_tool_agent_stream(
                 version="v2",
             ):
                 yield chunk
-
-    async def _run_stream_full() -> str:
-        content = ""
-        async for chunk in _stream_chunks():
-            token_text = _stream_token_from_chunk(chunk)
-            if token_text:
-                content += token_text
-        return content
 
     full_content = ""
     async for chunk in _stream_chunks():

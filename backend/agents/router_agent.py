@@ -136,7 +136,6 @@ def _write_router_trace(
 
 ROUTER_PROMPT_NAME = "route_coordinator"
 VALID_INTENTS = {"chat", "retrieval", "research", "summary", "question", "evaluation"}
-ROUTER_LLM_INTENTS = {"chat", "retrieval", "research", "summary", "question", "evaluation"}
 
 # Maximum number of times a single request may be re-routed between agents.
 # If an agent tries to hand off more than this many times, we fall back to chat.

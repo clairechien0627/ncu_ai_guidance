@@ -75,8 +75,8 @@ def write_agent_span(
         if extra_metadata:
             body["metadata"] = extra_metadata
         TraceEventIngestor.enqueue_sync([{"event_type": "observation-create", "body": body}])
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("write_agent_span enqueue failed (best-effort): %s", exc)
 
 
 def _write_trace(
@@ -281,8 +281,8 @@ async def run_no_tool_agent(
                         "metadata": {"prompt_name": prompt_name},
                     },
                 }])
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("GENERATION observation enqueue failed (best-effort): %s", exc)
 
         _write_trace(
             observation_id=observation_id,
@@ -403,8 +403,8 @@ async def stream_no_tool_agent(
                         "metadata": {"prompt_name": prompt_name},
                     },
                 }])
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("streaming GENERATION observation enqueue failed (best-effort): %s", exc)
     except Exception as exc:
         _write_trace(
             observation_id=observation_id,

@@ -168,6 +168,7 @@ async def stream(
         task_prompt=effective_prompt,
         observation_id=observation_id,
         trace_id=trace_id,
+        parent_observation_id=observation_id,
         include_document_abstracts=include_document_abstracts,
         include_research_context=False,
         max_searches=max_searches,
