@@ -40,10 +40,10 @@
 
 ### route_coordinator.txt
 
-根據使用者意圖選擇 task agent，輸出 `{intent, evaluate_after, reason}`。
+根據使用者訊息和文件 context 選擇 task agent，輸出 `{agent_name, evaluate_after, reason}`。
 
 - 多文件比較整體差異 → `research_agent`；多文件查特定事實 → `retrieval_agent`
-- 訊息模糊優先選 `chat_agent`，不亂猜 intent
+- 訊息模糊優先選 `chat_agent`
 - `evaluation_agent` 只用於明確針對「系統上一個回答」做評估
 
 ---

@@ -219,7 +219,6 @@ class Trace(Base):
     thread_id = Column(String, nullable=True, index=True)
     document_ids = Column(JsonColumn, nullable=True)    # JSON array, e.g. "[1,2]"
     task_type = Column(String, nullable=True, index=True)
-    route_intent = Column(String, nullable=True, index=True)
     agent_name = Column(String, nullable=True, index=True)
     prompt_name = Column(String, nullable=True, index=True)
     prompt_version = Column(String, nullable=True)

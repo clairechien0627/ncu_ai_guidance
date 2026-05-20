@@ -5,7 +5,7 @@
 你會收到：
 - user_task：原始任務或使用者問題
 - answer：AI 產出的答案
-- task_type / route_intent：chat / retrieval / research / question / extraction 等任務脈絡
+- task_type：chat_turn / retrieval_qa / research_task / question_generation / document_extraction 等任務脈絡
 - sources：答案聲稱使用的來源
 - trace_summary：若有，包含 coverage、搜尋步驟、證據狀態
 - extra_context：其他可用背景

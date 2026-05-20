@@ -143,7 +143,7 @@ def _level_info(observations: list[Observation]) -> tuple[str | None, dict | Non
 
 
 _STANDARD_META_KEYS = {
-    "task_type", "route_intent", "agent_name", "prompt_name", "prompt_version",
+    "task_type", "agent_name", "prompt_name", "prompt_version",
     "base_prompt_name", "task_prompt_name", "quality_prompt_name",
     "base_prompt_hash", "task_prompt_hash", "quality_prompt_hash",
     "prompt_stack_name", "prompt_stack_json", "primary_prompt_json",
@@ -209,7 +209,6 @@ def _build_v2_payload(
         "url": None,
         "display": display if include_display else None,
         "task_type": meta.get("task_type"),
-        "route_intent": meta.get("route_intent"),
         "agent_name": meta.get("agent_name"),
         "prompt_name": meta.get("prompt_name"),
         "prompt_version": meta.get("prompt_version"),
@@ -297,7 +296,6 @@ def legacy_trace_payload(t: Trace, *, include_raw: bool = False, include_display
         "url": None,
         "display": display if include_display else None,
         "task_type": t.task_type,
-        "route_intent": t.route_intent,
         "agent_name": t.agent_name,
         "prompt_name": t.prompt_name,
         "prompt_version": t.prompt_version,

@@ -104,7 +104,6 @@ async def decide_slot_ordering(
             prompt_name="research_scheduler",
             metadata={
                 "task_type": "research_task",
-                "route_intent": "research",
                 "agent_name": "research_agent",
                 **research_node_stack_metadata("research_scheduler"),
             },

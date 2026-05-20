@@ -34,7 +34,6 @@ def make_trace(**overrides):
         "thread_id": "thread-1",
         "document_ids": json.dumps([1, 2]),
         "task_type": "retrieval_qa",
-        "route_intent": "retrieval",
         "agent_name": "retrieval_agent",
         "prompt_name": "chat",
         "prompt_version": "sha256:abc123",
@@ -81,7 +80,6 @@ def test_trace_payload_preserves_additive_trace_metadata():
     assert payload["input"] == "hello"
     assert payload["output"] == "final answer"
     assert payload["task_type"] == "retrieval_qa"
-    assert payload["route_intent"] == "retrieval"
     assert payload["agent_name"] == "retrieval_agent"
     assert payload["prompt_name"] == "chat"
     assert payload["prompt_version"] == "sha256:abc123"
@@ -101,14 +99,14 @@ def test_trace_payload_preserves_additive_trace_metadata():
 def test_grouped_trace_stats_keeps_unknown_bucket():
     rows = _grouped_trace_stats(
         [
-            make_trace(observation_id="a", route_intent="retrieval", error=None, quality_score=4, user_feedback="useful"),
-            make_trace(observation_id="b", route_intent="retrieval", error="boom", end_time=None, quality_score=2),
-            make_trace(observation_id="c", route_intent=None, prompt_tokens=None, completion_tokens=None),
+            make_trace(observation_id="a", agent_name="retrieval_agent", error=None, quality_score=4, user_feedback="useful"),
+            make_trace(observation_id="b", agent_name="retrieval_agent", error="boom", end_time=None, quality_score=2),
+            make_trace(observation_id="c", agent_name=None, prompt_tokens=None, completion_tokens=None),
         ],
-        "route_intent",
+        "agent_name",
     )
 
-    assert rows[0]["key"] == "retrieval"
+    assert rows[0]["key"] == "retrieval_agent"
     assert rows[0]["runs"] == 2
     assert rows[0]["errors"] == 1
     assert rows[0]["tokens"] == 30

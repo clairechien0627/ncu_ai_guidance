@@ -49,7 +49,6 @@ def _trace(observation_id: str) -> Trace:
         thread_id="thread-1",
         environment="test",
         task_type="retrieval_qa",
-        route_intent="retrieval",
         display=json.dumps({
             "answer": "answer",
             "messages": [{"role": "human", "content": "question"}],
@@ -73,7 +72,7 @@ def _seed_dataset(db, item_count: int = 1):
             input=json.dumps({"messages": [{"role": "human", "content": f"question {idx + 1}"}]}),
             output=json.dumps({"answer": f"old {idx + 1}"}),
             expected_output=json.dumps({"answer": f"expected {idx + 1}"}),
-            context=json.dumps({"task_type": "retrieval_qa", "route_intent": "retrieval"}),
+            context=json.dumps({"task_type": "retrieval_qa"}),
             is_archived=False,
             is_deleted=False,
             created_at=datetime(2026, 5, 18, 1, 1, 0),
@@ -98,7 +97,7 @@ async def _successful_evaluator(**_kwargs):
 async def _successful_generator(**kwargs):
     return {
         "output": {"answer": f"generated {kwargs['dataset_item_id']}"},
-        "context": {"task_type": "retrieval_qa", "route_intent": "retrieval"},
+        "context": {"task_type": "retrieval_qa"},
         "trace_id": f"generated-{kwargs['dataset_item_id']}",
     }
 

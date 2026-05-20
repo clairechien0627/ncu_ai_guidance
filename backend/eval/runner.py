@@ -23,12 +23,12 @@ async def run_eval_suite(dataset_path: str | None = None) -> dict:
                 case.get("document_ids"),
                 thread_id=None,
             )
-            correct = route.intent == case["expected_mode"]
+            correct = route.agent_name == case["expected_mode"]
             results.append({
                 "id": case["id"],
                 "message": case["message"],
                 "expected": case["expected_mode"],
-                "got": route.intent,
+                "got": route.agent_name,
                 "agent": route.agent_name,
                 "correct": correct,
                 "note": case.get("note", ""),

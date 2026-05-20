@@ -136,7 +136,7 @@ class _TraceReadCore:
         if not rows:
             return []
         cleaned = {k: _clean(v) if isinstance(v, str) else v for k, v in filters.items()}
-        meta_keys = {"task_type", "route_intent", "prompt_name", "prompt_version"}
+        meta_keys = {"task_type", "prompt_name", "prompt_version"}
         active_meta = {k: cleaned[k] for k in meta_keys if cleaned.get(k)}
         if not active_meta:
             return rows
@@ -154,7 +154,6 @@ class _TraceReadCore:
         cleaned = {k: _clean(v) if isinstance(v, str) else v for k, v in filters.items()}
         mapping = {
             "task_type": Trace.task_type,
-            "route_intent": Trace.route_intent,
             "prompt_name": Trace.prompt_name,
             "prompt_version": Trace.prompt_version,
             "agent_name": Trace.agent_name,
@@ -327,7 +326,6 @@ class _TraceReadCore:
             "latency": payload.get("latency"),
             "error": payload.get("error"),
             "task_type": payload.get("task_type"),
-            "route_intent": payload.get("route_intent"),
             "agent_name": payload.get("agent_name"),
             "prompt_name": payload.get("prompt_name"),
             "prompt_version": payload.get("prompt_version"),
@@ -356,12 +354,12 @@ class _TraceReadCore:
             tid = p.get("thread_id")
             if not tid:
                 continue  # traces without a thread_id don't belong to any session
-            s = sessions.setdefault(tid, {"thread_id": tid, "_route_intents": [], "created_at": p.get("start_time"), "ended_at": p.get("end_time"), "trace_count": 0, "input_tokens": 0, "output_tokens": 0, "_quality_scores": [], "_user_ids": set()})
+            s = sessions.setdefault(tid, {"thread_id": tid, "_agents": [], "created_at": p.get("start_time"), "ended_at": p.get("end_time"), "trace_count": 0, "input_tokens": 0, "output_tokens": 0, "_quality_scores": [], "_user_ids": set()})
             s["trace_count"] += 1
             s["input_tokens"] += p.get("prompt_tokens") or 0
             s["output_tokens"] += p.get("completion_tokens") or 0
-            if p.get("route_intent"):
-                s["_route_intents"].append(p["route_intent"])
+            if p.get("agent_name"):
+                s["_agents"].append(p["agent_name"])
             if p.get("quality_score") is not None:
                 s["_quality_scores"].append(p["quality_score"])
             uid = self._payload_user_id(p)
@@ -373,12 +371,12 @@ class _TraceReadCore:
                 s["ended_at"] = p["end_time"]
         result = []
         for s in sessions.values():
-            intents = s.pop("_route_intents")
+            agents = s.pop("_agents")
             qs = s.pop("_quality_scores")
             uids = s.pop("_user_ids")
             result.append({
                 **s,
-                "task_type": Counter(intents).most_common(1)[0][0] if intents else None,
+                "task_type": Counter(agents).most_common(1)[0][0] if agents else None,
                 "duration_seconds": self._duration_from_iso(s["created_at"], s["ended_at"]),
                 "total_tokens": s["input_tokens"] + s["output_tokens"],
                 "avg_quality_score": self._avg(qs),

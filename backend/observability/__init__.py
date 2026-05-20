@@ -180,7 +180,6 @@ def generation_prompt_metadata(metadata: dict | None = None, *, prompt_name: str
         "prompt_stack_json": stack_json,
         "agent_name": metadata.get("agent_name"),
         "task_type": metadata.get("task_type"),
-        "route_intent": metadata.get("route_intent"),
     }
 
 

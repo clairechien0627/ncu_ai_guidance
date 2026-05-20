@@ -26,7 +26,7 @@ const DIMS = [
 // ── Column layout (low-quality traces table) ───────────────────────────────────
 const COLS: ColDef[] = [
   { width: 120, resizable: false },  // 0 時間
-  { width: 120, resizable: true  },  // 1 Intent
+  { width: 120, resizable: true  },  // 1 Agent
   { width: 130, resizable: false },  // 2 Score
   { width: 160, resizable: true  },  // 4 Verdict
   { width: 80,  resizable: false },  // 5 Latency
@@ -125,7 +125,7 @@ export default function ScoresPage() {
             <thead>
               <tr>
                 <th {...sort.th('start_time')}>時間{sort.ind('start_time')}<span {...div(0)} /></th>
-                <th>Intent<span {...div(1)} /></th>
+                <th>Agent<span {...div(1)} /></th>
                 <th {...sort.th('quality_score')}>Score{sort.ind('quality_score')}<span {...div(2)} /></th>
                 <th>Verdict<span {...div(4)} /></th>
                 <th {...sort.th('latency')}>Latency{sort.ind('latency')}</th>
@@ -137,7 +137,7 @@ export default function ScoresPage() {
               ) : sort.apply(lowTraces as TraceItem[]).slice((page-1)*pageSize, page*pageSize).map((t: TraceItem) => (
                 <tr key={t.id} className="adm-row--clickable" onClick={() => navigate('/admin/traces')}>
                   <td className="adm-cell-mono">{fmtDate(t.start_time)}</td>
-                  <td>{t.original_intent ? <span className="adm-badge adm-badge--info">{t.original_intent}</span> : '—'}</td>
+                  <td>{t.agent_name ? <span className="adm-badge adm-badge--info">{t.agent_name}</span> : '—'}</td>
                   <td><ScoreBar value={t.quality_score} /></td>
                   <td style={{ fontSize: 12, color: 'var(--adm-text-2)' }}>{(t.quality_detail as any)?.verdict ?? (t.user_feedback ? t.user_feedback.slice(0, 60) : '—')}</td>
                   <td style={{ fontSize: 12, color: 'var(--adm-text-3)' }}>{t.latency != null ? `${t.latency}s` : '—'}</td>

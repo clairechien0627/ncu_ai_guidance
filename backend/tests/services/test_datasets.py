@@ -46,7 +46,6 @@ def _trace(observation_id: str, **kwargs) -> Trace:
         thread_id=kwargs.pop("thread_id", "thread-1"),
         environment=kwargs.pop("environment", "test"),
         task_type=kwargs.pop("task_type", "retrieval_qa"),
-        route_intent=kwargs.pop("route_intent", "retrieval"),
         quality_score=kwargs.pop("quality_score", None),
         inputs=kwargs.pop("inputs", json.dumps({"messages": [{"role": "human", "content": "question"}]})),
         outputs=kwargs.pop("outputs", json.dumps({"answer": "answer"})),

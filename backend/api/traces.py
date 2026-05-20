@@ -63,7 +63,6 @@ def _trace_meta(t: Trace) -> dict:
     workflow_prompts = _parse_json(getattr(t, "workflow_prompts_json", None))
     return {
         "task_type": getattr(t, "task_type", None),
-        "route_intent": getattr(t, "route_intent", None),
         "agent_name": getattr(t, "agent_name", None),
         "prompt_name": getattr(t, "prompt_name", None),
         "prompt_version": getattr(t, "prompt_version", None),
@@ -82,8 +81,6 @@ def _trace_meta(t: Trace) -> dict:
         "llm_call_count": getattr(t, "llm_call_count", None),
         "quality_score": getattr(t, "quality_score", None),
         "user_feedback": getattr(t, "user_feedback", None),
-        "original_intent": getattr(t, "original_intent", None),
-        "resolved_intent": getattr(t, "resolved_intent", None),
         "quality_detail": _parse_quality_detail(getattr(t, "quality_detail", None)),
     }
 
@@ -241,21 +238,17 @@ def _matches_trace_filters(
     t: Trace,
     *,
     task_type: str | None = None,
-    route_intent: str | None = None,
     prompt_name: str | None = None,
     prompt_version: str | None = None,
     status: str | None = None,
     min_latency: float | None = None,
 ) -> bool:
     task_type = _clean_filter(task_type)
-    route_intent = _clean_filter(route_intent)
     prompt_name = _clean_filter(prompt_name)
     prompt_version = _clean_filter(prompt_version)
     status = _clean_filter(status)
 
     if task_type and (t.task_type or "unknown") != task_type:
-        return False
-    if route_intent and (t.route_intent or "unknown") != route_intent:
         return False
     if prompt_name and (t.prompt_name or "unknown") != prompt_name:
         return False
@@ -353,15 +346,12 @@ def list_traces(
     limit: int = 40,
     offset: int = 0,
     task_type: str | None = None,
-    route_intent: str | None = None,
     prompt_name: str | None = None,
     prompt_version: str | None = None,
     status: str | None = None,
     min_latency: float | None = None,
     max_quality: float | None = None,
     has_score: bool | None = None,
-    original_intent: str | None = None,
-    resolved_intent: str | None = None,
     agent_name: str | None = None,
     environment: str | None = None,
     date_from: str | None = None,
@@ -384,7 +374,6 @@ def list_traces(
         limit=limit,
         offset=offset,
         task_type=task_type,
-        route_intent=route_intent,
         prompt_name=prompt_name,
         prompt_version=prompt_version,
         status=status,
@@ -392,8 +381,6 @@ def list_traces(
         max_quality=max_quality,
         min_quality=min_quality,
         has_score=has_score,
-        original_intent=original_intent,
-        resolved_intent=resolved_intent,
         agent_name=agent_name,
         environment=environment,
         date_from=date_from,
@@ -494,9 +481,9 @@ def traces_by_task_type(db: Session = Depends(get_db)):
     return TraceReadService(db).grouped("task_type")
 
 
-@router.get("/api/traces/by-route-intent")
-def traces_by_route_intent(db: Session = Depends(get_db)):
-    return TraceReadService(db).grouped("route_intent")
+@router.get("/api/traces/by-agent")
+def traces_by_agent(db: Session = Depends(get_db)):
+    return TraceReadService(db).grouped("agent_name")
 
 
 @router.get("/api/traces/by-prompt")
@@ -542,7 +529,6 @@ def slow_runs(limit: int = 40, min_latency: float = 10, db: Session = Depends(ge
 def trace_timeline(
     prompt_name: str | None = None,
     task_type: str | None = None,
-    route_intent: str | None = None,
     days: int = 14,
     db: Session = Depends(get_db),
 ):
@@ -550,7 +536,6 @@ def trace_timeline(
     return TraceReadService(db).timeline(
         prompt_name=prompt_name,
         task_type=task_type,
-        route_intent=route_intent,
         days=days,
     )
 
@@ -878,45 +863,12 @@ def score_stats(db: Session = Depends(get_db)):
     return TraceReadService(db).score_stats()
 
 
-class TestRouteRequest(BaseModel):
-    message: str
-    document_ids: list[int] | None = None
-
-
-@router.post("/api/traces/test-route")
-async def test_route(body: TestRouteRequest):
-    """測試路由決策，不執行實際 agent。毫秒內回應。"""
-    from agents.router_agent import _keyword_classify, _llm_classify_intent, _route_for_intent
-
-    has_docs = bool(body.document_ids)
-    keyword_result = _keyword_classify(body.message, has_docs)
-
-    if keyword_result != "uncertain":
-        route = _route_for_intent(keyword_result, body.document_ids)
-        path = "keyword"
-    else:
-        llm_intent = await _llm_classify_intent(body.message, has_docs)
-        route = _route_for_intent(llm_intent, body.document_ids)
-        path = "llm"
-
-    return {
-        "intent": route.intent,
-        "agent_name": route.agent_name,
-        "prompt_name": route.prompt_name,
-        "prompt_version": route.prompt_version,
-        "original_intent": route.original_intent,
-        "resolved_intent": route.resolved_intent,
-        "path": path,
-    }
-
-
 # ── Threads ───────────────────────────────────────────────────────────────────
 
 @router.get("/api/traces/threads")
 def list_threads(
     limit: int = 50,
     offset: int = 0,
-    route_intent: str | None = None,
     user_id: str | None = None,
     environment: str | None = None,
     date_from: str | None = None,
@@ -928,7 +880,6 @@ def list_threads(
     return TraceReadService(db).sessions(
         limit=limit,
         offset=offset,
-        route_intent=route_intent,
         user_id=user_id,
         environment=environment,
         date_from=date_from,

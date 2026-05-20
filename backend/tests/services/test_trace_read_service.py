@@ -35,7 +35,6 @@ def _trace(observation_id: str, **kwargs) -> Trace:
         thread_id=kwargs.pop("thread_id", "thread-1"),
         user_id=kwargs.pop("user_id", "user-1"),
         environment=kwargs.pop("environment", "test"),
-        route_intent=kwargs.pop("route_intent", "document_qa"),
         prompt_name=kwargs.pop("prompt_name", "retrieval"),
         prompt_version=kwargs.pop("prompt_version", "v1"),
         prompt_tokens=kwargs.pop("prompt_tokens", 10),
@@ -60,7 +59,7 @@ def test_v2_only_trace_detail_returns_children_and_scores():
             thread_id="thread-v2",
             user_id="user-v2",
             environment="test",
-            metadata_json={"route_intent": "document_qa", "prompt_name": "retrieval"},
+            metadata_json={"prompt_name": "retrieval"},
             start_time=datetime(2026, 5, 18, 1, 0, 0),
             end_time=datetime(2026, 5, 18, 1, 0, 2),
         ))
@@ -183,7 +182,6 @@ def test_document_traces_errors_slow_runs_and_compare_are_v2_aware():
             environment="test",
             metadata_json={
                 "document_ids": [9],
-                "route_intent": "document_qa",
                 "prompt_name": "retrieval",
                 "prompt_version": "v2",
                 "display": {"answer": "doc answer"},
@@ -274,7 +272,7 @@ def test_split_detail_stats_and_session_services_match_facade_shape():
             name="root",
             thread_id="thread-v2",
             user_id="user-v2",
-            metadata_json={"route_intent": "document_qa"},
+            metadata_json={},
             start_time=datetime(2026, 5, 18, 1, 0, 0),
             end_time=datetime(2026, 5, 18, 1, 0, 2),
         ))

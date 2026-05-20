@@ -187,11 +187,11 @@ class TraceStatsReadService:
         return result
 
 
-    def timeline(self, *, prompt_name: str | None = None, task_type: str | None = None, route_intent: str | None = None, days: int = 14) -> list[dict]:
+    def timeline(self, *, prompt_name: str | None = None, task_type: str | None = None, days: int = 14) -> list[dict]:
         cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
         payloads = [
             p for p in self.core._merged_payloads(
-                {"prompt_name": prompt_name, "task_type": task_type, "route_intent": route_intent},
+                {"prompt_name": prompt_name, "task_type": task_type},
                 include_display=False,
             )
             if p.get("start_time") and datetime.fromisoformat(p["start_time"].replace("Z", "+00:00")).replace(tzinfo=None) >= cutoff

@@ -9,12 +9,12 @@ class TraceSessionUserReadService:
     def __init__(self, core: _TraceReadCore):
         self.core = core
 
-    def sessions(self, *, limit: int = 50, offset: int = 0, route_intent: str | None = None, user_id: str | None = None,
+    def sessions(self, *, limit: int = 50, offset: int = 0, user_id: str | None = None,
                  environment: str | None = None, date_from: str | None = None, date_to: str | None = None,
                  order_by: str = "created_at", order_dir: str = "desc") -> dict:
         payloads = [
             p for p in self.core._merged_payloads(
-                {"route_intent": route_intent, "user_id": user_id, "environment": environment, "date_from": date_from, "date_to": date_to},
+                {"user_id": user_id, "environment": environment, "date_from": date_from, "date_to": date_to},
                 include_raw=True,
                 include_display=False,
                 legacy_limit=2000,

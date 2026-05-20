@@ -53,7 +53,6 @@ def trace_metadata(
     document_ids: list[int] | None = None,
     *,
     task_type: str = "document_extraction",
-    route_intent: str | None = None,
     agent_name: str = SUMMARY_AGENT_NAME,
     stack_name: str = RESEARCH_STACK_NAME,
 ) -> dict[str, str | int]:
@@ -67,7 +66,6 @@ def trace_metadata(
     stack = _load_stack(stack_name, _prompt_key(thread_id, document_ids))
     return {
         "task_type": task_type,
-        "route_intent": route_intent,
         "agent_name": agent_name,
         **stack.metadata(),
     }
@@ -131,7 +129,6 @@ def _prompt_trace_metadata(metadata: dict) -> dict:
 def _graph_runtime_metadata(metadata: dict) -> dict:
     keep = (
         "task_type",
-        "route_intent",
         "agent_name",
         "prompt_stack_name",
         "primary_prompt_json",
@@ -145,8 +142,6 @@ def _graph_runtime_metadata(metadata: dict) -> dict:
         "task_prompt_hash",
         "document_id",
         "type",
-        "original_intent",
-        "resolved_intent",
         "research_effective_base_stack_name",
         "research_runtime_prompt_summary",
     )
@@ -579,7 +574,6 @@ def _write_trace(
             trace.document_ids = json.dumps(document_ids)
             trace.display = json.dumps(display, ensure_ascii=False)
             trace.task_type = metadata.get("task_type")
-            trace.route_intent = metadata.get("route_intent")
             trace.agent_name = metadata.get("agent_name")
             trace.prompt_name = metadata.get("prompt_name")
             trace.prompt_version = metadata.get("prompt_version")
@@ -596,8 +590,6 @@ def _write_trace(
             trace.prompt_stack_tokens = metadata.get("prompt_stack_tokens")
             trace.tool_count = state.search_count
             trace.llm_call_count = llm_call_count
-            trace.original_intent = metadata.get("original_intent")
-            trace.resolved_intent = metadata.get("resolved_intent")
             db.commit()
     except Exception:
         if db is not None:
@@ -639,7 +631,6 @@ async def _emit_stage(on_stage, msg: str) -> None:
 async def _plan_research(
     llm,
     question: str,
-    route_intent: str | None,
     task_type: str,
     context: str,
     on_stage: Callable[[str], None] | None,
@@ -653,13 +644,13 @@ async def _plan_research(
         plan = await create_research_plan(
             llm,
             question=question,
-            task_context=route_intent or task_type,
+            task_context=task_type,
             document_context=context,
         )
         plan_llm_calls = 1
     except Exception:
         await _emit_stage(on_stage, "任務規劃失敗：使用預設檢索項目")
-        plan = fallback_research_plan(route_intent or task_type, question)
+        plan = fallback_research_plan(task_type, question)
         plan_llm_calls = 0
 
     task_goal, coverage_items, output_contract = plan.as_state_parts()
@@ -743,7 +734,6 @@ async def run_research_task(
     observation_id: str,
     metadata: dict,
     task_type: str = "document_extraction",
-    route_intent: str | None = None,
     on_stage: Callable[[str], None] | None = None,
     on_token: Callable[[str], None] | None = None,
     max_searches: int = 10,
@@ -773,7 +763,6 @@ async def run_research_task(
 
     metadata = dict(metadata)
     metadata.setdefault("task_type", task_type)
-    metadata.setdefault("route_intent", route_intent)
     base_stack_meta = research_base_stack_metadata()
     base_prompts = _parse_json_field(base_stack_meta.get("prompt_stack_json")) or []
     runtime_prompts = _runtime_prompt_specs()
@@ -788,7 +777,7 @@ async def run_research_task(
     context = _document_context(document_ids)
 
     task_goal, coverage_items, output_contract, coverage_ids, plan_llm_calls = await _plan_research(
-        llm, question, route_intent, task_type, context, on_stage
+        llm, question, task_type, context, on_stage
     )
     initial_state = _build_initial_graph_state(
         question=question, document_ids=document_ids, context=context,
@@ -845,15 +834,12 @@ async def run_research_task(
             thread_id=thread_id,
             document_ids=document_ids,
             task_type=metadata.get("task_type") or task_type,
-            route_intent=metadata.get("route_intent") or route_intent,
             agent_name=metadata.get("agent_name") or "research_agent",
             prompt_name=metadata.get("prompt_name"),
             prompt_version=metadata.get("prompt_version"),
             base_prompt_name=metadata.get("base_prompt_name"),
             task_prompt_name=metadata.get("task_prompt_name"),
             prompt_stack_name=metadata.get("prompt_stack_name"),
-            original_intent=metadata.get("original_intent"),
-            resolved_intent=metadata.get("resolved_intent"),
             trace_id=trace_id,
             parent_observation_id=observation_id,
         )
@@ -950,7 +936,6 @@ async def run_research_task(
         return AgentResult(
             response=answer, sources=sources,
             task_type=str(metadata.get("task_type") or task_type),
-            route_intent=metadata.get("route_intent"),
             agent_name=str(metadata.get("agent_name") or "research_agent"),
             prompt_name=str(metadata.get("prompt_name") or "research_writer"),
             prompt_version=str(metadata.get("prompt_version") or "unknown"),
@@ -1008,7 +993,6 @@ async def run_research_summary(
         observation_id=observation_id,
         metadata=metadata,
         task_type="document_extraction",
-        route_intent=None,
         on_stage=on_stage,
         max_searches=max_searches,
         max_searches_per_slot=max_searches_per_slot,

@@ -34,7 +34,6 @@ async def retrieve_evidence(
     max_searches: int | None = None,
     max_consecutive_empty: int | None = None,
     task_type: str | None = None,
-    route_intent: str | None = None,
 ) -> tuple[list[dict], list[str]]:
     update_current_observation_io(input={
         "query": query,
@@ -52,7 +51,6 @@ async def retrieve_evidence(
         consecutive_empty=consecutive_empty,
         on_stage=on_stage,
         task_type=task_type,
-        route_intent=route_intent,
         max_searches=max_searches,
         max_consecutive_empty=max_consecutive_empty,
     )

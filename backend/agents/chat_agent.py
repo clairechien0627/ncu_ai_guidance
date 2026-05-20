@@ -43,7 +43,6 @@ def trace_metadata() -> dict[str, str | int]:
     stack = load_stack(STACK_NAME)
     return {
         "task_type": "chat_turn",
-        "route_intent": "chat",
         "agent_name": AGENT_NAME,
         **stack.metadata(),
     }
@@ -122,7 +121,6 @@ def _write_composition_trace(
                     thread_id=thread_id,
                     document_ids=json.dumps(document_ids) if document_ids else None,
                     task_type=COMPOSITION_TASK_TYPE,
-                    route_intent="chat",
                     agent_name=AGENT_NAME,
                     prompt_name=metadata.get("prompt_name"),
                     prompt_version=metadata.get("prompt_version"),
@@ -173,7 +171,6 @@ async def compose_final_response(
     stack = load_stack(STACK_NAME)
     metadata = {
         "task_type": COMPOSITION_TASK_TYPE,
-        "route_intent": "chat",
         "agent_name": AGENT_NAME,
         **stack.metadata(),
     }
@@ -181,7 +178,6 @@ async def compose_final_response(
         "user_message": user_message,
         "task_agent": task_result.agent_name,
         "task_type": task_result.task_type,
-        "task_route_intent": task_result.route_intent,
         "task_answer": task_result.response,
         "sources": task_result.sources,
     }
@@ -231,12 +227,10 @@ async def compose_final_response(
             response=content,
             sources=task_result.sources,
             task_type=COMPOSITION_TASK_TYPE,
-            route_intent="chat",
             agent_name=AGENT_NAME,
             prompt_name=str(metadata.get("prompt_name", PROMPT_NAME)),
             prompt_version=str(metadata.get("prompt_version", "unknown")),
             observation_id=observation_id,
-            next_intent=None,
         )
     except Exception as exc:
         _write_composition_trace(
@@ -261,20 +255,13 @@ async def answer(
     trace_id: str | None = None,
     on_stage: Callable[[str], None] | None = None,
     use_mini: bool = False,
-    original_intent: str | None = None,
-    resolved_intent: str | None = None,
 ) -> AgentResult:
     stack = load_stack(STACK_NAME)
     meta = {
         "task_type": "chat_turn",
-        "route_intent": "chat",
         "agent_name": AGENT_NAME,
         **stack.metadata(),
     }
-    if original_intent:
-        meta["original_intent"] = original_intent
-    if resolved_intent:
-        meta["resolved_intent"] = resolved_intent
     await _emit_stage(on_stage, "chat_agent: composing")
     from datetime import datetime, timezone as _tz
     import uuid as _uuid
@@ -299,7 +286,6 @@ async def answer(
         prompt_name=PROMPT_NAME,
         agent_name=AGENT_NAME,
         task_type="chat_turn",
-        route_intent="chat",
         observation_id=observation_id,
         trace_id=trace_id,
         use_mini=use_mini,
@@ -309,8 +295,6 @@ async def answer(
             "provided by the router or state that the router should use a "
             "retrieval/research route."
         ],
-        original_intent=original_intent,
-        resolved_intent=resolved_intent,
     )
     # Update Chat Agent SPAN with output and end time
     if trace_id:
@@ -330,7 +314,6 @@ async def answer(
         input={
             "message": user_message,
             "document_ids": document_ids or [],
-            "route_intent": "chat",
         },
         output={"answer": response, "sources": sources},
         metadata={
@@ -345,12 +328,10 @@ async def answer(
         response=response,
         sources=sources,
         task_type="chat_turn",
-        route_intent="chat",
         agent_name=AGENT_NAME,
         prompt_name=str(meta.get("prompt_name", PROMPT_NAME)),
         prompt_version=str(meta.get("prompt_version", "unknown")),
         observation_id=observation_id,
-        next_intent=None,
     )
 
 
@@ -363,8 +344,6 @@ async def stream(
     trace_id: str | None = None,
     on_stage: Callable[[str], None] | None = None,
     use_mini: bool = False,
-    original_intent: str | None = None,
-    resolved_intent: str | None = None,
 ) -> AsyncIterator[tuple[str, bool, list[str]]]:
     observation_id = observation_id or new_id()
     agent_start = datetime.now(timezone.utc)
@@ -389,7 +368,6 @@ async def stream(
         prompt_name=PROMPT_NAME,
         agent_name=AGENT_NAME,
         task_type="chat_turn",
-        route_intent="chat",
         observation_id=observation_id,
         trace_id=trace_id,
         use_mini=use_mini,
@@ -399,8 +377,6 @@ async def stream(
             "provided by the router or state that the router should use a "
             "retrieval/research route."
         ],
-        original_intent=original_intent,
-        resolved_intent=resolved_intent,
     ):
         content += token
         yield token, False, []

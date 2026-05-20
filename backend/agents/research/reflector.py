@@ -298,7 +298,6 @@ async def reflect_results(
             prompt_name="research_reflector",
             metadata={
                 "task_type": "research_task",
-                "route_intent": "research",
                 "agent_name": "research_agent",
                 **research_node_stack_metadata("research_reflector"),
             },

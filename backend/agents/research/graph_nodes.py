@@ -171,7 +171,6 @@ async def _run_single_slot(
         max_searches=_hard_max_searches(state),
         max_consecutive_empty=state["max_consecutive_no_new"],
         task_type=str(state.get("metadata", {}).get("task_type") or "research"),
-        route_intent=str(state.get("metadata", {}).get("route_intent") or "research"),
     )
     seed_keywords = _seed_keywords("\n".join(str(chunk.get("content", ""))[:1200] for chunk in chunks))
 

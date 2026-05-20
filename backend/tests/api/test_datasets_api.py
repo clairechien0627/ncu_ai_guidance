@@ -34,7 +34,6 @@ def _trace(observation_id: str, quality_score: float | None = None) -> Trace:
         agent_name="retrieval_agent",
         environment="test",
         task_type="retrieval_qa",
-        route_intent="retrieval",
         quality_score=quality_score,
         inputs=json.dumps({"messages": [{"role": "human", "content": "question"}]}),
         outputs=json.dumps({"answer": "answer"}),

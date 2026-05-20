@@ -40,12 +40,9 @@ export interface PromptInfo {
 }
 
 export interface TestRouteResult {
-  intent: string
   agent_name: string
   prompt_name: string
   prompt_version: string
-  original_intent?: string | null
-  resolved_intent?: string | null
   path: 'keyword' | 'llm'
 }
 

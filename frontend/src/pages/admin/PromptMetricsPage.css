@@ -259,7 +259,7 @@
 .pm-traces-row { cursor: pointer; }
 .pm-traces-row:hover td { background: #f9fafb; }
 
-.pm-intent-badge {
+.pm-agent-badge {
   font-size: 11px;
   background: #f3f4f6;
   padding: 2px 6px;

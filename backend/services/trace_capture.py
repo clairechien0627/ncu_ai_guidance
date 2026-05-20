@@ -176,7 +176,6 @@ class LocalTracer(BaseCallbackHandler):
         thread_id: str,
         document_ids: list[int] | None = None,
         task_type: str | None = None,
-        route_intent: str | None = None,
         agent_name: str | None = None,
         prompt_name: str | None = None,
         prompt_version: str | None = None,
@@ -195,8 +194,6 @@ class LocalTracer(BaseCallbackHandler):
         user_feedback: str | None = None,
         trace_id: str | None = None,
         parent_observation_id: str | None = None,
-        original_intent: str | None = None,
-        resolved_intent: str | None = None,
         environment: str | None = None,
         user_id: str | None = None,
     ):
@@ -205,7 +202,6 @@ class LocalTracer(BaseCallbackHandler):
         self.document_ids = document_ids
         self._events: dict[str, dict] = {}   # run_id (str) → event data
         self.task_type = task_type
-        self.route_intent = route_intent
         self.agent_name = agent_name
         self.prompt_name = prompt_name
         self.prompt_version = prompt_version
@@ -224,8 +220,6 @@ class LocalTracer(BaseCallbackHandler):
         self.user_feedback = user_feedback
         self.trace_id = trace_id
         self.parent_observation_id = parent_observation_id
-        self.original_intent = original_intent
-        self.resolved_intent = resolved_intent
         self.environment = environment or _get_default_environment()
         self.user_id = user_id
         self._tool_count = 0
@@ -236,7 +230,6 @@ class LocalTracer(BaseCallbackHandler):
         if not isinstance(metadata, dict):
             return
         self.task_type = self.task_type or metadata.get("task_type")
-        self.route_intent = self.route_intent or metadata.get("route_intent")
         self.agent_name = self.agent_name or metadata.get("agent_name")
         self.prompt_name = self.prompt_name or metadata.get("prompt_name")
         self.prompt_version = self.prompt_version or metadata.get("prompt_version")
@@ -253,8 +246,6 @@ class LocalTracer(BaseCallbackHandler):
         self.prompt_stack_tokens = self.prompt_stack_tokens if self.prompt_stack_tokens is not None else metadata.get("prompt_stack_tokens")
         self.quality_score = self.quality_score if self.quality_score is not None else metadata.get("quality_score")
         self.user_feedback = self.user_feedback or metadata.get("user_feedback")
-        self.original_intent = self.original_intent or metadata.get("original_intent")
-        self.resolved_intent = self.resolved_intent or metadata.get("resolved_intent")
 
     def _ev(self, run_id) -> dict:
         rid = str(run_id)
@@ -436,7 +427,6 @@ class LocalTracer(BaseCallbackHandler):
                 "display": display_json if is_root else None,
                 "event_metadata": ev.get("metadata") or {},
                 "task_type": self.task_type,
-                "route_intent": self.route_intent,
                 "agent_name": self.agent_name,
                 "prompt_name": self.prompt_name,
                 "prompt_version": self.prompt_version,
@@ -455,8 +445,6 @@ class LocalTracer(BaseCallbackHandler):
                 "llm_call_count": self._llm_call_count if is_root else None,
                 "quality_score": self.quality_score if is_root else None,
                 "user_feedback": self.user_feedback if is_root else None,
-                "original_intent": self.original_intent if is_root else None,
-                "resolved_intent": self.resolved_intent if is_root else None,
                 "environment": self.environment,
                 "user_id": self.user_id if is_root else None,
             })
@@ -480,7 +468,6 @@ class LocalTracer(BaseCallbackHandler):
 
         metadata = {
             "task_type": self.task_type,
-            "route_intent": self.route_intent,
             "agent_name": self.agent_name,
             "prompt_name": self.prompt_name,
             "prompt_version": self.prompt_version,
@@ -497,8 +484,6 @@ class LocalTracer(BaseCallbackHandler):
             "prompt_stack_tokens": self.prompt_stack_tokens,
             "tool_count": self._tool_count,
             "llm_call_count": self._llm_call_count,
-            "original_intent": self.original_intent,
-            "resolved_intent": self.resolved_intent,
             "document_ids": self.document_ids,
         }
         metadata = {k: v for k, v in metadata.items() if v is not None}
@@ -566,7 +551,7 @@ class LocalTracer(BaseCallbackHandler):
                 "input": _loads(root_row.get("inputs")),
                 "output": _loads(root_row.get("outputs")),
                 "metadata": metadata,
-                "tags": [self.route_intent, self.agent_name] if self.route_intent or self.agent_name else [],
+                "tags": [self.agent_name] if self.agent_name else [],
                 "start_time": root_row.get("start_time"),
                 "end_time": root_row.get("end_time"),
             },

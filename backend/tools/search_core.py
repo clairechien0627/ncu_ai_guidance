@@ -50,7 +50,6 @@ class AgentContext:
     consecutive_empty: int = 0
     on_stage: Callable[[str], None] | None = None
     task_type: str | None = None
-    route_intent: str | None = None
     max_searches: int | None = None
     max_consecutive_empty: int | None = None
     thread_id: str | None = None

@@ -40,7 +40,6 @@ def _stack_system_messages(stack_name: str) -> list[SystemMessage]:
 def _generation_metadata(stack_name: str, task_type: str, agent_name: str) -> dict:
     return {
         "task_type": task_type,
-        "route_intent": None,
         "agent_name": agent_name,
         **load_stack(stack_name).metadata(),
     }

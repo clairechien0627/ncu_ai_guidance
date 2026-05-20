@@ -225,7 +225,7 @@ export function TraceDetailContent({ traceId, compact = false }: Props) {
   ]
 
   const metaItems = [
-    ['Intent',  trace.original_intent ? `${trace.original_intent}${trace.original_intent !== trace.resolved_intent ? ` → ${trace.resolved_intent}` : ''}` : null],
+    ['Agent',  trace.agent_name ?? null],
     ['Mode',    trace.mode],
     ['Prompt',  trace.prompt_name],
     ['Version', trace.prompt_version],

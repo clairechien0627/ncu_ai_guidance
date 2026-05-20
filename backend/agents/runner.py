@@ -152,12 +152,12 @@ def _track_model_cost(state: dict, runtime) -> None:
         if not usage:
             return
         ctx = getattr(runtime, "context", None)
-        intent = getattr(ctx, "route_intent", None) or "unknown"
+        agent_name_ctx = getattr(ctx, "agent_name", None) or "unknown"
         thread_id = (getattr(ctx, "thread_id", None) or "")[:8]
         model_name = (getattr(response, "response_metadata", None) or {}).get("model_name", "")
         logger.info(
             "model_cost intent=%s thread=%s in=%d out=%d total=%d model=%s",
-            intent,
+            agent_name_ctx,
             thread_id,
             usage.get("input_tokens", 0),
             usage.get("output_tokens", 0),
@@ -194,7 +194,6 @@ async def _memory_prompt(request: ModelRequest) -> str:
     """
     ctx = request.runtime.context  # AgentContext
     thread_id = getattr(ctx, "thread_id", None) or ""
-    route_intent = getattr(ctx, "route_intent", None) or "chat"
     document_ids = getattr(ctx, "document_ids", None)
     user_id = get_user_id()
 
@@ -212,7 +211,7 @@ async def _memory_prompt(request: ModelRequest) -> str:
         try:
             from services.agent_memory import build_memory_context
             cached = await build_memory_context(
-                intent=route_intent,
+                agent_name=getattr(ctx, "agent_name", None) or "chat_agent",
                 thread_id=thread_id,
                 user_id=user_id,
                 query=query,
@@ -593,7 +592,6 @@ def _build_tracer(
         thread_id=thread_id,
         document_ids=document_ids,
         task_type=metadata.get("task_type"),
-        route_intent=metadata.get("route_intent"),
         agent_name=metadata.get("agent_name"),
         prompt_name=metadata.get("prompt_name"),
         prompt_version=metadata.get("prompt_version"),
@@ -612,8 +610,6 @@ def _build_tracer(
         user_feedback=metadata.get("user_feedback"),
         trace_id=trace_id,
         parent_observation_id=parent_observation_id,
-        original_intent=metadata.get("original_intent"),
-        resolved_intent=metadata.get("resolved_intent"),
     )
 
 
@@ -660,7 +656,6 @@ async def run_tool_agent(
                     document_ids=document_ids,
                     on_stage=on_stage,
                     task_type=metadata.get("task_type"),
-                    route_intent=metadata.get("route_intent"),
                     max_searches=max_searches,
                     max_consecutive_empty=max_consecutive_empty,
                     thread_id=thread_id,
@@ -769,7 +764,6 @@ async def run_tool_agent_stream(
                     document_ids=document_ids,
                     on_stage=on_stage,
                     task_type=metadata.get("task_type"),
-                    route_intent=metadata.get("route_intent"),
                     max_searches=max_searches,
                     max_consecutive_empty=max_consecutive_empty,
                     thread_id=thread_id,

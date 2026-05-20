@@ -305,7 +305,6 @@ async def create_research_plan(
             prompt_name="task_planner",
             metadata={
                 "task_type": "research_task",
-                "route_intent": "research",
                 "agent_name": "research_agent",
                 **research_node_stack_metadata("task_planner"),
             },

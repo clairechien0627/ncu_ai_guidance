@@ -84,7 +84,6 @@ class TraceListReadService:
                 "url": p.get("url"),
                 "display": p.get("display"),
                 "task_type": p.get("task_type"),
-                "route_intent": p.get("route_intent"),
                 "agent_name": p.get("agent_name"),
                 "prompt_name": p.get("prompt_name"),
                 "prompt_version": p.get("prompt_version"),

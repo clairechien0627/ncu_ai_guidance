@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
-  getTraceStats, getTracesByRouteIntent, getTraceErrors, getTraceTimeline,
+  getTraceStats, getTracesByAgent, getTraceErrors, getTraceTimeline,
   type TraceGroupStats, type TraceItem, type TimelinePoint,
 } from '../../api'
 import { ScoreBar } from '../../components/admin/ScoreBar'
@@ -69,7 +69,7 @@ function RecentErrors({ errors }: { errors: TraceItem[] }) {
           <span style={{ fontSize: 11, color: 'var(--adm-text-3)', whiteSpace: 'nowrap', width: 100, flexShrink: 0 }}>
             {e.start_time ? new Date(e.start_time).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '—'}
           </span>
-          <span className="adm-badge adm-badge--error">{e.original_intent ?? 'unknown'}</span>
+          <span className="adm-badge adm-badge--error">{e.agent_name ?? 'unknown'}</span>
           <span style={{ fontSize: 12, color: 'var(--adm-text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {(e.error ?? '').slice(0, 80)}
           </span>
@@ -87,7 +87,7 @@ export default function DashboardPage() {
   const [days, setDays] = useState(14)
 
   const { data: stats }       = useQuery({ queryKey: ['dash-stats', days],   queryFn: () => getTraceStats(days) })
-  const { data: byRouteRaw }  = useQuery({ queryKey: ['dash-route'],          queryFn: getTracesByRouteIntent })
+  const { data: byRouteRaw }  = useQuery({ queryKey: ['dash-route'],          queryFn: getTracesByAgent })
   const byRoute: TraceGroupStats[] = Array.isArray(byRouteRaw) ? byRouteRaw : []
   const { data: errors = [] } = useQuery({ queryKey: ['dash-errors'],         queryFn: () => getTraceErrors(5) })
   const { data: timeline = [] } = useQuery({ queryKey: ['dash-timeline', days], queryFn: () => getTraceTimeline(undefined, undefined, days) })
@@ -121,7 +121,7 @@ export default function DashboardPage() {
       {/* Two columns */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div className="adm-card">
-          <div className="adm-card-title">By Route Intent</div>
+          <div className="adm-card-title">By Agent</div>
           <RouteTable rows={byRoute} />
         </div>
         <div className="adm-card">

@@ -100,7 +100,6 @@ async def score_extraction(
             prompt_name=PROMPT_NAME,
             metadata={
                 "task_type": "document_extraction",
-                "route_intent": None,
                 "agent_name": "summary_quality",
                 **stack.metadata(),
             },
@@ -155,7 +154,6 @@ async def score_extraction_detail(
             prompt_name=PROMPT_NAME,
             metadata={
                 "task_type": "document_extraction",
-                "route_intent": None,
                 "agent_name": "summary_quality",
                 **stack.metadata(),
             },

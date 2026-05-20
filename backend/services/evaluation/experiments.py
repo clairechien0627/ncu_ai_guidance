@@ -83,7 +83,7 @@ def _normalize_generator_result(result: object) -> tuple[Any, dict, str | None]:
         output = {"answer": str(output or "")}
 
     context = result.get("context") if isinstance(result.get("context"), dict) else {}
-    for key in ["sources", "task_type", "route_intent", "agent_name", "prompt_name", "prompt_version"]:
+    for key in ["sources", "task_type", "agent_name", "prompt_name", "prompt_version"]:
         if key in result and key not in context:
             context[key] = result[key]
     trace_id = result.get("trace_id") or result.get("agent_observation_id")
@@ -169,7 +169,6 @@ class RouterAgentCurrentAdapter(GeneratorAdapter):
             "context": {
                 "sources": result.sources,
                 "task_type": result.task_type,
-                "route_intent": result.route_intent,
                 "agent_name": result.agent_name,
                 "prompt_name": result.prompt_name,
                 "prompt_version": result.prompt_version,
@@ -570,7 +569,6 @@ class ExperimentRunService:
             sources = generated_context.get("sources") if isinstance(generated_context.get("sources"), list) else []
             trace_summary = generated_context.get("trace_summary") if isinstance(generated_context.get("trace_summary"), dict) else {}
             task_type = generated_context.get("task_type") or dataset_context.get("task_type") or "experiment_eval"
-            route_intent = generated_context.get("route_intent") or dataset_context.get("route_intent")
             experiment_run_id = experiment_item.experiment_run_id
             experiment_item_id = experiment_item.experiment_item_id
             dataset_id = eval_run.dataset_id
@@ -587,7 +585,6 @@ class ExperimentRunService:
                 user_task=user_task,
                 answer=answer,
                 task_type=task_type,
-                route_intent=route_intent,
                 sources=sources,
                 trace_summary=trace_summary,
                 extra_context={
@@ -605,7 +602,6 @@ class ExperimentRunService:
                 eval_item_id=eval_item_id_value,
                 trace_id=trace_id,
                 result=result,
-                route_intent=route_intent,
                 task_type=task_type,
                 dataset_id=dataset_id,
                 dataset_item_id=dataset_item_id,

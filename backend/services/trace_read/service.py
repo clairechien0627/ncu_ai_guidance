@@ -65,11 +65,11 @@ class TraceReadService:
     def score_stats(self) -> dict:
         return self._stats.score_stats()
 
-    def timeline(self, *, prompt_name: str | None = None, task_type: str | None = None, route_intent: str | None = None, days: int = 14) -> list[dict]:
-        return self._stats.timeline(prompt_name=prompt_name, task_type=task_type, route_intent=route_intent, days=days)
+    def timeline(self, *, prompt_name: str | None = None, task_type: str | None = None, days: int = 14) -> list[dict]:
+        return self._stats.timeline(prompt_name=prompt_name, task_type=task_type, days=days)
 
-    def sessions(self, *, limit: int = 50, offset: int = 0, route_intent: str | None = None, user_id: str | None = None, environment: str | None = None, date_from: str | None = None, date_to: str | None = None, order_by: str = "created_at", order_dir: str = "desc") -> dict:
-        return self._sessions.sessions(limit=limit, offset=offset, route_intent=route_intent, user_id=user_id, environment=environment, date_from=date_from, date_to=date_to, order_by=order_by, order_dir=order_dir)
+    def sessions(self, *, limit: int = 50, offset: int = 0, user_id: str | None = None, environment: str | None = None, date_from: str | None = None, date_to: str | None = None, order_by: str = "created_at", order_dir: str = "desc") -> dict:
+        return self._sessions.sessions(limit=limit, offset=offset, user_id=user_id, environment=environment, date_from=date_from, date_to=date_to, order_by=order_by, order_dir=order_dir)
 
     def session_detail(self, thread_id: str) -> dict:
         return self._sessions.session_detail(thread_id)

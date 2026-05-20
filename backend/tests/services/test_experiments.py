@@ -50,7 +50,7 @@ def _seed_dataset(db, dataset_id: str = "dataset-1", item_count: int = 2):
             input=json.dumps({"messages": [{"role": "human", "content": f"question {idx + 1}"}]}),
             output=json.dumps({"answer": f"old answer {idx + 1}"}),
             expected_output=json.dumps({"answer": f"expected {idx + 1}"}),
-            context=json.dumps({"task_type": "retrieval_qa", "route_intent": "retrieval"}),
+            context=json.dumps({"task_type": "retrieval_qa"}),
             is_archived=False,
             created_at=datetime(2026, 5, 18, 1, 1, 0),
         ))
@@ -63,7 +63,6 @@ async def _successful_generator(**kwargs):
         "context": {
             "sources": ["source-1"],
             "task_type": "retrieval_qa",
-            "route_intent": "retrieval",
         },
         "trace_id": f"generated-{kwargs['dataset_item_id']}",
     }

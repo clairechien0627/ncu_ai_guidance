@@ -66,7 +66,6 @@ def test_generation_prompt_metadata_includes_stack_and_primary_prompt():
             "prompt_version": "sha256:chat",
             "agent_name": "chat_agent",
             "task_type": "chat_turn",
-            "route_intent": "chat",
         },
         prompt_name="chat_mode",
     )

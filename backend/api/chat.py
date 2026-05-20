@@ -134,7 +134,6 @@ def _hydrate_assistant_meta(thread_id: str, messages: list[dict], db: Session) -
         db.query(
             Trace.observation_id,
             Trace.task_type,
-            Trace.route_intent,
             Trace.agent_name,
             Trace.prompt_name,
             Trace.prompt_version,
@@ -143,6 +142,19 @@ def _hydrate_assistant_meta(thread_id: str, messages: list[dict], db: Session) -
         .order_by(Trace.start_time.asc())
         .all()
     )
+    # Supplement with routed agent_name from TraceV2 metadata
+    v2_rows = (
+        db.query(TraceV2.trace_id, TraceV2.metadata_json)
+        .filter(TraceV2.name == "router_agent", TraceV2.thread_id == thread_id)
+        .order_by(TraceV2.start_time.asc())
+        .all()
+    )
+    v2_agent_by_trace: dict[str, str] = {}
+    for row in v2_rows:
+        if row.metadata_json:
+            meta = row.metadata_json if isinstance(row.metadata_json, dict) else json.loads(row.metadata_json)
+            if meta.get("agent_name"):
+                v2_agent_by_trace[row.trace_id] = meta["agent_name"]
 
     hydrated = []
     assistant_turn = 0
@@ -150,13 +162,12 @@ def _hydrate_assistant_meta(thread_id: str, messages: list[dict], db: Session) -
         item = dict(msg)
         if item.get("role") == "assistant":
             if assistant_turn < len(traces):
-                observation_id, task_type, routed_agent, agent_name, prompt_name, prompt_version = traces[assistant_turn]
+                observation_id, task_type, agent_name, prompt_name, prompt_version = traces[assistant_turn]
                 if task_type:
                     item["task_type"] = task_type
-                if routed_agent:
-                    item["agent_name"] = routed_agent
-                elif agent_name:
-                    item["agent_name"] = agent_name
+                routed = v2_agent_by_trace.get(observation_id or "") or agent_name
+                if routed:
+                    item["agent_name"] = routed
                 if prompt_name:
                     item["prompt_name"] = prompt_name
                 if prompt_version:

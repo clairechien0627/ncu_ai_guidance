@@ -144,7 +144,6 @@ def evaluation_result_to_score_payloads(
     eval_item_id: str,
     trace_id: str,
     result,
-    route_intent: str | None = None,
     task_type: str | None = None,
     dataset_id: str | None = None,
     dataset_item_id: str | None = None,
@@ -155,7 +154,6 @@ def evaluation_result_to_score_payloads(
     metadata = {
         "eval_run_id": eval_run_id,
         "eval_item_id": eval_item_id,
-        "route_intent": route_intent,
         "task_type": task_type,
         "dataset_id": dataset_id,
         "dataset_item_id": dataset_item_id,
@@ -521,11 +519,9 @@ class EvaluationRunService:
                 user_task, answer, sources, trace_summary, extra_context = _dataset_item_payload(dataset_item)
                 context = _json_obj(dataset_item.context) or {}
                 task_type = context.get("task_type") or "dataset_eval"
-                route_intent = context.get("route_intent")
             else:
                 user_task, answer, sources, trace_summary, extra_context = _trace_payload(trace)
                 task_type = trace.task_type or "chat_turn"
-                route_intent = trace.route_intent
 
         try:
             import contextlib
@@ -539,7 +535,6 @@ class EvaluationRunService:
                     user_task=user_task,
                     answer=answer,
                     task_type=task_type,
-                    route_intent=route_intent,
                     sources=sources,
                     trace_summary=trace_summary,
                     extra_context=extra_context,
@@ -551,7 +546,6 @@ class EvaluationRunService:
                 eval_item_id=eval_item_id,
                 trace_id=trace_id,
                 result=result_dict,
-                route_intent=route_intent,
                 task_type=task_type,
                 dataset_id=dataset_id,
                 dataset_item_id=dataset_item_id,

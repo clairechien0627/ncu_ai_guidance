@@ -60,18 +60,18 @@ _CONTEXT_LABELS = {
 
 
 async def build_memory_context(
-    intent: str,
+    agent_name: str,
     thread_id: str,
     user_id: str | None,
     query: str,
     document_ids: list[int] | None = None,
 ) -> dict[str, str | None]:
-    """Return memory snippets keyed by type, per the intent's read policy.
+    """Return memory snippets keyed by type, per the agent_name's read policy.
 
     Callers (router/runner) inject the values into agent system messages.
     Returns empty dict if no memory is available.
     """
-    policy = MEMORY_READ_POLICY.get(intent, MemoryRead())
+    policy = MEMORY_READ_POLICY.get(agent_name, MemoryRead())
     result: dict[str, str | None] = {}
 
     if policy.context_summary:
@@ -110,15 +110,15 @@ def format_memory_system_messages(memory: dict[str, str | None]) -> list[str]:
 
 
 async def record_agent_memory(
-    intent: str,
+    agent_name: str,
     thread_id: str,
     user_id: str | None,
     question: str,
     result: AgentResult,
     document_ids: list[int] | None = None,
 ) -> None:
-    """Write memory after an agent completes, per the intent's write policy."""
-    policy = MEMORY_WRITE_POLICY.get(intent, MemoryWrite())
+    """Write memory after an agent completes, per the agent_name's write policy."""
+    policy = MEMORY_WRITE_POLICY.get(agent_name, MemoryWrite())
 
     if policy.context_summary:
         try:

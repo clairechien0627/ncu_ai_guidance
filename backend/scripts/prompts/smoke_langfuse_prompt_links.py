@@ -47,7 +47,6 @@ async def main() -> None:
             user_task="評估這段回答是否有根據",
             answer="這個回答有引用來源，但缺少具體頁碼，因此證據支撐不足。",
             task_type="chat_turn",
-            route_intent="chat",
             sources=["demo.pdf p.1"],
         )
         obs.update(output=result.model_dump())

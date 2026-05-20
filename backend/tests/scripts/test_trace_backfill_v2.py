@@ -28,7 +28,6 @@ def _trace(observation_id: str, **kwargs) -> Trace:
         thread_id=kwargs.pop("thread_id", "thread-1"),
         user_id=kwargs.pop("user_id", "user-1"),
         environment=kwargs.pop("environment", "test"),
-        route_intent=kwargs.pop("route_intent", "document_qa"),
         prompt_name=kwargs.pop("prompt_name", "retrieval"),
         prompt_version=kwargs.pop("prompt_version", "v1"),
         prompt_tokens=kwargs.pop("prompt_tokens", 10),

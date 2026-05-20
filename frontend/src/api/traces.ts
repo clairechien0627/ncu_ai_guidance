@@ -65,8 +65,6 @@ export interface TraceItem {
   llm_call_count?: number | null
   quality_score?: number | null
   user_feedback?: string | null
-  original_intent?: string | null
-  resolved_intent?: string | null
   quality_detail?: {
     grounding?: number; task_fit?: number; completeness?: number
     specificity?: number; source_quality?: number; uncertainty_honesty?: number
@@ -104,7 +102,7 @@ export interface TraceGroupStats {
 export interface TraceFilters {
   prompt_name?: string; prompt_version?: string; level?: string
   min_latency?: string; max_quality?: number; min_quality?: number; has_score?: boolean
-  original_intent?: string; resolved_intent?: string; environment?: string
+  environment?: string
   date_from?: string; date_to?: string
   tags?: string; names?: string; user_ids?: string
   tag?: string; name?: string; user_id?: string
@@ -121,7 +119,7 @@ export interface SessionItem {
 export interface SessionsResponse { sessions: SessionItem[]; total: number }
 
 export interface SessionFilters {
-  route_intent?: string; user_id?: string; environment?: string
+  agent_name?: string; user_id?: string; environment?: string
   date_from?: string; date_to?: string; order_by?: string; order_dir?: string; offset?: number
 }
 
@@ -193,8 +191,8 @@ export const getTraces = async (limit = 40, filters: TraceFilters = {}): Promise
   const { data } = await api.get<TraceItem[]>(`/traces?${params.toString()}`)
   return data
 }
-export const getTracesByRouteIntent = async (): Promise<TraceGroupStats[]> => {
-  const { data } = await api.get<TraceGroupStats[]>('/traces/by-route-intent')
+export const getTracesByAgent = async (): Promise<TraceGroupStats[]> => {
+  const { data } = await api.get<TraceGroupStats[]>('/traces/by-agent')
   return data
 }
 export const getTracesByPrompt = async (): Promise<TraceGroupStats[]> => {

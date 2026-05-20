@@ -17,8 +17,6 @@ export interface ChatResponse {
   prompt_stack_name?: string | null
   prompt_stack_json?: Array<{ name: string; base_name?: string; source_name?: string; version: string }> | string | null
   prompt_stack_tokens?: number | null
-  original_intent?: string | null
-  resolved_intent?: string | null
   trace_id?: string | null
 }
 

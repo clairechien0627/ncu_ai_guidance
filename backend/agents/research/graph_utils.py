@@ -137,7 +137,6 @@ def _trace_summary(state: ResearchGraphState) -> dict:
             "question": state.get("question", ""),
             "document_ids": state.get("document_ids", []),
             "task_type": state.get("metadata", {}).get("task_type"),
-            "route_intent": state.get("metadata", {}).get("route_intent"),
             "goal": state.get("task_goal", ""),
         },
         "limits": {

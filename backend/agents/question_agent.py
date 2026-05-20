@@ -19,7 +19,6 @@ def trace_metadata(thread_id: str | None = None, document_ids: list[int] | None 
     stack = load_stack(STACK_NAME, _prompt_key(thread_id, document_ids))
     return {
         "task_type": "question_generation",
-        "route_intent": "question",
         "agent_name": AGENT_NAME,
         **stack.metadata(),
     }
@@ -52,8 +51,6 @@ async def answer(
     observation_id: str | None = None,
     trace_id: str | None = None,
     use_mini: bool = False,
-    original_intent: str | None = None,
-    resolved_intent: str | None = None,
     evidence_context: str | None = None,
     evidence_sources: list[str] | None = None,
 ) -> AgentResult:
@@ -89,15 +86,12 @@ async def answer(
         prompt_name=PROMPT_NAME,
         agent_name=AGENT_NAME,
         task_type="question_generation",
-        route_intent="question",
         observation_id=observation_id,
         trace_id=trace_id,
         use_mini=use_mini,
         extra_system_messages=extra_system_messages,
         payload=payload,
         sources=evidence_sources or [],
-        original_intent=original_intent,
-        resolved_intent=resolved_intent,
     )
     if trace_id:
         write_agent_span(
@@ -123,7 +117,6 @@ async def answer(
             prompt_name=PROMPT_NAME,
             agent_name=AGENT_NAME,
             task_type="question_generation",
-            route_intent="question",
             observation_id=retry_observation_id,
             trace_id=trace_id or observation_id,
             use_mini=use_mini,
@@ -133,8 +126,6 @@ async def answer(
             ],
             payload=payload,
             sources=evidence_sources or [],
-            original_intent=original_intent,
-            resolved_intent=resolved_intent,
         )
         if _has_questions(r2):
             response, sources = r2, s2
@@ -160,12 +151,10 @@ async def answer(
         response=response,
         sources=sources,
         task_type="question_generation",
-        route_intent="question",
         agent_name=AGENT_NAME,
         prompt_name=str(meta.get("prompt_name", PROMPT_NAME)),
         prompt_version=str(meta.get("prompt_version", "unknown")),
         observation_id=observation_id,
-        next_intent=None,
     )
 
 
@@ -177,8 +166,6 @@ async def stream(
     observation_id: str | None = None,
     trace_id: str | None = None,
     use_mini: bool = False,
-    original_intent: str | None = None,
-    resolved_intent: str | None = None,
     evidence_context: str | None = None,
     evidence_sources: list[str] | None = None,
 ) -> AsyncIterator[tuple[str, bool, list[str]]]:
@@ -215,15 +202,12 @@ async def stream(
         prompt_name=PROMPT_NAME,
         agent_name=AGENT_NAME,
         task_type="question_generation",
-        route_intent="question",
         observation_id=observation_id,
         trace_id=trace_id,
         use_mini=use_mini,
         extra_system_messages=extra_system_messages,
         payload=payload,
         sources=evidence_sources or [],
-        original_intent=original_intent,
-        resolved_intent=resolved_intent,
     ):
         content += token
         yield token, False, []

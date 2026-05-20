@@ -9,7 +9,7 @@ import { ScoreBar } from '../../components/admin/ScoreBar'
 import { DrawerPanel } from '../../components/admin/DrawerPanel'
 import { ThreadDetailContent } from '../../components/admin/ThreadDetailContent'
 
-const ROUTE_INTENT_OPTIONS = ['all', 'research', 'retrieval', 'chat', 'question', 'evaluation']
+const AGENT_OPTIONS = ['all', 'chat_agent', 'retrieval_agent', 'research_agent', 'question_agent', 'evaluation_agent']
 
 function fmtDuration(s: number | null) {
   if (s === null) return '—'
@@ -43,7 +43,7 @@ const COLS: ColDef[] = [
 export default function ThreadsPage() {
   const { environment } = useAdminStore()
   const [filters, setFilters] = useState<SessionFilters>({})
-  const [routeIntent, setRouteIntent] = useState('all')
+  const [agentFilter, setAgentFilter] = useState('all')
   const [page, setPage] = useState(0)
   const [drawerThreadId, setDrawerThreadId] = useState<string | null>(null)
   const [limit, setLimit] = useState(50)
@@ -58,7 +58,7 @@ export default function ThreadsPage() {
 
   const activeFilters: SessionFilters = {
     ...filters,
-    route_intent: routeIntent !== 'all' ? routeIntent : undefined,
+    agent_name: agentFilter !== 'all' ? agentFilter : undefined,
     environment: environment ?? undefined,
     offset: page * limit,
   }
@@ -74,8 +74,8 @@ export default function ThreadsPage() {
   return (
     <div>
       <div className="adm-filters">
-        <select className="adm-filter-select" value={routeIntent} onChange={e => { setRouteIntent(e.target.value); setPage(0) }}>
-          {ROUTE_INTENT_OPTIONS.map(o => <option key={o} value={o}>{o === 'all' ? 'All task types' : o}</option>)}
+        <select className="adm-filter-select" value={agentFilter} onChange={e => { setAgentFilter(e.target.value); setPage(0) }}>
+          {AGENT_OPTIONS.map(o => <option key={o} value={o}>{o === 'all' ? 'All agents' : o}</option>)}
         </select>
         <input className="adm-filter-input" placeholder="Date from (YYYY-MM-DD)"
           value={filters.date_from ?? ''}

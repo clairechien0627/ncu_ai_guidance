@@ -317,7 +317,7 @@ export default function PromptMetricsPage() {
               <thead>
                 <tr>
                   <th>Time</th>
-                  <th>Intent</th>
+                  <th>Agent</th>
                   <th>Version</th>
                   <th>Status</th>
                   <th>Latency</th>
@@ -337,9 +337,7 @@ export default function PromptMetricsPage() {
                     >
                       <td style={{ whiteSpace: 'nowrap', color: '#6b7280' }}>{fmtDate(t.start_time)}</td>
                       <td>
-                        {t.original_intent
-                          ? <span className="pm-intent-badge">{t.original_intent}</span>
-                          : '—'}
+                        {t.agent_name ? <span className="pm-agent-badge">{t.agent_name}</span> : '—'}
                       </td>
                       <td style={{ fontFamily: 'monospace', fontSize: 11, color: '#6b7280' }}>
                         {t.prompt_version ? t.prompt_version.slice(0, 8) : '—'}

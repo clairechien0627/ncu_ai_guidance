@@ -53,7 +53,6 @@ function TraceCard({ trace, idx, onOpenTrace }: { trace: TraceItem; idx: number;
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 140, fontSize: 12, color: 'var(--adm-text-2)', borderLeft: '1px solid var(--adm-border)', paddingLeft: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 10, color: 'var(--adm-text-3)' }}>#{idx + 1}</span>
-          {trace.original_intent && <span className="adm-badge adm-badge--info" style={{ fontSize: 10 }}>{trace.original_intent}</span>}
           {isErr && <span className="adm-badge adm-badge--error" style={{ fontSize: 10 }}>Error</span>}
         </div>
         {[

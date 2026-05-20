@@ -112,7 +112,6 @@ def _write_trace(
                     thread_id=thread_id,
                     document_ids=json.dumps(document_ids) if document_ids else None,
                     task_type=metadata.get("task_type"),
-                    route_intent=metadata.get("route_intent"),
                     agent_name=metadata.get("agent_name"),
                     prompt_name=metadata.get("prompt_name"),
                     prompt_version=metadata.get("prompt_version"),
@@ -125,8 +124,6 @@ def _write_trace(
                     primary_prompt_json=metadata.get("primary_prompt_json"),
                     workflow_prompts_json=metadata.get("workflow_prompts_json"),
                     prompt_stack_tokens=metadata.get("prompt_stack_tokens"),
-                    original_intent=metadata.get("original_intent"),
-                    resolved_intent=metadata.get("resolved_intent"),
                     inputs=json.dumps(inputs, ensure_ascii=False),
                     tool_count=0,
                     llm_call_count=1,
@@ -152,24 +149,16 @@ def _prepare_no_tool_call(
     stack_name: str,
     agent_name: str,
     task_type: str,
-    route_intent: str,
     extra_system_messages: list[str] | None = None,
     payload: dict | None = None,
     sources: list[str] | None = None,
-    original_intent: str | None = None,
-    resolved_intent: str | None = None,
 ) -> tuple[list, dict, dict]:
     stack = load_stack(stack_name)
     metadata = {
         "task_type": task_type,
-        "route_intent": route_intent,
         "agent_name": agent_name,
         **stack.metadata(),
     }
-    if original_intent:
-        metadata["original_intent"] = original_intent
-    if resolved_intent:
-        metadata["resolved_intent"] = resolved_intent
 
     inputs = {
         "user_message": user_message,
@@ -196,15 +185,12 @@ async def run_no_tool_agent(
     prompt_name: str,
     agent_name: str,
     task_type: str,
-    route_intent: str,
     observation_id: str | None = None,
     trace_id: str | None = None,
     use_mini: bool = False,
     extra_system_messages: list[str] | None = None,
     payload: dict | None = None,
     sources: list[str] | None = None,
-    original_intent: str | None = None,
-    resolved_intent: str | None = None,
 ) -> tuple[str, list[str], dict, str]:
     """Run one no-tool LLM call and persist a local trace row."""
     observation_id = observation_id or new_id()
@@ -213,12 +199,9 @@ async def run_no_tool_agent(
         stack_name=stack_name,
         agent_name=agent_name,
         task_type=task_type,
-        route_intent=route_intent,
         extra_system_messages=extra_system_messages,
         payload=payload,
         sources=sources,
-        original_intent=original_intent,
-        resolved_intent=resolved_intent,
     )
     _write_trace(
         observation_id=observation_id,
@@ -318,15 +301,12 @@ async def stream_no_tool_agent(
     prompt_name: str,
     agent_name: str,
     task_type: str,
-    route_intent: str,
     observation_id: str | None = None,
     trace_id: str | None = None,
     use_mini: bool = False,
     extra_system_messages: list[str] | None = None,
     payload: dict | None = None,
     sources: list[str] | None = None,
-    original_intent: str | None = None,
-    resolved_intent: str | None = None,
 ) -> AsyncIterator[str]:
     """Stream one no-tool LLM call token-by-token and persist a local trace row."""
     observation_id = observation_id or new_id()
@@ -335,12 +315,9 @@ async def stream_no_tool_agent(
         stack_name=stack_name,
         agent_name=agent_name,
         task_type=task_type,
-        route_intent=route_intent,
         extra_system_messages=extra_system_messages,
         payload=payload,
         sources=sources,
-        original_intent=original_intent,
-        resolved_intent=resolved_intent,
     )
     _write_trace(
         observation_id=observation_id,

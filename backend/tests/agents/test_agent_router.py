@@ -440,7 +440,6 @@ def test_router_document_question_collects_evidence_then_questions(monkeypatch):
 
     assert result.response == "Q1? Q2?"
     assert [name for name, _ in calls] == ["retrieval", "question"]
-    assert calls[0][1]["route_intent"] == "question"
     assert calls[1][1]["evidence_context"] == "evidence bundle"
     assert calls[1][1]["evidence_sources"] == ["paper.pdf p.2"]
     assert calls[0][1]["trace_id"] == "trace-1"
@@ -466,11 +465,9 @@ def test_research_retriever_uses_task_context_fields(monkeypatch):
         document_ids=[1],
         seen_chunks=set(),
         task_type="research_task",
-        route_intent="research",
     ))
 
     assert chunks == []
     assert sources == []
     assert seen_contexts[0].task_type == "research_task"
-    assert seen_contexts[0].route_intent == "research"
     assert not hasattr(seen_contexts[0], "mode")

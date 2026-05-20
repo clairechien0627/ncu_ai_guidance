@@ -31,7 +31,7 @@ function ChatTester() {
       const latency = ((Date.now() - t0.current) / 1000)
       setResult({
         response: data?.response ?? data?.answer ?? JSON.stringify(data),
-        route: data?.route ?? data?.intent ?? data?.agent_name,
+        route: data?.route ?? data?.agent_name,
         trace_id: data?.trace_id ?? data?.run_id,
         latency,
       })
@@ -129,9 +129,7 @@ function RouteTester() {
       {error && <div style={S.errorBox}>{error}</div>}
       {result && (
         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <Row label="Intent" value={result.intent} />
           <Row label="Agent" value={result.agent_name} />
-          {result.resolved_intent && <Row label="Resolved" value={result.resolved_intent} />}
           <Row label="Path" value={result.path} />
           <Row label="Prompt" value={`${result.prompt_name} v${result.prompt_version}`} />
         </div>

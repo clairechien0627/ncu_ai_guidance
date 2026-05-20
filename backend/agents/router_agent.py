@@ -116,7 +116,6 @@ def _write_router_trace(
                         thread_id=thread_id,
                         document_ids=json.dumps(document_ids) if document_ids else None,
                         task_type="routing",
-                        route_intent=route.agent_name,
                         agent_name="router_agent",
                         environment=env,
                         user_id=user_id,
@@ -165,7 +164,6 @@ class RouterDecision(BaseModel):
 class ExecutionStep:
     """One router-owned agent invocation."""
 
-    intent: str
     agent_name: str
     observation_id: str
     trace_id: str
@@ -287,7 +285,6 @@ def _build_execution_plan(
     steps: list[ExecutionStep] = []
     if collect_evidence and agent_name == "question_agent":
         steps.append(ExecutionStep(
-            intent="retrieval",
             agent_name="retrieval_agent",
             observation_id=new_id(),
             trace_id=trace_id,
@@ -295,7 +292,6 @@ def _build_execution_plan(
             reason="question_requires_document_evidence",
         ))
     steps.append(ExecutionStep(
-        intent=agent_name,
         agent_name=agent_name,
         observation_id=observation_id or new_id(),
         trace_id=trace_id,
@@ -304,7 +300,6 @@ def _build_execution_plan(
     ))
     if route.compose_after and agent_name not in {"chat_agent", "evaluation_agent"}:
         steps.append(ExecutionStep(
-            intent="chat",
             agent_name="chat_agent",
             observation_id=new_id(),
             trace_id=trace_id,
@@ -381,7 +376,6 @@ async def _orchestrate(
             prompt_name=ROUTER_PROMPT_NAME,
             metadata={
                 "task_type": "routing",
-                "route_intent": "classification",
                 "agent_name": "router_agent",
                 **stack.metadata(),
             },
@@ -420,17 +414,17 @@ async def classify_intent(
 
 
 async def _update_memory(
-    intent: str,
+    agent_name: str,
     thread_id: str,
     user_id: str | None,
     document_ids: list[int] | None,
     question: str,
     result,
 ) -> None:
-    """Fire-and-forget: write memory per intent policy via agent_memory contract."""
+    """Fire-and-forget: write memory per agent_name policy via agent_memory contract."""
     from services.agent_memory import record_agent_memory
     await record_agent_memory(
-        intent=intent,
+        agent_name=agent_name,
         thread_id=thread_id,
         user_id=user_id,
         question=question,
@@ -457,7 +451,6 @@ async def _run_evaluation_agent(
             response=format_evaluation_for_user(result),
             sources=[],
             task_type="evaluation",
-            route_intent="evaluation",
             agent_name="evaluation_agent",
             prompt_name="evaluation_agent",
             prompt_version=prompt_version("evaluation_agent"),
@@ -483,7 +476,6 @@ async def run_research_agent(
         stack = load_stack("research_runtime", _prompt_key(thread_id, document_ids))
         metadata = {
             "task_type": "research_task",
-            "route_intent": "research",
             "agent_name": "research_agent",
             **stack.metadata(),
         }
@@ -588,7 +580,6 @@ async def route_agent_message(
                         user_message,
                         thread_id,
                         document_ids,
-                        route_intent="question",
                         observation_id=evidence_step.observation_id,
                         trace_id=evidence_step.trace_id,
                         use_mini=use_mini,
@@ -610,7 +601,6 @@ async def route_agent_message(
                     user_message,
                     thread_id,
                     document_ids,
-                    route_intent="retrieval",
                     observation_id=step.observation_id,
                     trace_id=step.trace_id,
                     use_mini=use_mini,
@@ -751,7 +741,6 @@ async def route_agent_stream(
                     user_message,
                     thread_id,
                     document_ids,
-                    route_intent="question",
                     observation_id=evidence_step.observation_id,
                     trace_id=evidence_step.trace_id,
                     use_mini=use_mini,
@@ -779,7 +768,6 @@ async def route_agent_stream(
                 user_message,
                 thread_id,
                 document_ids,
-                route_intent="retrieval",
                 observation_id=step.observation_id,
                 trace_id=step.trace_id,
                 use_mini=use_mini,

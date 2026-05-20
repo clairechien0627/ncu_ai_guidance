@@ -61,7 +61,6 @@ def _parse_since(value: str | None) -> datetime | None:
 def _trace_metadata(trace: Trace) -> dict:
     return {
         "task_type": trace.task_type,
-        "route_intent": trace.route_intent,
         "agent_name": trace.agent_name,
         "prompt_name": trace.prompt_name,
         "prompt_version": trace.prompt_version,
@@ -89,7 +88,7 @@ def _trace_metadata(trace: Trace) -> dict:
 def _trace_body(trace: Trace) -> dict:
     tags = [
         value
-        for value in [trace.route_intent, trace.task_type, trace.agent_name]
+        for value in [trace.task_type, trace.agent_name]
         if value
     ]
     return {

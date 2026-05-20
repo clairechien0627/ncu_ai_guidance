@@ -1429,7 +1429,7 @@
 
 /* ── Intent arrow in table ──────────────────────────────────────── */
 
-.trace-intent-arrow {
+.trace-agent-arrow {
   font-size: 10px;
   color: #d97706;
   margin-top: 2px;
@@ -1764,7 +1764,7 @@
   gap: 4px;
 }
 
-.trace-route-result-intent-arrow {
+.trace-route-result-agent-arrow {
   font-size: 11px;
   color: #d97706;
   margin-left: 6px;

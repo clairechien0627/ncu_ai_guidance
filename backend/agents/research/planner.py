@@ -304,7 +304,6 @@ async def plan_query_for_slot(
             prompt_name="research_planner",
             metadata={
                 "task_type": "research_task",
-                "route_intent": "research",
                 "agent_name": "research_agent",
                 **research_node_stack_metadata("research_planner"),
             },
@@ -344,7 +343,6 @@ async def plan_next_query(llm, state: ResearchState) -> PlannerDecision:
             prompt_name="research_planner",
             metadata={
                 "task_type": "research_task",
-                "route_intent": "research",
                 "agent_name": "research_agent",
                 **research_node_stack_metadata("research_planner"),
             },

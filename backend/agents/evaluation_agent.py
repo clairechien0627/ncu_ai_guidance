@@ -95,7 +95,6 @@ async def evaluate_output(
     user_task: str,
     answer: str,
     task_type: str = "chat_turn",
-    route_intent: str | None = None,
     sources: list[str] | None = None,
     trace_summary: dict | None = None,
     extra_context: dict | None = None,
@@ -107,7 +106,6 @@ async def evaluate_output(
         "user_task": user_task,
         "answer": answer[:5000],
         "task_type": task_type,
-        "route_intent": route_intent,
         "sources": sources[:12],
         "trace_summary": trace_summary,
         "extra_context": extra_context or {},
@@ -132,7 +130,6 @@ async def evaluate_output(
         prompt_name=PROMPT_NAME,
         metadata={
             "task_type": task_type,
-            "route_intent": route_intent,
             "agent_name": AGENT_NAME,
             **stack.metadata(),
         },
@@ -146,7 +143,6 @@ async def evaluate_output(
 async def score_trace(
     display: dict,
     task_type: str = "chat_turn",
-    route_intent: str | None = None,
 ) -> tuple[float, str, dict]:
     """Compatibility scoring API for trace monitor batch scoring."""
     answer = str(display.get("answer") or "")
@@ -163,7 +159,6 @@ async def score_trace(
             user_task=user_task,
             answer=answer,
             task_type=task_type,
-            route_intent=route_intent,
             sources=sources,
             trace_summary=trace_summary,
         )

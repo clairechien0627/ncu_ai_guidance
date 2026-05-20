@@ -47,11 +47,17 @@ def test_hydrate_message_attachments_uses_trace_document_ids_by_user_turn():
 
 
 class FakeMetaSession:
+    def __init__(self):
+        self._calls = 0
+
     def query(self, *_args, **_kwargs):
-        return FakeQuery([
-            ("run-1", "document_extraction", None, "research_agent", "research_writer", "sha256:abc"),
-            ("run-2", "retrieval_qa", "retrieval_agent", "retrieval_agent", "chat", "sha256:def"),
-        ])
+        self._calls += 1
+        if self._calls == 1:
+            return FakeQuery([
+                ("run-1", "document_extraction", "research_agent", "research_writer", "sha256:abc"),
+                ("run-2", "retrieval_qa", "retrieval_agent", "chat", "sha256:def"),
+            ])
+        return FakeQuery([])
 
 
 def test_hydrate_assistant_meta_uses_root_traces_by_assistant_turn():

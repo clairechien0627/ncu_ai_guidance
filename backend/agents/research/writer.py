@@ -161,7 +161,6 @@ async def write_summary(llm, state: ResearchState, feedback: str = "", level: st
             prompt_name="research_writer",
             metadata={
                 "task_type": "research_task",
-                "route_intent": "research",
                 "agent_name": "research_agent",
                 "level": level,
                 **research_node_stack_metadata("research_writer"),
