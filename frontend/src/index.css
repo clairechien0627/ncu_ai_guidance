@@ -1434,3 +1434,7 @@ body {
     flex-wrap: wrap;
   }
 }
+
+/* Tailwind v4: theme variables (spacing, colors) + utilities, NO preflight reset */
+@import "tailwindcss/theme";
+@import "tailwindcss/utilities";

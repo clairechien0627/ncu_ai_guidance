@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 import uuid
+from collections import deque
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from utils import new_id
@@ -25,6 +27,7 @@ from agents.router_agent import (
     route_agent_message,
     route_agent_stream,
 )
+import agents.steering as steering
 from agents.request_context import set_user_id
 from api.dependencies import get_current_user
 from db import get_db, Conversation, Document, Trace
@@ -253,6 +256,25 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
 
     conv = await asyncio.to_thread(_setup_conv)
     check_quota(current_user, db)
+
+    # ── Mid-run steering detection ─────────────────────────────────────────────
+    _STREAM_TTL = timedelta(minutes=10)
+    _now = datetime.now(timezone.utc)
+    if conv.stream_started_at is not None:
+        started = conv.stream_started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        if _now - started < _STREAM_TTL:
+            steering.set(conv.thread_id, req.message)
+            async def _queued_stream():
+                yield f"data: {_json_dumps({'token': '您的補充已收到，將在下一步驟納入考量。', 'done': True, 'thread_id': conv.thread_id})}\n\n"
+            return StreamingResponse(_queued_stream(), media_type="text/event-stream")
+
+    def _set_stream_lock():
+        conv.stream_started_at = datetime.now(timezone.utc)
+        db.commit()
+    await asyncio.to_thread(_set_stream_lock)
+
     is_new = req.thread_id is None
     set_user_id(str(current_user.id))
 
@@ -272,112 +294,139 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
             "trace_id": trace_id,
             "agent_observation_id": None,
         }
-        yield f"data: {_json_dumps({'thread_id': conv.thread_id, **route_payload})}\n\n"
-        observation_id = new_id()
         try:
-            if route.agent_name == "research_agent":
-                # Merged event queue: ("token", t) | ("stage", msg) | None (sentinel on done)
-                event_queue: asyncio.Queue = asyncio.Queue()
+            yield f"data: {_json_dumps({'thread_id': conv.thread_id, **route_payload})}\n\n"
+            observation_id = new_id()
+            try:
+                if route.agent_name == "research_agent":
+                    # Merged event queue: ("token", t) | ("stage", msg) | None (sentinel on done)
+                    event_queue: asyncio.Queue = asyncio.Queue()
 
-                def _push_stage(msg: str) -> None:
-                    event_queue.put_nowait(("stage", msg))
+                    def _push_stage(msg: str) -> None:
+                        event_queue.put_nowait(("stage", msg))
 
-                def _push_token(t: str) -> None:
-                    event_queue.put_nowait(("token", t))
+                    def _push_token(t: str) -> None:
+                        event_queue.put_nowait(("token", t))
 
-                task = asyncio.create_task(
-                    run_research_agent(
-                        req.message, conv.thread_id, req.document_ids,
-                        observation_id=observation_id,
-                        trace_id=trace_id,
-                        on_stage=_push_stage,
-                        on_token=_push_token,
-                        bypass_cache=req.bypass_cache,
+                    task = asyncio.create_task(
+                        run_research_agent(
+                            req.message, conv.thread_id, req.document_ids,
+                            observation_id=observation_id,
+                            trace_id=trace_id,
+                            on_stage=_push_stage,
+                            on_token=_push_token,
+                            bypass_cache=req.bypass_cache,
+                        )
                     )
-                )
-                task.add_done_callback(lambda _: event_queue.put_nowait(None))
+                    task.add_done_callback(lambda _: event_queue.put_nowait(None))
 
-                streamed_tokens = False
-                while True:
-                    event = await event_queue.get()
-                    if event is None:
-                        # sentinel: drain any events that arrived simultaneously
-                        while not event_queue.empty():
-                            remaining = event_queue.get_nowait()
-                            if remaining is None:
-                                continue
-                            etype, val = remaining
-                            if etype == "token":
-                                yield f"data: {_json_dumps({'token': val})}\n\n"
-                                streamed_tokens = True
-                            else:
-                                yield f"data: {_json_dumps({'stage': val})}\n\n"
-                        break
-                    etype, val = event
-                    if etype == "token":
-                        yield f"data: {_json_dumps({'token': val})}\n\n"
-                        streamed_tokens = True
-                    else:
-                        yield f"data: {_json_dumps({'stage': val})}\n\n"
+                    streamed_tokens = False
+                    while True:
+                        event = await event_queue.get()
+                        if event is None:
+                            # sentinel: drain any events that arrived simultaneously
+                            while not event_queue.empty():
+                                remaining = event_queue.get_nowait()
+                                if remaining is None:
+                                    continue
+                                etype, val = remaining
+                                if etype == "token":
+                                    yield f"data: {_json_dumps({'token': val})}\n\n"
+                                    streamed_tokens = True
+                                else:
+                                    yield f"data: {_json_dumps({'stage': val})}\n\n"
+                            break
+                        etype, val = event
+                        if etype == "token":
+                            yield f"data: {_json_dumps({'token': val})}\n\n"
+                            streamed_tokens = True
+                        else:
+                            yield f"data: {_json_dumps({'stage': val})}\n\n"
 
-                if task.exception():
-                    raise task.exception()
-                result = task.result()
-                full_response = result.response
-                sources = result.sources
-                route_payload["agent_observation_id"] = result.observation_id
-                # Tokens were already streamed token-by-token; only send bulk
-                # response as fallback when the writer stream produced nothing.
-                if not streamed_tokens:
-                    yield f"data: {_json_dumps({'token': full_response})}\n\n"
-            else:
-                async for token, is_done, src in route_agent_stream(
-                    req.message,
-                    conv.thread_id,
-                    req.document_ids,
-                    route=route,
-                    trace_id=trace_id,
-                    observation_id=observation_id,
-                    use_mini=use_mini,
-                ):
-                    if is_done == "interrupt":
-                        yield f"data: {_json_dumps(_interrupt_event(token))}\n\n"
-                        return
-                    elif is_done:
-                        sources = src
-                    else:
-                        full_response += token
-                        yield f"data: {_json_dumps({'token': token})}\n\n"
-                route_payload["agent_observation_id"] = observation_id
+                    if task.exception():
+                        raise task.exception()
+                    result = task.result()
+                    full_response = result.response
+                    sources = result.sources
+                    route_payload["agent_observation_id"] = result.observation_id
+                    # Tokens were already streamed token-by-token; only send bulk
+                    # response as fallback when the writer stream produced nothing.
+                    if not streamed_tokens:
+                        yield f"data: {_json_dumps({'token': full_response})}\n\n"
+                else:
+                    # Emit routing-decision stage immediately
+                    from agents.router_agent import _AGENT_STAGE_LABELS
+                    routing_label = _AGENT_STAGE_LABELS.get(route.agent_name)
+                    if routing_label:
+                        yield f"data: {_json_dumps({'stage': routing_label})}\n\n"
 
-                # ── Stream handoff: retrieval → research ─────────────────
-        except Exception as e:
-            yield f"data: {_json_dumps({'error': str(e)})}\n\n"
-            # Commit to persist any conversation state changes (e.g. model field)
-            # even when the agent call itself fails.
-            try:
-                await asyncio.to_thread(db.commit)
-            except Exception:
-                pass
-            return
+                    # Buffer sub-agent stage events and flush before each token
+                    _stage_buf: deque[str] = deque()
 
-        conv.message_count = (conv.message_count or 0) + 2
-        conv.last_agent_name = route_payload.get("agent_name") or route.agent_name
+                    def _push_stage_buf(msg: str) -> None:
+                        _stage_buf.append(msg)
 
-        # Generate title for new conversations using the message pair just exchanged.
-        title = conv.title
-        if is_new and full_response:
-            try:
-                title = await generate_title([
-                    {"role": "user", "content": req.message},
-                    {"role": "assistant", "content": full_response[:600]},
-                ])
-                conv.title = title
-            except Exception:
-                pass
+                    async for token, is_done, src in route_agent_stream(
+                        req.message,
+                        conv.thread_id,
+                        req.document_ids,
+                        route=route,
+                        trace_id=trace_id,
+                        observation_id=observation_id,
+                        on_stage=_push_stage_buf,
+                        use_mini=use_mini,
+                    ):
+                        while _stage_buf:
+                            yield f"data: {_json_dumps({'stage': _stage_buf.popleft()})}\n\n"
+                        if is_done == "interrupt":
+                            yield f"data: {_json_dumps(_interrupt_event(token))}\n\n"
+                            return
+                        elif is_done:
+                            sources = src
+                        else:
+                            full_response += token
+                            yield f"data: {_json_dumps({'token': token})}\n\n"
+                    # Flush any remaining stages (e.g. from non-streaming agents)
+                    while _stage_buf:
+                        yield f"data: {_json_dumps({'stage': _stage_buf.popleft()})}\n\n"
+                    route_payload["agent_observation_id"] = observation_id
 
-        await asyncio.to_thread(db.commit)
-        yield f"data: {_json_dumps({'done': True, 'sources': sources, 'title': title, **route_payload})}\n\n"
+                    # ── Stream handoff: retrieval → research ─────────────────
+            except Exception as e:
+                yield f"data: {_json_dumps({'error': str(e)})}\n\n"
+                # Commit to persist any conversation state changes (e.g. model field)
+                # even when the agent call itself fails.
+                try:
+                    await asyncio.to_thread(db.commit)
+                except Exception:
+                    pass
+                return
+
+            conv.message_count = (conv.message_count or 0) + 2
+            conv.last_agent_name = route_payload.get("agent_name") or route.agent_name
+
+            # Generate title for new conversations using the message pair just exchanged.
+            title = conv.title
+            if is_new and full_response:
+                try:
+                    title = await generate_title([
+                        {"role": "user", "content": req.message},
+                        {"role": "assistant", "content": full_response[:600]},
+                    ])
+                    conv.title = title
+                except Exception:
+                    pass
+
+            await asyncio.to_thread(db.commit)
+            yield f"data: {_json_dumps({'done': True, 'sources': sources, 'title': title, **route_payload})}\n\n"
+        finally:
+            def _clear_stream_lock():
+                try:
+                    conv.stream_started_at = None
+                    db.commit()
+                except Exception:
+                    pass
+            await asyncio.to_thread(_clear_stream_lock)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

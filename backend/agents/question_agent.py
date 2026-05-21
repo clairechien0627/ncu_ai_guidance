@@ -1,7 +1,7 @@
 from utils import new_id
 import re
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
 from langfuse import observe
 from prompting.loader import load_stack
@@ -168,6 +168,14 @@ async def answer(
     )
 
 
+async def _emit_stage(on_stage, msg: str) -> None:
+    if not on_stage:
+        return
+    result = on_stage(msg)
+    if hasattr(result, "__await__"):
+        await result
+
+
 async def stream(
     user_message: str,
     thread_id: str,
@@ -175,11 +183,13 @@ async def stream(
     *,
     observation_id: str | None = None,
     trace_id: str | None = None,
+    on_stage: Callable[[str], None] | None = None,
     use_mini: bool = False,
     evidence_context: str | None = None,
     evidence_sources: list[str] | None = None,
 ) -> AsyncIterator[tuple[str, bool, list[str]]]:
     from datetime import datetime, timezone as _tz
+    await _emit_stage(on_stage, "生成導讀問題中")
     observation_id = observation_id or new_id()
     agent_start = datetime.now(_tz.utc)
     if trace_id:

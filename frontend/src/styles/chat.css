@@ -205,24 +205,49 @@
 .thinking-pulse {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 0;
+  gap: 5px;
+  padding: 10px 0 6px;
 }
 
 .thinking-pulse span {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: #c2cfdd;
-  animation: thinking 1.4s ease-in-out infinite;
+  animation: thinking 1.3s ease-in-out infinite;
 }
 
-.thinking-pulse span:nth-child(2) { animation-delay: 0.2s; }
-.thinking-pulse span:nth-child(3) { animation-delay: 0.4s; }
+.thinking-pulse span:nth-child(2) { animation-delay: 0.18s; }
+.thinking-pulse span:nth-child(3) { animation-delay: 0.36s; }
 
 @keyframes thinking {
-  0%, 80%, 100% { transform: scale(1); opacity: 0.45; }
-  40% { transform: scale(1.26); opacity: 1; }
+  0%, 80%, 100% { transform: scale(1); opacity: 0.4; }
+  40% { transform: scale(1.3); opacity: 0.9; }
+}
+
+/* ── Streaming cursor ────────────────────────────────────────────────────────── */
+@keyframes blink-cursor {
+  0%, 45% { opacity: 1; }
+  55%, 100% { opacity: 0; }
+}
+
+.is-streaming .markdown-body > p:last-child::after,
+.is-streaming .markdown-body > h1:last-child::after,
+.is-streaming .markdown-body > h2:last-child::after,
+.is-streaming .markdown-body > h3:last-child::after,
+.is-streaming .markdown-body > h4:last-child::after,
+.is-streaming .markdown-body > blockquote:last-child::after,
+.is-streaming .markdown-body > ul:last-child > li:last-child::after,
+.is-streaming .markdown-body > ol:last-child > li:last-child::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 0.8em;
+  background: #94a3b8;
+  border-radius: 1px;
+  margin-left: 2px;
+  vertical-align: -0.06em;
+  animation: blink-cursor 0.85s ease-in-out infinite;
 }
 
 .input-dock {
@@ -544,13 +569,348 @@
 .source-chip {
   display: inline-flex;
   align-items: center;
-  padding: 5px 10px;
+  gap: 5px;
+  padding: 4px 10px 4px 8px;
   border-radius: 999px;
   border: 1px solid rgba(207, 219, 232, 0.9);
   background: rgba(255,255,255,0.76);
   color: #64748b;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.source-chip:hover {
+  background: #edf5ff;
+  border-color: rgba(191, 209, 235, 0.95);
+  color: #2563eb;
+}
+
+/* ── DocChat ─────────────────────────────────────────────────────────────────── */
+
+/* Shared entrance animation */
+@keyframes doc-bubble-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Root */
+.doc-chat-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: transparent;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.doc-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px 11px;
+  border-bottom: 1px solid var(--border-mid);
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.42);
+  backdrop-filter: blur(6px);
+}
+
+.doc-chat-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Bot avatar — two sizes */
+.doc-avatar {
+  border-radius: 50%;
+  background: #6366f1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+}
+.doc-avatar--lg { width: 38px; height: 38px; box-shadow: 0 3px 10px rgba(99, 102, 241, 0.25); }
+.doc-avatar--sm { width: 28px; height: 28px; }
+
+.doc-chat-bot-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+.doc-chat-bot-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+  line-height: 1;
+}
+
+.doc-chat-bot-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.doc-chat-online-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  flex-shrink: 0;
+}
+
+/* Clear button (in header) */
+.doc-chat-clear-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  color: #94a3b8;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.doc-chat-clear-btn:hover { color: #ef4444; background: #fee2e2; }
+
+/* ── Messages area ───────────────────────────────────────────────────────── */
+.doc-chat-messages {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d9e2 transparent;
+}
+.doc-chat-messages::-webkit-scrollbar { width: 4px; }
+.doc-chat-messages::-webkit-scrollbar-thumb { background: #d1d9e2; border-radius: 999px; }
+
+.doc-chat-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+/* Empty state */
+.doc-chat-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 0 20px;
+  animation: doc-bubble-in 0.28s ease both;
+}
+.doc-chat-empty-icon {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  background: var(--primary-50);
+  display: flex; align-items: center; justify-content: center;
+}
+.doc-chat-empty-title { font-size: 13px; font-weight: 600; color: var(--text-body); }
+.doc-chat-empty-hint  { font-size: 12px; color: var(--text-faint); line-height: 1.65; }
+
+/* ── Message rows ────────────────────────────────────────────────────────── */
+.doc-msg-row {
+  display: flex;
+  flex-direction: column;
+  animation: doc-bubble-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.doc-msg-row.user      { align-items: flex-end; }
+.doc-msg-row.assistant { align-items: flex-start; }
+
+/* ── User bubble ──────────────────────────────────────────────────────────── */
+.doc-chat-user-bubble {
+  max-width: 82%;
+  padding: 10px 14px;
+  border-radius: 20px 20px 6px 20px;
+  background: #6366f1;
+  color: #fff;
+  font-size: 13.5px;
+  line-height: 1.68;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.22), inset 0 1px 0 rgba(255,255,255,0.12);
+  letter-spacing: 0.005em;
+}
+
+/* ── AI message row (avatar + bubble side by side) ───────────────────────── */
+.doc-ai-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 96%;
+}
+
+/* AI bubble — base */
+.doc-ai-bubble {
+  padding: 10px 14px;
+  border-radius: 20px 20px 20px 6px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(207, 219, 232, 0.85);
+  font-size: 13.5px;
+  line-height: 1.68;
+  color: var(--text-body);
+  word-break: break-word;
+  min-width: 44px;
+  transition: border-color 0.4s ease, background 0.4s ease;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Streaming state modifier */
+@keyframes doc-stream-border-pulse {
+  0%, 100% { border-color: rgba(99, 102, 241, 0.18); background: rgba(238, 238, 253, 0.5); }
+  50%       { border-color: rgba(99, 102, 241, 0.38); background: rgba(238, 238, 253, 0.72); }
+}
+@keyframes doc-shimmer {
+  from { transform: translateX(-160%); }
+  to   { transform: translateX(280%); }
+}
+
+.doc-ai-bubble.streaming {
+  animation: doc-stream-border-pulse 2.5s ease-in-out infinite;
+}
+.doc-ai-bubble.streaming::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(108deg,
+    transparent 25%,
+    rgba(255, 255, 255, 0.22) 50%,
+    transparent 75%
+  );
+  transform: translateX(-160%);
+  animation: doc-shimmer 2.5s 0.3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* New markdown blocks during streaming */
+.is-streaming .markdown-body > *:last-child {
+  animation: doc-bubble-in 0.18s ease-out both;
+}
+
+/* Thinking state */
+.doc-thinking {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+/* Smaller indigo dots inside doc bubble */
+.doc-ai-bubble .thinking-pulse {
+  padding: 0;
+  gap: 4px;
+}
+.doc-ai-bubble .thinking-pulse span {
+  width: 4px;
+  height: 4px;
+  background: #a5b4fc;
+}
+
+@keyframes doc-stage-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.doc-thinking-text {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-style: italic;
+  letter-spacing: 0.02em;
+  animation: doc-stage-fade 0.18s ease both;
+}
+
+
+/* Source chips */
+.doc-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+  animation: doc-bubble-in 0.26s 0.1s ease both;
+}
+
+/* ── Input dock ───────────────────────────────────────────────────────────── */
+.doc-chat-input-dock {
+  flex-shrink: 0;
+  padding: 10px 14px 14px;
+  border-top: 1px solid var(--border-mid);
+  background: rgba(255, 255, 255, 0.52);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.doc-chat-input {
+  flex: 1;
+  resize: none;
+  border: 1px solid rgba(207, 219, 232, 0.92);
+  border-radius: 14px;
+  padding: 10px 13px;
+  font-size: 13px;
+  outline: none;
+  line-height: 1.55;
+  font-family: inherit;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text-body);
+  max-height: 120px;
+  overflow: auto;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  touch-action: manipulation;
+}
+.doc-chat-input::placeholder { color: var(--text-faint); }
+.doc-chat-input:focus {
+  border-color: rgba(99, 102, 241, 0.45);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+.doc-chat-input:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Send button — square with gradient */
+.doc-chat-send {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: not-allowed;
+  background: #e2e8f0;
+  color: #94a3b8;
+  transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease, opacity 0.18s ease;
+}
+.doc-chat-send.active {
+  background: #6366f1;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.28);
+}
+.doc-chat-send.active:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.34);
+}
+
+.doc-chat-send-spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
 }
 
 /* ── Job status dot ─────────────────────────────────────────────────────────── */

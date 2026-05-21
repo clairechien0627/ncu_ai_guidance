@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
-import { FileText, MessageCircle, Send, Trash2 } from 'lucide-react'
+import { Bot, FileText, MessageCircle, Send, Trash2 } from 'lucide-react'
 import { sendMessageStream } from '../../api'
+import { mapStage } from '../../utils/stageMap'
 
 const MarkdownRenderer = lazy(() => import('../MarkdownRenderer'))
 
@@ -9,6 +10,7 @@ interface Message {
   content: string
   sources?: string[]
   streaming?: boolean
+  stage?: string | null
 }
 
 interface Props {
@@ -16,7 +18,7 @@ interface Props {
   filename?: string
 }
 
-export default function DocChat({ docId, filename }: Props) {
+export default function DocChat({ docId, filename: _filename }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [convId, setConvId] = useState<string | null>(null)
@@ -43,10 +45,8 @@ export default function DocChat({ docId, filename }: Props) {
     setMessages(prev => [
       ...prev,
       { role: 'user', content: text },
-      { role: 'assistant', content: '', streaming: true },
+      { role: 'assistant', content: '', streaming: true, stage: null },
     ])
-    // Only send document context on the first message of a new conversation.
-    // Subsequent turns already have the context in LangGraph checkpointer history.
     const docIds = convId === null ? [docId] : []
     await sendMessageStream(
       text, convId, 'openai', docIds,
@@ -63,7 +63,7 @@ export default function DocChat({ docId, filename }: Props) {
         setMessages(prev => {
           const next = [...prev]
           const last = next[next.length - 1]
-          if (last.role === 'assistant') next[next.length - 1] = { ...last, streaming: false, sources }
+          if (last.role === 'assistant') next[next.length - 1] = { ...last, streaming: false, sources, stage: null }
           return next
         })
         setBusy(false)
@@ -72,10 +72,19 @@ export default function DocChat({ docId, filename }: Props) {
         setMessages(prev => {
           const next = [...prev]
           const last = next[next.length - 1]
-          if (last.role === 'assistant') next[next.length - 1] = { ...last, content: `（錯誤：${err}）`, streaming: false }
+          if (last.role === 'assistant') next[next.length - 1] = { ...last, content: `（錯誤：${err}）`, streaming: false, stage: null }
           return next
         })
         setBusy(false)
+      },
+      undefined,
+      (stage) => {
+        setMessages(prev => {
+          const next = [...prev]
+          const last = next[next.length - 1]
+          if (last.role === 'assistant') next[next.length - 1] = { ...last, stage }
+          return next
+        })
       },
     )
   }
@@ -93,73 +102,96 @@ export default function DocChat({ docId, filename }: Props) {
   const canSend = input.trim().length > 0 && !busy
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#f8fafc' }}>
+    <div className="doc-chat-root">
 
-      {/* Header — only shown when there are messages (for the clear button) */}
-      {messages.length > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-          padding: '4px 10px', borderBottom: '1px solid #e8edf3', flexShrink: 0,
-        }}>
+      {/* Always-visible header */}
+      <div className="doc-chat-header">
+        <div className="doc-chat-header-left">
+          <div className="doc-avatar doc-avatar--lg">
+            <Bot size={17} strokeWidth={1.8} />
+          </div>
+          <div className="doc-chat-bot-info">
+            <div className="doc-chat-bot-name">論文 AI 助理</div>
+            <div className="doc-chat-bot-status">
+              <span className="doc-chat-online-dot" />
+              線上
+            </div>
+          </div>
+        </div>
+        {messages.length > 0 && (
           <button
             onClick={() => { setMessages([]); setConvId(null) }}
+            aria-label="清除對話"
             title="清除對話"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 2, display: 'flex', alignItems: 'center' }}
+            className="doc-chat-clear-btn"
           >
             <Trash2 size={13} />
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 8px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div className="doc-chat-messages doc-chat-body">
         {messages.length === 0 && (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, textAlign: 'center', padding: '0 24px' }}>
-            <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#e8edf3', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <MessageCircle size={22} color="#94a3b8" strokeWidth={1.5} />
+          <div className="doc-chat-empty">
+            <div className="doc-chat-empty-icon">
+              <MessageCircle size={20} color="#94a3b8" strokeWidth={1.5} />
             </div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#475569' }}>針對這篇論文提問</div>
-            <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>例如：這篇的研究方法是什麼？<br />主要結論為何？和其他研究有何不同？</div>
+            <div className="doc-chat-empty-title">針對這篇論文提問</div>
+            <div className="doc-chat-empty-hint">
+              例如：這篇的研究方法是什麼？<br />主要結論為何？
+            </div>
           </div>
         )}
 
         {messages.map((msg, i) => {
           const isWaiting = busy && i === messages.length - 1 && msg.role === 'assistant' && msg.content === ''
+          const isStreaming = !!(msg.streaming && msg.content !== '')
           return (
-            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+            <div key={i} className={`doc-msg-row ${msg.role}`}>
               {msg.role === 'user' ? (
-                <>
-                  {filename && (
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#60a5fa', marginBottom: 3 }}>
-                      <FileText size={10} style={{ flexShrink: 0 }} />
-                      <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{filename}</span>
-                    </div>
-                  )}
-                  <div style={{
-                    maxWidth: '85%', padding: '8px 12px',
-                    borderRadius: '14px 14px 4px 14px',
-                    background: '#1a56db', color: '#fff',
-                    fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                  }}>{msg.content}</div>
-                </>
+                <div className="doc-chat-user-bubble">{msg.content}</div>
               ) : (
-                <div style={{ maxWidth: '92%' }}>
-                  {isWaiting ? (
-                    <div className="thinking-pulse"><span /><span /><span /></div>
-                  ) : (
-                    <>
-                      <Suspense fallback={<div style={{ fontSize: 13, lineHeight: 1.6, color: '#1e293b' }}>{msg.content}</div>}>
-                        <MarkdownRenderer content={msg.content} />
-                      </Suspense>
-                      {msg.sources && msg.sources.length > 0 && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-                          {msg.sources.map((s, si) => (
-                            <span key={si} className="source-chip">{s}</span>
-                          ))}
+                <div className="doc-ai-row">
+                  <div className="doc-avatar doc-avatar--sm">
+                    <Bot size={13} strokeWidth={1.8} />
+                  </div>
+                  <div className={`doc-ai-bubble${isStreaming ? ' streaming' : ''}`}>
+                    {isWaiting ? (
+                      <div className="doc-thinking">
+                        {(() => {
+                          const label = msg.stage ? mapStage(msg.stage) : null
+                          const display = label ?? (msg.stage ? null : '準備中')
+                          return display ? (
+                            <span key={msg.stage ?? '__init__'} className="doc-thinking-text">
+                              {display}
+                            </span>
+                          ) : null
+                        })()}
+                        <div className="thinking-pulse">
+                          <span /><span /><span />
                         </div>
-                      )}
-                    </>
-                  )}
+                      </div>
+                    ) : (
+                      <>
+                        <div className={isStreaming ? 'is-streaming' : ''}>
+                          <Suspense fallback={<div className="markdown-body">{msg.content}</div>}>
+                            <MarkdownRenderer content={msg.content} />
+                          </Suspense>
+                        </div>
+                        {!isStreaming && msg.sources && msg.sources.length > 0 && (
+                          <div className="doc-sources">
+                            {msg.sources.map((s, si) => (
+                              <span key={si} className="source-chip">
+                                <FileText size={10} style={{ flexShrink: 0, opacity: 0.6 }} />
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -168,12 +200,8 @@ export default function DocChat({ docId, filename }: Props) {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input row */}
-      <div style={{
-        flexShrink: 0, padding: '12px 14px 16px',
-        borderTop: '1px solid #e8edf3', background: '#fff',
-        display: 'flex', alignItems: 'flex-end', gap: 8,
-      }}>
+      {/* Input dock */}
+      <div className="doc-chat-input-dock">
         <textarea
           ref={textareaRef}
           value={input}
@@ -182,29 +210,20 @@ export default function DocChat({ docId, filename }: Props) {
           placeholder="輸入問題，Enter 送出…"
           rows={1}
           disabled={busy}
-          style={{
-            flex: 1, resize: 'none', border: '1px solid #dbe3ef', borderRadius: 12,
-            padding: '9px 13px', fontSize: 13, outline: 'none', lineHeight: 1.6,
-            fontFamily: 'inherit', background: '#f8fafc', color: '#1e293b',
-            maxHeight: 120, overflow: 'auto', transition: 'border-color 0.15s',
-          }}
-          onFocus={e => e.currentTarget.style.borderColor = '#93c5fd'}
-          onBlur={e => e.currentTarget.style.borderColor = '#dbe3ef'}
+          className="doc-chat-input"
         />
         <button
           onClick={send}
           disabled={!canSend}
+          aria-label="送出訊息"
           title="送出"
-          style={{
-            width: 36, height: 36, borderRadius: 999, border: 'none', cursor: canSend ? 'pointer' : 'default',
-            background: canSend ? 'linear-gradient(180deg,#264b8b,#19376b)' : '#e2e8f0',
-            color: canSend ? '#fff' : '#94a3b8',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0, transition: 'background 0.15s',
-            boxShadow: canSend ? '0 4px 12px rgba(35,68,121,0.25)' : 'none',
-          }}
+          className={`doc-chat-send${canSend ? ' active' : ''}`}
         >
-          <Send size={14} />
+          {busy ? (
+            <span className="doc-chat-send-spinner" />
+          ) : (
+            <Send size={15} />
+          )}
         </button>
       </div>
     </div>

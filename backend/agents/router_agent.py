@@ -19,6 +19,7 @@ from prompting.registry import version as prompt_version
 
 from .types import AgentRoute, AgentResult, AgentStatus
 from .request_context import get_user_id
+from . import steering as _steering
 from langfuse import observe, propagate_attributes
 import contextlib
 
@@ -223,12 +224,14 @@ async def _escalation_route_for(
     """
     if result.status.completed or not document_ids or hop_count + 1 >= MAX_HANDOFFS:
         return None
+    guidance = _steering.get_and_clear(thread_id) if thread_id else None
     decision = await _orchestrate(
         user_message,
         has_docs=True,
         document_ids=document_ids,
         previous_agent=route.agent_name,
         agent_status=result.status,
+        steering_guidance=guidance,
     )
     if decision.agent_name == route.agent_name or decision.agent_name in visited_agents:
         logger.debug(
@@ -372,6 +375,7 @@ async def _orchestrate(
     previous_agent: str | None = None,
     is_followup: bool = False,
     agent_status: AgentStatus | None = None,
+    steering_guidance: str | None = None,
 ) -> RouterDecision:
     """Orchestrator LLM: decides which agent to invoke with full document context."""
     from observability import ainvoke_traced_generation
@@ -395,6 +399,7 @@ async def _orchestrate(
             "gaps": agent_status.gaps,
             "agent_limitation": agent_status.agent_limitation,
         } if agent_status else None,
+        "steering_guidance": steering_guidance,
         "available_agents": [
             "chat_agent", "retrieval_agent", "research_agent", "question_agent", "evaluation_agent",
         ],
@@ -709,6 +714,14 @@ async def route_agent_message(
         return result
 
 
+_AGENT_STAGE_LABELS: dict[str, str] = {
+    "chat_agent":       "直接回答中",
+    "retrieval_agent":  "搜尋文件中",
+    "question_agent":   "生成導讀問題中",
+    "evaluation_agent": "品質評估中",
+}
+
+
 @observe(as_type="chain")
 async def route_agent_stream(
     user_message: str,
@@ -718,6 +731,7 @@ async def route_agent_stream(
     route: AgentRoute | None = None,
     trace_id: str | None = None,
     observation_id: str | None = None,
+    on_stage=None,
     _hop_count: int = 0,
     _visited_agents: frozenset[str] = frozenset(),
     use_mini: bool = False,
@@ -770,6 +784,7 @@ async def route_agent_stream(
                 document_ids,
                 observation_id=step.observation_id,
                 trace_id=step.trace_id,
+                on_stage=on_stage,
             )
             _fire_and_forget(_update_memory(
                 "research", thread_id, get_user_id(), document_ids, user_message, result
@@ -787,6 +802,7 @@ async def route_agent_stream(
                     document_ids,
                     observation_id=evidence_step.observation_id,
                     trace_id=evidence_step.trace_id,
+                    on_stage=on_stage,
                     use_mini=use_mini,
                 )
                 evidence_context = evidence.response
@@ -795,6 +811,7 @@ async def route_agent_stream(
                 user_message, thread_id, document_ids,
                 observation_id=step.observation_id,
                 trace_id=step.trace_id,
+                on_stage=on_stage,
                 use_mini=use_mini,
                 evidence_context=evidence_context,
                 evidence_sources=evidence_sources,
@@ -808,13 +825,31 @@ async def route_agent_stream(
                 else:
                     yield item
         elif route.agent_name == "retrieval_agent":
-            _retrieval_result = await retrieval_agent.answer(
+            _retrieval_response = ""
+            _retrieval_sources: list[str] = []
+            async for _item in retrieval_agent.stream(
                 user_message,
                 thread_id,
                 document_ids,
                 observation_id=step.observation_id,
                 trace_id=step.trace_id,
+                on_stage=on_stage,
                 use_mini=use_mini,
+            ):
+                _tok, _done, _src = _item
+                if _done:
+                    _retrieval_sources = _src
+                else:
+                    _retrieval_response += _tok
+                    yield _item
+
+            # Build a minimal result for escalation check
+            from .types import AgentStatus
+            _retrieval_result = AgentResult(
+                response=_retrieval_response,
+                sources=_retrieval_sources,
+                task_type="retrieval_qa",
+                agent_name="retrieval_agent",
             )
             _escalation_route = await _escalation_route_for(
                 _retrieval_result, route, user_message, document_ids, thread_id,
@@ -824,19 +859,20 @@ async def route_agent_stream(
                 async for item in route_agent_stream(
                     user_message, thread_id, document_ids,
                     route=_escalation_route, trace_id=trace_id,
+                    on_stage=on_stage,
                     _hop_count=_hop_count + 1,
                     _visited_agents=_visited_agents | {route.agent_name},
                     use_mini=use_mini,
                 ):
                     yield item
                 return
-            yield _retrieval_result.response, False, []
-            last_sources = _retrieval_result.sources
+            last_sources = _retrieval_sources
         else:
             async for item in chat_agent.stream(
                 user_message, thread_id, document_ids,
                 observation_id=step.observation_id,
                 trace_id=step.trace_id,
+                on_stage=on_stage,
                 use_mini=use_mini,
             ):
                 token, is_done, sources = item

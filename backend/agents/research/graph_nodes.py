@@ -394,14 +394,14 @@ async def slot_executor_node(
             )
             new_status = "NOT_FOUND" if coverage_item.get("required", True) else "OMITTED"
             result["slot_status"] = {**result.get("slot_status", {}), slot: new_status}
-            await _emit_stage(on_stage, f"找不到資料：{_slot_label(state, slot)} → {new_status}")
+            await _emit_stage(on_stage, f"找不到相關資料：{_slot_label(state, slot)}")
     else:
         # Progress = new evidence added OR slot status advanced.
         # quality=USEFUL with empty delta and no status change still counts as
         # no progress so that consecutive_no_new can accumulate for stall detection.
         found = bool(has_evidence or result.get("_evidence_progress"))
         status = (result.get("slot_status") or {}).get(slot, "")
-        await _emit_stage(on_stage, f"完成搜尋「{_slot_label(state, slot)}」：{quality} / {status}")
+        await _emit_stage(on_stage, f"完成搜尋：{_slot_label(state, slot)}")
 
     result.pop("_last_quality", None)
     result.pop("_evidence_progress", None)

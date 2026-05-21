@@ -135,7 +135,7 @@ async def run_document_research_step1(
     observation_id = new_id()
     thread_id = _extraction_thread_id(document_id)
     logger.info("Step 1: agent RAG for document %d (observation_id=%s)", document_id, observation_id)
-    await _emit_stage(on_stage, "Step 1 研究檢索中")
+    await _emit_stage(on_stage, "研究文獻中")
     trace_meta = summary_trace_metadata(thread_id, [document_id], stack_name="research_runtime")
     trace_meta.update({
         "document_id": str(document_id),

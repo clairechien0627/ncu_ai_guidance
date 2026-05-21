@@ -8,6 +8,14 @@ from prompting.loader import load_stack
 
 from .types import AgentResult, AgentStatus
 
+
+async def _emit_stage(on_stage, msg: str) -> None:
+    if not on_stage:
+        return
+    result = on_stage(msg)
+    if hasattr(result, "__await__"):
+        await result
+
 STACK_NAME = "retrieval_default"
 PROMPT_NAME = "retrieval_capability"
 AGENT_NAME = "retrieval_agent"
@@ -47,6 +55,7 @@ async def answer(
     }
 
     observation_id = observation_id or new_id()
+    await _emit_stage(on_stage, "搜尋相關段落中")
     agent_start = datetime.now(_tz.utc)
     if trace_id:
         write_agent_span(
@@ -115,6 +124,7 @@ async def stream(
     document_ids: list[int] | None = None,
     *,
     task_prompt: str | list[str] | None = None,
+    on_stage: Callable[[str], None] | None = None,
     metadata: dict[str, str | int] | None = None,
     observation_id: str | None = None,
     trace_id: str | None = None,
@@ -132,6 +142,7 @@ async def stream(
     }
 
     observation_id = observation_id or new_id()
+    await _emit_stage(on_stage, "搜尋相關段落中")
     agent_start = datetime.now(_tz.utc)
     if trace_id:
         write_agent_span(
@@ -153,6 +164,7 @@ async def stream(
         document_ids,
         metadata=metadata,
         task_prompt=effective_prompt,
+        on_stage=on_stage,
         observation_id=observation_id,
         trace_id=trace_id,
         parent_observation_id=observation_id,  # LangChain runs hang under agent SPAN

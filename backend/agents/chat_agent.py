@@ -266,7 +266,7 @@ async def answer(
         "agent_name": AGENT_NAME,
         **stack.metadata(),
     }
-    await _emit_stage(on_stage, "chat_agent: composing")
+    await _emit_stage(on_stage, "組織回答中")
     from datetime import datetime, timezone as _tz
     import uuid as _uuid
     observation_id = observation_id or new_id()
@@ -363,7 +363,7 @@ async def stream(
             input_data={"messages": [{"role": "user", "content": user_message}]},
             extra_metadata={"task_type": "chat_turn", "agent_name": AGENT_NAME},
         )
-    await _emit_stage(on_stage, "chat_agent: composing")
+    await _emit_stage(on_stage, "組織回答中")
     content = ""
     async for token in stream_no_tool_agent(
         user_message=user_message,

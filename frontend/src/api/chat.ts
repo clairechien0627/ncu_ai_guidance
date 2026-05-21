@@ -117,7 +117,7 @@ export const sendMessageStream = async (
         if (data.clear) { onClear?.(); if (data.stage) onStage?.(data.stage) }
         else if (data.stage) onStage?.(data.stage)
         if (data.token) onToken(data.token)
-        if (data.done) onDone(currentThreadId!, data.sources ?? [], data.title ?? null, data)
+        if (data.done) { onDone(currentThreadId!, data.sources ?? [], data.title ?? null, data); return }
       } catch { /* incomplete chunk */ }
     }
   }

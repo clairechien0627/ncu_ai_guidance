@@ -18,6 +18,15 @@ function modeClass(mode?: string | null) {
   return `mode-badge mode-${mode || 'unknown'}`
 }
 
+function StageIndicator({ stage }: { stage: string }) {
+  return (
+    <div className="flex items-center gap-2 mb-2 mt-0.5">
+      <span className="inline-block w-3 h-3 rounded-full border border-slate-300 border-t-blue-400 animate-spin flex-shrink-0" />
+      <span className="text-[11.5px] text-slate-400 tracking-wide">{stage}</span>
+    </div>
+  )
+}
+
 interface ChatWindowProps {
   messages: Message[]
   loading: boolean
@@ -257,31 +266,36 @@ export default function ChatWindow({
                       {msg.promptName && <span>{msg.promptName}{msg.promptVersion ? ` ${msg.promptVersion}` : ''}</span>}
                     </div>
                   )}
-                  {isWaiting ? (
-                    <div>
-                      <div className="thinking-pulse">
-                        <span /><span /><span />
-                      </div>
-                      {msg.stage && (
-                        <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 6, fontStyle: 'italic' }}>
-                          {msg.stage}
+
+                  {/* waiting: no content yet */}
+                  {isWaiting && (
+                    <div className="pt-1">
+                      {msg.stage ? (
+                        <StageIndicator stage={msg.stage} />
+                      ) : (
+                        <div className="thinking-pulse">
+                          <span /><span /><span />
                         </div>
                       )}
                     </div>
-                  ) : (
+                  )}
+
+                  {/* streaming or done: show content */}
+                  {!isWaiting && (
                     <>
-                      {isStreaming && msg.stage && (
-                        <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 6, fontStyle: 'italic' }}>
-                          {msg.stage}
-                        </div>
-                      )}
-                      <Suspense fallback={<div className="markdown-body">{msg.content}</div>}>
-                        <MarkdownRenderer content={msg.content} />
-                      </Suspense>
+                      {isStreaming && msg.stage && <StageIndicator stage={msg.stage} />}
+                      <div className={isStreaming ? 'is-streaming' : ''}>
+                        <Suspense fallback={<div className="markdown-body">{msg.content}</div>}>
+                          <MarkdownRenderer content={msg.content} />
+                        </Suspense>
+                      </div>
                       {msg.sources && msg.sources.length > 0 && (
                         <div className="msg-sources">
                           {msg.sources.map((s, si) => (
-                            <span key={si} className="source-chip">{s}</span>
+                            <span key={si} className="source-chip">
+                              <FileText size={10} className="flex-shrink-0 opacity-60" />
+                              {s}
+                            </span>
                           ))}
                         </div>
                       )}
