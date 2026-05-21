@@ -278,48 +278,47 @@ async def plan_query_for_slot(
 ) -> PlannerDecision:
     assigned_slot = slot if slot in state.coverage_ids() else state.weakest_slot()
     planner = llm.with_structured_output(PlannerDecision, strict=True)
-    try:
-        messages = [
-            *research_node_system_messages("research_planner"),
-            HumanMessage(
-                content=json.dumps(
-                    {
-                        "question": state.question,
-                        "document_context": state.document_context,
-                        "assigned_slot": assigned_slot,
-                        "hint": hint,
-                        "instruction": (
-                            "assigned_slot was selected by the scheduler; "
-                            "next_slot must exactly equal assigned_slot."
-                        ),
-                        "state": state.planner_prompt_dict(),
-                    },
-                    ensure_ascii=False,
-                )
-            ),
-        ]
-        for _attempt in range(3):
-            try:
-                decision = await ainvoke_traced_generation(
-                    planner,
-                    messages,
-                    prompt_name="research_planner",
-                    metadata={
-                        "task_type": "research_task",
-                        "agent_name": "research_agent",
-                        **research_node_stack_metadata("research_planner"),
-                    },
-                )
-                break
-            except Exception as exc:
-                _is_429 = "429" in str(exc) or "too_many_requests" in str(exc).lower()
-                if _attempt < 2 and _is_429:
-                    import asyncio as _asyncio
-                    await _asyncio.sleep(5 * (2 ** _attempt))
-                    continue
-                logger.warning("plan_query_for_slot failed (slot=%s count=%d): %s", assigned_slot, state.search_count, exc)
-                decision = build_slot_decision(state, assigned_slot)
-                break
+    messages = [
+        *research_node_system_messages("research_planner"),
+        HumanMessage(
+            content=json.dumps(
+                {
+                    "question": state.question,
+                    "document_context": state.document_context,
+                    "assigned_slot": assigned_slot,
+                    "hint": hint,
+                    "instruction": (
+                        "assigned_slot was selected by the scheduler; "
+                        "next_slot must exactly equal assigned_slot."
+                    ),
+                    "state": state.planner_prompt_dict(),
+                },
+                ensure_ascii=False,
+            )
+        ),
+    ]
+    for _attempt in range(3):
+        try:
+            decision = await ainvoke_traced_generation(
+                planner,
+                messages,
+                prompt_name="research_planner",
+                metadata={
+                    "task_type": "research_task",
+                    "agent_name": "research_agent",
+                    **research_node_stack_metadata("research_planner"),
+                },
+            )
+            break
+        except Exception as exc:
+            _is_429 = "429" in str(exc) or "too_many_requests" in str(exc).lower()
+            if _attempt < 2 and _is_429:
+                import asyncio as _asyncio
+                await _asyncio.sleep(5 * (2 ** _attempt))
+                continue
+            logger.warning("plan_query_for_slot failed (slot=%s count=%d): %s", assigned_slot, state.search_count, exc)
+            decision = build_slot_decision(state, assigned_slot)
+            break
 
     if decision.next_slot != assigned_slot:
         decision = decision.model_copy(update={"next_slot": assigned_slot})
