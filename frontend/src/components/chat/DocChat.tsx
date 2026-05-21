@@ -47,7 +47,7 @@ export default function DocChat({ docId, filename: _filename }: Props) {
       { role: 'user', content: text },
       { role: 'assistant', content: '', streaming: true, stage: null },
     ])
-    const docIds = convId === null ? [docId] : []
+    const docIds = [docId]
     await sendMessageStream(
       text, convId, 'openai', docIds,
       (token) => {

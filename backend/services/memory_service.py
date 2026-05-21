@@ -97,7 +97,7 @@ def _save_summary(thread_id: str, data: dict) -> None:
     from db import db_session, Conversation
     try:
         with db_session() as db:
-            conv = db.query(Conversation).filter(Conversation.id == int(thread_id)).first()
+            conv = db.query(Conversation).filter(Conversation.thread_id == thread_id).first()
             if conv:
                 conv.context_summary = json.dumps(data, ensure_ascii=False)
                 db.commit()

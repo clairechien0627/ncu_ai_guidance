@@ -29,6 +29,25 @@ export interface ConversationItem {
   title: string | null
 }
 
+export interface ChatJobItem {
+  thread_id: string
+  job_type: 'chat'
+  status: 'running' | 'cancelling'
+  title: string | null
+  message_preview: string
+  user_id: string | null
+  started_at: string
+}
+
+export const cancelChat = async (threadId: string): Promise<void> => {
+  await api.post(`/chat/${threadId}/cancel`)
+}
+
+export const getActiveChats = async (): Promise<ChatJobItem[]> => {
+  const { data } = await api.get<ChatJobItem[]>('/chat/active')
+  return data
+}
+
 export const sendChat = async (body: { message: string; thread_id?: string; document_ids?: number[] }) => {
   const { data } = await api.post<any>('/chat', body)
   return data

@@ -298,19 +298,28 @@ async def plan_query_for_slot(
                 )
             ),
         ]
-        decision: PlannerDecision = await ainvoke_traced_generation(
-            planner,
-            messages,
-            prompt_name="research_planner",
-            metadata={
-                "task_type": "research_task",
-                "agent_name": "research_agent",
-                **research_node_stack_metadata("research_planner"),
-            },
-        )
-    except Exception as exc:
-        logger.warning("plan_query_for_slot failed (slot=%s count=%d): %s", assigned_slot, state.search_count, exc)
-        decision = build_slot_decision(state, assigned_slot)
+        for _attempt in range(3):
+            try:
+                decision = await ainvoke_traced_generation(
+                    planner,
+                    messages,
+                    prompt_name="research_planner",
+                    metadata={
+                        "task_type": "research_task",
+                        "agent_name": "research_agent",
+                        **research_node_stack_metadata("research_planner"),
+                    },
+                )
+                break
+            except Exception as exc:
+                _is_429 = "429" in str(exc) or "too_many_requests" in str(exc).lower()
+                if _attempt < 2 and _is_429:
+                    import asyncio as _asyncio
+                    await _asyncio.sleep(5 * (2 ** _attempt))
+                    continue
+                logger.warning("plan_query_for_slot failed (slot=%s count=%d): %s", assigned_slot, state.search_count, exc)
+                decision = build_slot_decision(state, assigned_slot)
+                break
 
     if decision.next_slot != assigned_slot:
         decision = decision.model_copy(update={"next_slot": assigned_slot})

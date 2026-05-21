@@ -12,6 +12,16 @@ load_dotenv()
 # 2. Windows：psycopg3 與 ProactorEventLoop 不相容，強制使用 SelectorEventLoop
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    # Python 3.11 Windows bug: _WindowsSelectorEventLoop.__del__ may fire before
+    # _closed is set, causing spurious AttributeError on process exit. Patch it away.
+    import asyncio.base_events as _abe
+    _orig_loop_del = _abe.BaseEventLoop.__del__
+    def _safe_loop_del(self):
+        try:
+            _orig_loop_del(self)
+        except AttributeError:
+            pass
+    _abe.BaseEventLoop.__del__ = _safe_loop_del
 
 # 3. 集中式 logging 設定（JSON 或純文字，由 LOG_FORMAT 環境變數控制）
 from logging_config import configure_logging

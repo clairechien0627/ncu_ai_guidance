@@ -18,7 +18,7 @@ from langfuse import observe
 from pydantic import BaseModel, Field
 
 from config import settings
-from db import db_session, Trace
+from db import db_session
 from observability import ainvoke_traced_generation
 from prompting.loader import load_stack
 
@@ -214,30 +214,61 @@ async def evaluate_trace_by_observation_id(observation_id: str) -> EvaluationRes
         return None
 
 
-async def evaluate_latest_trace_for_thread(thread_id: str, *, exclude_observation_id: str | None = None) -> EvaluationResult | None:
-    """Evaluate the latest completed task-agent trace for a conversation thread."""
+async def evaluate_direct_answer(
+    *,
+    user_task: str,
+    answer: str,
+    sources: list[str],
+    task_type: str = "chat_turn",
+) -> EvaluationResult | None:
+    """Evaluate a provided answer directly without searching the DB for a matching trace.
+
+    Used by the evaluate_after background path so that multi-agent tasks (e.g.
+    question_agent with evidence collection, or escalation chains) are always
+    evaluated against the actual final response shown to the user, not whatever
+    happens to be the most-recent trace row in the DB.
+    """
+    try:
+        return await evaluate_output(
+            user_task=user_task,
+            answer=answer,
+            task_type=task_type,
+            sources=sources,
+        )
+    except Exception as exc:
+        logger.warning("evaluate_direct_answer failed: %s", exc)
+        return None
+
+
+async def evaluate_latest_thread_message(
+    thread_id: str,
+    *,
+    exclude_observation_id: str | None = None,
+) -> EvaluationResult | None:
+    """Evaluate the latest AgentMessage for a thread without touching the Trace table."""
     def _find():
-        from sqlalchemy import or_, and_, select
         with db_session() as db:
-            router_observation_ids = select(Trace.observation_id).where(Trace.agent_name == "router_agent").scalar_subquery()
-            agent_execution_root = or_(
-                Trace.trace_id.in_(router_observation_ids),
-                and_(Trace.trace_id.is_(None), Trace.agent_name != "router_agent"),
-            )
-            query = db.query(Trace).filter(
-                agent_execution_root,
-                Trace.thread_id == thread_id,
-                Trace.error.is_(None),
+            from db.models import AgentMessage
+            q = db.query(AgentMessage).filter(
+                AgentMessage.thread_id == thread_id,
+                AgentMessage.agent_answer.isnot(None),
             )
             if exclude_observation_id:
-                query = query.filter(Trace.observation_id != exclude_observation_id)
-            trace = query.order_by(Trace.start_time.desc()).first()
-            return trace.observation_id if trace else None
+                q = q.filter(AgentMessage.observation_id != exclude_observation_id)
+            return q.order_by(AgentMessage.created_at.desc()).first()
 
-    observation_id = await asyncio.to_thread(_find)
-    if not observation_id:
+    msg = await asyncio.to_thread(_find)
+    if not msg:
         return None
-    return await evaluate_trace_by_observation_id(observation_id)
+    return await evaluate_output(
+        user_task=msg.user_question or "",
+        answer=msg.agent_answer or "",
+        sources=msg.sources or [],
+        trace_summary=msg.trace_summary or {},
+        task_type=msg.agent_name,
+    )
+
+
 
 
 def format_evaluation_for_user(result: EvaluationResult | None) -> str:

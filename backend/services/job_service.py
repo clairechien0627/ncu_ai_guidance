@@ -159,7 +159,9 @@ def _persist_doc_job(doc_id: int) -> None:
 # ── Push helpers ────────────────────────────────────────────────────────────────
 
 async def push_jobs():
-    data = json.dumps(_active_jobs)
+    from agents.chat_jobs import get_active as _get_chat_jobs
+    payload = {"jobs": _active_jobs, "chat_jobs": _get_chat_jobs()}
+    data = json.dumps(payload)
     await _push_jobs_payload(data)
 
 
@@ -850,16 +852,18 @@ async def _reindex_worker():
                 await _reindex_event.wait()
                 continue
             item = _reindex_work_queue.pop(0)
-        task = asyncio.create_task(
-            run_reindex_job(item["doc_id"], item["file_path"], item["tmp_path"], item.get("parser", "auto"))
-        )
-        _reindex_tasks[item["doc_id"]] = task
-        try:
-            await task
-        except (asyncio.CancelledError, Exception):
-            pass
-        finally:
-            _reindex_tasks.pop(item["doc_id"], None)
+        from services.llm_gate import get_gate
+        async with get_gate():
+            task = asyncio.create_task(
+                run_reindex_job(item["doc_id"], item["file_path"], item["tmp_path"], item.get("parser", "auto"))
+            )
+            _reindex_tasks[item["doc_id"]] = task
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+            finally:
+                _reindex_tasks.pop(item["doc_id"], None)
 
 
 async def _extract_worker():
@@ -877,14 +881,16 @@ async def _extract_worker():
         step = item.get("step", "full")
         coro = run_one_extraction(doc_id, item["on_failure"]) if step == "full" \
             else run_one_extraction_step(doc_id, step, item["on_failure"])
-        task = asyncio.create_task(coro)
-        _extract_tasks[doc_id] = task
-        try:
-            await task
-        except (asyncio.CancelledError, Exception):
-            pass
-        finally:
-            _extract_tasks.pop(doc_id, None)
+        from services.llm_gate import get_gate
+        async with get_gate():
+            task = asyncio.create_task(coro)
+            _extract_tasks[doc_id] = task
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+            finally:
+                _extract_tasks.pop(doc_id, None)
 
 
 async def _parse_worker():
@@ -898,13 +904,15 @@ async def _parse_worker():
                 while not _parse_work_queue:
                     await _parse_condition.wait()
                 item = _parse_work_queue.pop(0)
-        await run_parse_job(
-            item["doc_id"],
-            item["filename"],
-            item["file_path"],
-            item["parser"],
-            item["job_id"],
-        )
+        from services.llm_gate import get_gate
+        async with get_gate():
+            await run_parse_job(
+                item["doc_id"],
+                item["filename"],
+                item["file_path"],
+                item["parser"],
+                item["job_id"],
+            )
 
 
 async def _redis_cancel_listener() -> None:
@@ -942,8 +950,7 @@ def init_workers():
     _worker_tasks.clear()
     _worker_tasks.append(asyncio.create_task(_reindex_worker(), name="reindex_worker"))
     _worker_tasks.append(asyncio.create_task(_parse_worker(), name="parse_worker"))
-    _worker_tasks.append(asyncio.create_task(_extract_worker(), name="extract_worker_0"))
-    _worker_tasks.append(asyncio.create_task(_extract_worker(), name="extract_worker_1"))
+    _worker_tasks.append(asyncio.create_task(_extract_worker(), name="extract_worker"))
     if redis_enabled():
         _worker_tasks.append(asyncio.create_task(_redis_cancel_listener(), name="redis_cancel_listener"))
 

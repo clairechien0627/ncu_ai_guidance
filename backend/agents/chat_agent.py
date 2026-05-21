@@ -188,9 +188,12 @@ async def compose_final_response(
     system_messages = [SystemMessage(content=content) for content in stack.contents]
     system_messages.append(SystemMessage(content=(
         "You are formatting the final user-facing response from an existing "
-        "task-agent result. Do not perform routing. Do not claim new evidence. "
-        "Preserve important uncertainty, citations, and constraints from the "
-        "task-agent answer."
+        "task-agent result. Do not perform routing. Do not add facts, evidence, "
+        "or content that does not appear in the task-agent answer. "
+        "If the task-agent answer says content was not found or is incomplete, "
+        "preserve that incompleteness — do not fill gaps with your own knowledge. "
+        "Preserve all technical terms, classification names, and taxonomy labels "
+        "verbatim; never substitute them with synonyms or paraphrases."
     )))
     payload = {
         **inputs,
@@ -300,6 +303,10 @@ async def answer(
             "retrieval/research route."
         ],
     )
+    # Detect self-reported context insufficiency from chat_mode prompt
+    _insufficient = "[INSUFFICIENT_CONTEXT]" in response
+    response = response.replace("[INSUFFICIENT_CONTEXT]", "").strip()
+
     # Update Chat Agent SPAN with output and end time
     if trace_id:
         write_agent_span(
@@ -336,10 +343,15 @@ async def answer(
         prompt_name=str(meta.get("prompt_name", PROMPT_NAME)),
         prompt_version=str(meta.get("prompt_version", "unknown")),
         observation_id=observation_id,
-        status=AgentStatus(completed=True, work_summary="直接從對話 context 回答。"),
+        status=AgentStatus(
+            completed=not _insufficient,
+            work_summary="直接從對話 context 回答。",
+            agent_limitation="chat_agent 無文件搜尋工具，現有 context 不足以充分回答" if _insufficient else "",
+        ),
     )
 
 
+@observe(as_type="agent", name="Chat Agent", capture_input=False, capture_output=False)
 async def stream(
     user_message: str,
     thread_id: str,
@@ -394,6 +406,7 @@ async def stream(
             name="Chat Agent",
             start_time=agent_start,
             end_time=datetime.now(timezone.utc),
+            input_data={"messages": [{"role": "user", "content": user_message}]},
             output_data={"answer": content, "sources": []},
             extra_metadata={"task_type": "chat_turn", "agent_name": AGENT_NAME},
         )

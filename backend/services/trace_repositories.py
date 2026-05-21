@@ -220,8 +220,10 @@ class ObservationRepository:
                 row.total_cost = round(row.input_cost + row.output_cost, 8)
         row.prompt_name = body.get("prompt_name")
         row.prompt_version = body.get("prompt_version")
-        row.input = _json_text(body.get("input"))
-        row.output = _json_text(body.get("output"))
+        if "input" in body:
+            row.input = _json_text(body["input"])
+        if "output" in body:
+            row.output = _json_text(body["output"])
         row.metadata_json = _json_text(body.get("metadata"))
         row.level = body.get("level") or ("ERROR" if body.get("status_message") else "DEFAULT")
         row.status = "error" if row.level == "ERROR" else "success"

@@ -168,6 +168,10 @@ export const getParserCacheContent = async (docId: number, parser: string): Prom
   const { data } = await api.get<ParserCacheContent>(`/documents/${docId}/parser-cache/${parser}`)
   return data
 }
+export const getDocumentChunks = async (docId: number): Promise<{ chunks: any[]; total: number }> => {
+  const { data } = await api.get(`/documents/${docId}/chunks`)
+  return data
+}
 export const deleteChunk = async (docId: number, chunkId: string): Promise<void> => {
   await api.delete(`/documents/${docId}/chunks/${chunkId}`)
 }

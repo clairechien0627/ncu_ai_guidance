@@ -27,7 +27,8 @@ async def stream_jobs():
         # All instances broadcast to this channel so any connected client
         # receives updates regardless of which instance handled the mutation.
         async def generator():
-            yield f"data: {json.dumps(job_service.get_jobs())}\n\n"
+            from agents.chat_jobs import get_active as _get_chat_jobs
+            yield f"data: {json.dumps({'jobs': job_service.get_jobs(), 'chat_jobs': _get_chat_jobs()})}\n\n"
             try:
                 async with r.pubsub() as pubsub:
                     await pubsub.subscribe(BROADCAST_CHANNEL)
@@ -51,8 +52,9 @@ async def stream_jobs():
         job_service._job_subscribers.append(queue)
 
         async def generator():
+            from agents.chat_jobs import get_active as _get_chat_jobs
             try:
-                yield f"data: {json.dumps(job_service.get_jobs())}\n\n"
+                yield f"data: {json.dumps({'jobs': job_service.get_jobs(), 'chat_jobs': _get_chat_jobs()})}\n\n"
                 while True:
                     try:
                         data = await asyncio.wait_for(queue.get(), timeout=25)

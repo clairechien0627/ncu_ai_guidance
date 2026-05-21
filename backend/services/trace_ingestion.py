@@ -151,14 +151,24 @@ class TraceIngestionWorker:
                     # Rollback first, then update the row's status in a fresh mini-session
                     # so subsequent rows in the same batch can still be processed.
                     db.rollback()
-                    logger.warning("trace ingestion event failed event_id=%s: %s", event_id, exc)
+                    from sqlalchemy.exc import IntegrityError as _IE
+                    _is_fk_violation = isinstance(exc, _IE) and (
+                        "ForeignKeyViolation" in type(getattr(exc, "orig", None)).__name__
+                        or (getattr(exc, "orig", None) and "foreign key" in str(exc.orig).lower())
+                    )
+                    if _is_fk_violation:
+                        logger.debug("trace ingestion FK violation (non-retryable) event_id=%s: %s", event_id, exc)
+                    else:
+                        logger.warning("trace ingestion event failed event_id=%s: %s", event_id, exc)
                     try:
                         with _worker_session() as err_db:
                             err_row = err_db.query(TraceEventOutbox).filter(
                                 TraceEventOutbox.event_id == event_id
                             ).first()
                             if err_row:
-                                err_row.attempts = (err_row.attempts or 0) + 1
+                                # FK violations are non-retryable: exhaust attempts immediately.
+                                new_attempts = MAX_ATTEMPTS if _is_fk_violation else (err_row.attempts or 0) + 1
+                                err_row.attempts = new_attempts
                                 err_row.status = "failed"
                                 err_row.last_error = str(exc)[:2000]
                                 err_row.locked_at = None

@@ -158,6 +158,7 @@ async def stream(
 
     effective_prompt = task_prompt if task_prompt is not None else stack.contents
     last_sources: list[str] = []
+    answer_tokens: list[str] = []
     async for item in _run_agent_stream(
         user_message,
         thread_id,
@@ -175,6 +176,8 @@ async def stream(
         use_mini=use_mini,
     ):
         token, is_done, sources = item
+        if token:
+            answer_tokens.append(token)
         if is_done and sources:
             last_sources = sources
         yield item
@@ -188,6 +191,7 @@ async def stream(
             name="Retrieval Agent",
             start_time=agent_start,
             end_time=datetime.now(_tz.utc),
-            output_data={"sources": last_sources},
+            input_data={"messages": [{"role": "user", "content": user_message}]},
+            output_data={"answer": "".join(answer_tokens), "sources": last_sources},
             extra_metadata={"task_type": "retrieval_qa", "agent_name": AGENT_NAME},
         )

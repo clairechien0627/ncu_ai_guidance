@@ -12,9 +12,10 @@ import {
   getDocumentTraces, getJobs, getParserCaches,
   parseDocument, refreshAbstractText,
   reindexDocument, renameDocument, updateAbstractText, uploadDocument,
-  deleteChunk, updateChunk,
+  deleteChunk, updateChunk, getDocumentChunks,
   batchReparse, batchExtractSelected,
-  type ParserCacheInfo, type SummaryItem, type TraceItem, type JobItem,
+  cancelChat,
+  type ParserCacheInfo, type SummaryItem, type TraceItem, type JobItem, type ChatJobItem,
 } from '../../api'
 import { useDocumentList } from '../../hooks/useDocumentList'
 import { TablePagination } from '../../components/admin/TablePagination'
@@ -219,8 +220,8 @@ function InlineChunkViewer({ docId, parserFilter }: { docId: number; parserFilte
 
   useEffect(() => {
     setLoading(true); setExpanded(null); setEditing(null); setSection('')
-    axios.get(`${API_BASE}/api/documents/${docId}/chunks`)
-      .then(r => { setChunks(r.data.chunks); setTotal(r.data.total) })
+    getDocumentChunks(docId)
+      .then(r => { setChunks(r.chunks); setTotal(r.total) })
       .finally(() => setLoading(false))
   }, [docId])
 
@@ -839,7 +840,7 @@ export default function DocumentsPage() {
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null } }
   }, [items, jobs, refreshAll])
 
-  useJobSSE({ onItemsDone: () => loadItems().catch(() => {}), onParseDone: () => {}, onExtractDone: () => {}, selectedIdRef })
+  const { chatJobs } = useJobSSE({ onItemsDone: () => loadItems().catch(() => {}), onParseDone: () => {}, onExtractDone: () => {}, selectedIdRef })
 
   const departments = useMemo(
     () => ['全部', ...Array.from(new Set(items.map(i => i.department))).sort((a, b) => a.localeCompare(b, 'zh-TW'))],
@@ -907,6 +908,58 @@ export default function DocumentsPage() {
           onClear={() => setBatchSelected(new Set())}
           onDone={msg => { onFlash(msg); refreshAll().catch(() => {}) }}
         />
+      )}
+
+      {/* Active chat sessions */}
+      {chatJobs.length > 0 && (
+        <div style={{ marginBottom: 12, border: '1px solid var(--adm-border)', borderRadius: 6, overflow: 'hidden' }}>
+          <div style={{ padding: '6px 12px', background: 'var(--adm-bg-2)', borderBottom: '1px solid var(--adm-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--adm-text-1)' }}>進行中的 Chat 工作</span>
+            <span style={{ fontSize: 11, color: 'var(--adm-text-3)' }}>{chatJobs.length} 筆</span>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: 'var(--adm-bg-2)' }}>
+                <th style={{ padding: '4px 12px', textAlign: 'left', fontWeight: 500, color: 'var(--adm-text-2)' }}>Thread</th>
+                <th style={{ padding: '4px 12px', textAlign: 'left', fontWeight: 500, color: 'var(--adm-text-2)' }}>訊息</th>
+                <th style={{ padding: '4px 12px', textAlign: 'left', fontWeight: 500, color: 'var(--adm-text-2)' }}>狀態</th>
+                <th style={{ padding: '4px 12px', textAlign: 'left', fontWeight: 500, color: 'var(--adm-text-2)' }}>開始時間</th>
+                <th style={{ padding: '4px 12px', textAlign: 'right', fontWeight: 500, color: 'var(--adm-text-2)' }}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {chatJobs.map(j => (
+                <tr key={j.thread_id} style={{ borderTop: '1px solid var(--adm-border)' }}>
+                  <td style={{ padding: '6px 12px', fontFamily: 'monospace', fontSize: 11, color: 'var(--adm-text-3)' }}>
+                    {j.thread_id.slice(0, 16)}…
+                  </td>
+                  <td style={{ padding: '6px 12px', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {j.title ? <span style={{ color: 'var(--adm-text-2)', marginRight: 6 }}>{j.title}</span> : null}
+                    <span style={{ color: 'var(--adm-text-3)' }}>{j.message_preview}</span>
+                  </td>
+                  <td style={{ padding: '6px 12px' }}>
+                    <StatusBadge
+                      status={j.status === 'cancelling' ? 'pending' : 'running'}
+                      label={j.status === 'cancelling' ? '取消中' : '進行中'}
+                    />
+                  </td>
+                  <td style={{ padding: '6px 12px', color: 'var(--adm-text-3)', fontSize: 11 }}>
+                    {relativeTime(j.started_at)}
+                  </td>
+                  <td style={{ padding: '6px 12px', textAlign: 'right' }}>
+                    <button
+                      className="adm-btn adm-btn-sm adm-btn-danger"
+                      disabled={j.status === 'cancelling'}
+                      onClick={() => cancelChat(j.thread_id).catch(() => {})}
+                    >
+                      取消
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {/* Table */}

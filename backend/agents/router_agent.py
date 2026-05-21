@@ -258,6 +258,7 @@ def _allows_background_evaluation(agent_name: str, has_docs: bool) -> bool:
 def _normalise_decision(decision: RouterDecision, has_docs: bool) -> RouterDecision:
     """Sanitise LLM output: fix invalid agent names and enforce doc-gating rules."""
     agent_name = decision.agent_name if decision.agent_name in VALID_AGENTS else "chat_agent"
+    # No retrieval/research without documents
     if agent_name in {"research_agent", "retrieval_agent"} and not has_docs:
         agent_name = "chat_agent"
     evaluate_after = bool(decision.evaluate_after and _allows_background_evaluation(agent_name, has_docs))
@@ -281,11 +282,11 @@ def _route_for_agent(
         agent_name = "chat_agent"
     if agent_name == "research_agent":
         prompt = _primary_prompt("research_runtime", "research_writer", thread_id, document_ids)
-        return AgentRoute(agent_name, prompt.name, prompt.version, evaluate_after=evaluate_after)
+        return AgentRoute(agent_name, prompt.name, prompt.version, compose_after=True, evaluate_after=evaluate_after)
     if agent_name == "question_agent":
-        return AgentRoute(agent_name, "question_skill", prompt_version("question_skill"), evaluate_after=evaluate_after)
+        return AgentRoute(agent_name, "question_skill", prompt_version("question_skill"), compose_after=True, evaluate_after=evaluate_after)
     if agent_name == "retrieval_agent":
-        return AgentRoute(agent_name, "retrieval_capability", prompt_version("retrieval_capability"), evaluate_after=evaluate_after)
+        return AgentRoute(agent_name, "retrieval_capability", prompt_version("retrieval_capability"), compose_after=True, evaluate_after=evaluate_after)
     if agent_name == "evaluation_agent":
         return AgentRoute(agent_name, "evaluation_agent", prompt_version("evaluation_agent"), evaluate_after=False)
     return AgentRoute("chat_agent", "chat_mode", prompt_version("chat_mode"), evaluate_after=False)
@@ -433,6 +434,7 @@ async def _orchestrate(
         return RouterDecision(agent_name=fallback, evaluate_after=False, reason="fallback")
 
 
+@observe(as_type="span", name="route_request")
 async def route_request(
     message: str,
     document_ids: list[int] | None = None,
@@ -486,13 +488,34 @@ async def _run_evaluation_agent(
     observation_id: str | None = None,
     trace_id: str | None = None,
     exclude_observation_id: str | None = None,
+    answer: str | None = None,
+    sources: list[str] | None = None,
+    user_message: str | None = None,
+    task_type: str = "chat_turn",
 ) -> AgentResult:
     with propagate_attributes(session_id=thread_id, user_id=get_user_id()) if thread_id else contextlib.nullcontext():
-        from agents.evaluation_agent import evaluate_latest_trace_for_thread, format_evaluation_for_user
-        result = await evaluate_latest_trace_for_thread(
-            thread_id,
-            exclude_observation_id=exclude_observation_id,
+        from agents.evaluation_agent import (
+            evaluate_direct_answer,
+            evaluate_latest_thread_message,
+            format_evaluation_for_user,
         )
+        if answer is not None:
+            # Evaluate the actual final response directly — avoids picking the
+            # wrong trace when the task involved multiple agents (e.g. question
+            # with evidence collection, or retrieval→research escalation).
+            result = await evaluate_direct_answer(
+                user_task=user_message or "",
+                answer=answer,
+                sources=sources or [],
+                task_type=task_type,
+            )
+        else:
+            # Explicit user-triggered evaluation: find latest Q&A from
+            # AgentMessage (no Trace dependency).
+            result = await evaluate_latest_thread_message(
+                thread_id,
+                exclude_observation_id=exclude_observation_id,
+            )
         return AgentResult(
             response=format_evaluation_for_user(result),
             sources=[],
@@ -535,7 +558,8 @@ async def run_research_agent(
             observation_id=observation_id,
             on_stage=on_stage,
             on_token=on_token,
-            max_searches=10,
+            max_searches=20,
+            max_searches_per_slot=3,
             max_consecutive_no_new=2,
             trace_id=trace_id,
             bypass_cache=bypass_cache,
@@ -574,144 +598,283 @@ async def route_agent_message(
     *,
     route: AgentRoute | None = None,
     trace_id: str | None = None,
-    _hop_count: int = 0,
-    _visited_agents: frozenset[str] = frozenset(),
     use_mini: bool = False,
 ) -> AgentResult:
     with propagate_attributes(session_id=thread_id, user_id=get_user_id()) if thread_id else contextlib.nullcontext():
-        """Route a user message to the appropriate task agent."""
+        """Route a user message to the appropriate task agent (loop, not recursion)."""
         from . import chat_agent, question_agent, retrieval_agent
-        if _hop_count >= MAX_HANDOFFS:
-            logger.warning(
-                "Handoff limit reached (%d/%d) thread=%s; falling back to chat",
-                _hop_count,
-                MAX_HANDOFFS,
-                thread_id,
-            )
-            return await chat_agent.answer(user_message, thread_id, document_ids,
-                                           use_mini=use_mini)
 
-        route = route or await route_request(user_message, document_ids, thread_id)
-
-        # Router is the root trace; task agents become its children.
         trace_id = trace_id or new_id()
-        plan = _build_execution_plan(
-            route,
-            trace_id=trace_id,
-            collect_evidence=bool(document_ids) and route.agent_name == "question_agent",
-        )
-        step = plan.target_step
-        await asyncio.to_thread(_write_router_trace, trace_id, thread_id, document_ids, route,
-                                user_message=user_message, user_id=get_user_id())
+        _visited: frozenset[str] = frozenset()
+        _hop = 0
+        plan: "ExecutionPlan | None" = None
+        current_route: AgentRoute | None = None
+        result: AgentResult | None = None
+        next_route: AgentRoute | None = route  # pre-computed or None for auto-routing
 
-        try:
-            if route.agent_name == "evaluation_agent":
-                result = await _run_evaluation_agent(
-                    thread_id,
-                    observation_id=step.observation_id,
-                    trace_id=step.trace_id,
-                )
-            elif route.agent_name == "research_agent":
-                result = await run_research_agent(
-                    user_message,
-                    thread_id,
-                    document_ids,
-                    observation_id=step.observation_id,
-                    trace_id=step.trace_id,
-                )
-            elif route.agent_name == "question_agent":
-                evidence_context = None
-                evidence_sources: list[str] = []
-                evidence_step = plan.evidence_step
-                if evidence_step is not None:
-                    evidence = await retrieval_agent.answer(
-                        user_message,
-                        thread_id,
-                        document_ids,
-                        observation_id=evidence_step.observation_id,
-                        trace_id=evidence_step.trace_id,
-                        use_mini=use_mini,
-                    )
-                    evidence_context = evidence.response
-                    evidence_sources = evidence.sources
-                result = await question_agent.answer(
-                    user_message,
-                    thread_id,
-                    document_ids,
-                    observation_id=step.observation_id,
-                    trace_id=step.trace_id,
-                    use_mini=use_mini,
-                    evidence_context=evidence_context,
-                    evidence_sources=evidence_sources,
-                )
-            elif route.agent_name == "retrieval_agent":
-                result = await retrieval_agent.answer(
-                    user_message,
-                    thread_id,
-                    document_ids,
-                    observation_id=step.observation_id,
-                    trace_id=step.trace_id,
-                    use_mini=use_mini,
-                )
-                escalation_route = await _escalation_route_for(
-                    result, route, user_message, document_ids, thread_id,
-                    _hop_count, _visited_agents | {route.agent_name},
-                )
-                if escalation_route is not None:
-                    return await route_agent_message(
-                        user_message, thread_id, document_ids,
-                        route=escalation_route, trace_id=trace_id,
-                        _hop_count=_hop_count + 1,
-                        _visited_agents=_visited_agents | {route.agent_name},
-                        use_mini=use_mini,
-                    )
+        while _hop < MAX_HANDOFFS:
+
+            # ── 1. Route decision ─────────────────────────────────────────
+            if next_route is not None:
+                current_route = next_route
+                next_route = None
             else:
-                result = await chat_agent.answer(
-                    user_message,
-                    thread_id,
-                    document_ids,
-                    observation_id=step.observation_id,
-                    trace_id=step.trace_id,
-                    use_mini=use_mini,
+                current_route = await route_request(user_message, document_ids, thread_id)
+
+            plan = _build_execution_plan(current_route, trace_id=trace_id)
+            step = plan.target_step
+
+            if _hop == 0:
+                await asyncio.to_thread(
+                    _write_router_trace, trace_id, thread_id, document_ids, current_route,
+                    user_message=user_message, user_id=get_user_id(),
                 )
-        except Exception as exc:
-            await asyncio.to_thread(
-                _write_router_trace, trace_id, thread_id, document_ids, route,
-                end_time=datetime.now(timezone.utc), error=str(exc), user_id=get_user_id(),
+
+            # ── 2. Execute agent ──────────────────────────────────────────
+            try:
+                if current_route.agent_name == "evaluation_agent":
+                    result = await _run_evaluation_agent(
+                        thread_id,
+                        observation_id=step.observation_id,
+                        trace_id=step.trace_id,
+                    )
+                    await asyncio.to_thread(
+                        _write_router_trace, trace_id, thread_id, document_ids, current_route,
+                        end_time=datetime.now(timezone.utc), user_id=get_user_id(),
+                    )
+                    return result
+
+                elif current_route.agent_name == "research_agent":
+                    result = await run_research_agent(
+                        user_message, thread_id, document_ids,
+                        observation_id=step.observation_id,
+                        trace_id=step.trace_id,
+                    )
+                    _fire_and_forget(_update_memory(
+                        "research", thread_id, get_user_id(), document_ids, user_message, result
+                    ))
+
+                elif current_route.agent_name == "question_agent":
+                    evidence_context = None
+                    evidence_sources: list[str] = []
+                    evidence_step = plan.evidence_step
+                    if evidence_step is not None:
+                        evidence = await retrieval_agent.answer(
+                            user_message, thread_id, document_ids,
+                            observation_id=evidence_step.observation_id,
+                            trace_id=evidence_step.trace_id,
+                            use_mini=use_mini,
+                        )
+                        evidence_context = evidence.response
+                        evidence_sources = evidence.sources
+                    result = await question_agent.answer(
+                        user_message, thread_id, document_ids,
+                        observation_id=step.observation_id,
+                        trace_id=step.trace_id,
+                        use_mini=use_mini,
+                        evidence_context=evidence_context,
+                        evidence_sources=evidence_sources,
+                    )
+
+                elif current_route.agent_name == "retrieval_agent":
+                    result = await retrieval_agent.answer(
+                        user_message, thread_id, document_ids,
+                        observation_id=step.observation_id,
+                        trace_id=step.trace_id,
+                        use_mini=use_mini,
+                    )
+
+                else:  # chat_agent
+                    result = await chat_agent.answer(
+                        user_message, thread_id, document_ids,
+                        observation_id=step.observation_id,
+                        trace_id=step.trace_id,
+                        use_mini=use_mini,
+                    )
+
+            except Exception as exc:
+                await asyncio.to_thread(
+                    _write_router_trace, trace_id, thread_id, document_ids, current_route,
+                    end_time=datetime.now(timezone.utc), error=str(exc), user_id=get_user_id(),
+                )
+                raise
+
+            # ── 3. Escalation check ───────────────────────────────────────
+            if (result is not None
+                    and not result.status.completed
+                    and document_ids
+                    and _hop + 1 < MAX_HANDOFFS):
+                _esc = await _escalation_route_for(
+                    result, current_route, user_message, document_ids, thread_id,
+                    _hop, _visited | {current_route.agent_name},
+                )
+                if _esc is not None:
+                    _visited = _visited | {current_route.agent_name}
+                    next_route = _esc
+                    _hop += 1
+                    continue
+
+            break
+
+        # ── 4. Composition + Finalize — always runs exactly once ──────────
+        if plan is not None and current_route is not None and result is not None:
+            await _finalize_plan(
+                plan, current_route, thread_id, document_ids, user_message,
+                output_response=result.response,
+                primary_observation_id=result.observation_id,
+                sources=result.sources,
+                result=result,
             )
-            raise
-
-        await asyncio.to_thread(
-            _write_router_trace, trace_id, thread_id, document_ids, route,
-            output=result.response if result else None,
-            end_time=datetime.now(timezone.utc), user_id=get_user_id(),
-        )
-
-        composition_step = plan.composition_step
-        if composition_step is not None:
-            result = await chat_agent.compose_final_response(
-                user_message=user_message,
-                task_result=result,
-                thread_id=thread_id,
-                document_ids=document_ids,
-                observation_id=composition_step.observation_id,
-                trace_id=composition_step.trace_id,
-                use_mini=use_mini,
-            )
-
-        if plan.evaluate_after:
-            _fire_and_forget(_run_evaluation_agent(
-                thread_id,
-                trace_id=plan.trace_id,
-                exclude_observation_id=result.observation_id,
-            ))
-
-        if route.agent_name == "research_agent":
-            _fire_and_forget(_update_memory(
-                "research", thread_id, get_user_id(), document_ids, user_message, result
-            ))
+            result = await _run_composition(plan, result, user_message, thread_id, document_ids, use_mini)
 
         return result
+
+
+# ── Shared execution-plan helpers ────────────────────────────────────────────
+
+async def _resolve_plan(
+    user_message: str,
+    thread_id: str,
+    document_ids: list[int] | None,
+    *,
+    route: AgentRoute | None,
+    trace_id: str | None,
+    observation_id: str | None = None,
+    on_route=None,
+    on_stage=None,
+    previous_agent_name: str | None = None,
+) -> tuple[AgentRoute, "ExecutionPlan", str]:
+    """Resolve route, build execution plan, write opening router trace.
+
+    Centralises the init scaffolding shared by route_agent_message and
+    route_agent_stream so that changes (e.g. adding a field to the opening
+    _write_router_trace call) only need to happen in one place.
+    """
+    route = route or await route_request(
+        user_message, document_ids, thread_id,
+        previous_agent_name=previous_agent_name,
+    )
+    if on_route:
+        on_route(route)
+    if on_stage and route.agent_name in _AGENT_STAGE_LABELS:
+        on_stage(_AGENT_STAGE_LABELS[route.agent_name])
+    trace_id = trace_id or new_id()
+    plan = _build_execution_plan(
+        route,
+        trace_id=trace_id,
+        observation_id=observation_id,
+        collect_evidence=bool(document_ids) and route.agent_name == "question_agent",
+    )
+    await asyncio.to_thread(
+        _write_router_trace, trace_id, thread_id, document_ids, route,
+        user_message=user_message, user_id=get_user_id(),
+    )
+    return route, plan, trace_id
+
+
+async def _write_agent_message(
+    *,
+    thread_id: str,
+    user_message: str,
+    output_response: str,
+    sources: list[str],
+    route: AgentRoute,
+    primary_observation_id: str,
+    result: AgentResult | None,
+) -> None:
+    """Persist Q&A pair to agent_messages so evaluation_agent can find it without Trace."""
+    from db import db_session
+    from db.models import AgentMessage
+    msg = AgentMessage(
+        message_id=new_id(),
+        thread_id=thread_id,
+        user_id=get_user_id(),
+        agent_name=route.agent_name,
+        user_question=user_message,
+        agent_answer=output_response,
+        sources=sources,
+        trace_summary=result.coverage_result if result else None,
+        observation_id=primary_observation_id,
+    )
+    def _write():
+        with db_session() as db:
+            db.add(msg)
+            db.commit()
+    try:
+        await asyncio.to_thread(_write)
+    except Exception as exc:
+        logger.warning("_write_agent_message failed thread=%s: %s", thread_id, exc)
+
+
+async def _finalize_plan(
+    plan: "ExecutionPlan",
+    route: AgentRoute,
+    thread_id: str,
+    document_ids: list[int] | None,
+    user_message: str,
+    *,
+    output_response: str | None,
+    primary_observation_id: str,
+    sources: list[str] | None = None,
+    result: AgentResult | None = None,
+) -> None:
+    """Write closing router trace, fire evaluate-after and memory update."""
+    await asyncio.to_thread(
+        _write_router_trace, plan.trace_id, thread_id, document_ids, route,
+        user_message=user_message, output=output_response,
+        end_time=datetime.now(timezone.utc), user_id=get_user_id(),
+    )
+    if thread_id and output_response:
+        _fire_and_forget(_write_agent_message(
+            thread_id=thread_id,
+            user_message=user_message,
+            output_response=output_response,
+            sources=sources or [],
+            route=route,
+            primary_observation_id=primary_observation_id,
+            result=result,
+        ))
+    if plan.evaluate_after:
+        # Pass the actual final answer directly so multi-agent tasks are
+        # evaluated against the response the user received, not a DB search
+        # that may return the wrong intermediate trace (e.g. evidence collection).
+        _fire_and_forget(_run_evaluation_agent(
+            thread_id,
+            trace_id=plan.trace_id,
+            exclude_observation_id=primary_observation_id,
+            answer=output_response,
+            sources=sources or [],
+            user_message=user_message,
+            task_type=route.agent_name,
+        ))
+    if route.agent_name == "research_agent" and result is not None:
+        _fire_and_forget(_update_memory(
+            "research", thread_id, get_user_id(), document_ids, user_message, result
+        ))
+
+
+async def _run_composition(
+    plan: "ExecutionPlan",
+    result: AgentResult,
+    user_message: str,
+    thread_id: str,
+    document_ids: list[int] | None,
+    use_mini: bool,
+) -> AgentResult:
+    """Run optional composition step; return result unchanged if no step exists."""
+    composition_step = plan.composition_step
+    if composition_step is None:
+        return result
+    from . import chat_agent
+    return await chat_agent.compose_final_response(
+        user_message=user_message,
+        task_result=result,
+        thread_id=thread_id,
+        document_ids=document_ids,
+        observation_id=composition_step.observation_id,
+        trace_id=composition_step.trace_id,
+        use_mini=use_mini,
+    )
 
 
 _AGENT_STAGE_LABELS: dict[str, str] = {
@@ -732,166 +895,302 @@ async def route_agent_stream(
     trace_id: str | None = None,
     observation_id: str | None = None,
     on_stage=None,
-    _hop_count: int = 0,
-    _visited_agents: frozenset[str] = frozenset(),
+    on_route=None,
+    previous_agent_name: str | None = None,
+    bypass_cache: bool = False,
     use_mini: bool = False,
 ) -> AsyncIterator[tuple[str, bool, list[str]]]:
     with propagate_attributes(session_id=thread_id, user_id=get_user_id()) if thread_id else contextlib.nullcontext():
-        """Stream tokens from the appropriate task agent."""
+        """Stream tokens. Multi-hop routing handled via while-loop (not recursion)."""
         from . import chat_agent, question_agent, retrieval_agent
-        if _hop_count >= MAX_HANDOFFS:
-            logger.warning(
-                "Stream handoff limit reached (%d/%d) thread=%s; falling back to chat",
-                _hop_count,
-                MAX_HANDOFFS,
-                thread_id,
-            )
-            async for item in chat_agent.stream(user_message, thread_id, document_ids,
-                                                use_mini=use_mini):
-                yield item
-            return
-
-        route = route or await route_request(user_message, document_ids, thread_id)
 
         trace_id = trace_id or new_id()
-        plan = _build_execution_plan(
-            route,
-            trace_id=trace_id,
-            observation_id=observation_id,
-            collect_evidence=bool(document_ids) and route.agent_name == "question_agent",
-        )
-        step = plan.target_step
-        await asyncio.to_thread(_write_router_trace, trace_id, thread_id, document_ids, route, user_id=get_user_id())
-
-        if route.agent_name == "evaluation_agent":
-            result = await _run_evaluation_agent(
-                thread_id,
-                observation_id=step.observation_id,
-                trace_id=step.trace_id,
-            )
-            await asyncio.to_thread(_write_router_trace, trace_id, thread_id, document_ids, route,
-                                    end_time=datetime.now(timezone.utc), user_id=get_user_id())
-            yield result.response, False, []
-            yield "", True, []
-            return
-
+        _visited: frozenset[str] = frozenset()
+        _full_response: str | None = None
         last_sources: list[str] = []
+        plan: "ExecutionPlan | None" = None
+        step = None
+        current_route: AgentRoute | None = None
+        _hop = 0
 
-        if route.agent_name == "research_agent":
-            result = await run_research_agent(
-                user_message,
-                thread_id,
-                document_ids,
-                observation_id=step.observation_id,
-                trace_id=step.trace_id,
-                on_stage=on_stage,
-            )
-            _fire_and_forget(_update_memory(
-                "research", thread_id, get_user_id(), document_ids, user_message, result
-            ))
-            yield result.response, False, []
-            last_sources = result.sources
-        elif route.agent_name == "question_agent":
-            evidence_context = None
-            evidence_sources: list[str] = []
-            evidence_step = plan.evidence_step
-            if evidence_step is not None:
-                evidence = await retrieval_agent.answer(
-                    user_message,
-                    thread_id,
-                    document_ids,
-                    observation_id=evidence_step.observation_id,
-                    trace_id=evidence_step.trace_id,
-                    on_stage=on_stage,
-                    use_mini=use_mini,
-                )
-                evidence_context = evidence.response
-                evidence_sources = evidence.sources
-            async for item in question_agent.stream(
-                user_message, thread_id, document_ids,
-                observation_id=step.observation_id,
-                trace_id=step.trace_id,
-                on_stage=on_stage,
-                use_mini=use_mini,
-                evidence_context=evidence_context,
-                evidence_sources=evidence_sources,
-            ):
-                token, is_done, sources = item
-                if is_done == "interrupt":
-                    yield item
-                    return
-                if is_done:
-                    last_sources = sources
-                else:
-                    yield item
-        elif route.agent_name == "retrieval_agent":
-            _retrieval_response = ""
-            _retrieval_sources: list[str] = []
-            async for _item in retrieval_agent.stream(
-                user_message,
-                thread_id,
-                document_ids,
-                observation_id=step.observation_id,
-                trace_id=step.trace_id,
-                on_stage=on_stage,
-                use_mini=use_mini,
-            ):
-                _tok, _done, _src = _item
-                if _done:
-                    _retrieval_sources = _src
-                else:
-                    _retrieval_response += _tok
-                    yield _item
+        # next_route drives routing each iteration:
+        #   None  → call route_request (normal routing)
+        #   Route → use directly (pre-computed or escalation decision)
+        next_route: AgentRoute | None = route
 
-            # Build a minimal result for escalation check
-            from .types import AgentStatus
-            _retrieval_result = AgentResult(
-                response=_retrieval_response,
-                sources=_retrieval_sources,
-                task_type="retrieval_qa",
-                agent_name="retrieval_agent",
-            )
-            _escalation_route = await _escalation_route_for(
-                _retrieval_result, route, user_message, document_ids, thread_id,
-                _hop_count, _visited_agents | {route.agent_name},
-            )
-            if _escalation_route is not None:
-                async for item in route_agent_stream(
-                    user_message, thread_id, document_ids,
-                    route=_escalation_route, trace_id=trace_id,
-                    on_stage=on_stage,
-                    _hop_count=_hop_count + 1,
-                    _visited_agents=_visited_agents | {route.agent_name},
-                    use_mini=use_mini,
-                ):
-                    yield item
+        while _hop < MAX_HANDOFFS:
+
+            # ── 0. Cancel check ───────────────────────────────────────────
+            from . import chat_jobs as _chat_jobs
+            if _chat_jobs.is_cancelled(thread_id):
+                logger.info("route_agent_stream cancelled thread_id=%s", thread_id)
+                yield "", True, last_sources
                 return
-            last_sources = _retrieval_sources
-        else:
-            async for item in chat_agent.stream(
-                user_message, thread_id, document_ids,
-                observation_id=step.observation_id,
-                trace_id=step.trace_id,
-                on_stage=on_stage,
-                use_mini=use_mini,
-            ):
-                token, is_done, sources = item
-                if is_done == "interrupt":
-                    yield item
-                    return
-                if is_done:
-                    last_sources = sources
-                else:
-                    yield item
 
-        await asyncio.to_thread(_write_router_trace, trace_id, thread_id, document_ids, route,
-                                end_time=datetime.now(timezone.utc), user_id=get_user_id())
+            # ── 1. Route decision ─────────────────────────────────────────
+            if next_route is not None:
+                current_route = next_route
+                next_route = None
+            else:
+                current_route = await route_request(
+                    user_message, document_ids, thread_id,
+                    previous_agent_name=previous_agent_name if _hop == 0 else None,
+                )
 
-        if plan.evaluate_after:
-            _fire_and_forget(_run_evaluation_agent(
-                thread_id,
-                trace_id=plan.trace_id,
-                exclude_observation_id=step.observation_id,
-            ))
+            if on_route and _hop == 0:
+                on_route(current_route)
+            if on_stage and current_route.agent_name in _AGENT_STAGE_LABELS:
+                on_stage(_AGENT_STAGE_LABELS[current_route.agent_name])
+
+            plan = _build_execution_plan(
+                current_route,
+                trace_id=trace_id,
+                observation_id=observation_id if _hop == 0 else None,
+            )
+            step = plan.target_step
+
+            # Opening Router trace — written only once for the whole turn
+            if _hop == 0:
+                await asyncio.to_thread(
+                    _write_router_trace, trace_id, thread_id, document_ids, current_route,
+                    user_message=user_message, user_id=get_user_id(),
+                )
+
+            # ── 2. Evaluation agent (no loop, no composition) ─────────────
+            if current_route.agent_name == "evaluation_agent":
+                result = await _run_evaluation_agent(
+                    thread_id,
+                    observation_id=step.observation_id,
+                    trace_id=step.trace_id,
+                )
+                await asyncio.to_thread(
+                    _write_router_trace, trace_id, thread_id, document_ids, current_route,
+                    end_time=datetime.now(timezone.utc), user_id=get_user_id(),
+                )
+                yield result.response, False, []
+                yield "", True, []
+                return
+
+            # ── 3. Execute agent ──────────────────────────────────────────
+            _streamed_response: list[str] = []
+            agent_result: AgentResult | None = None
+
+            try:
+                if current_route.agent_name == "research_agent":
+                    _rqueue: asyncio.Queue = asyncio.Queue()
+
+                    def _push_research_token(t: str) -> None:
+                        _rqueue.put_nowait(("token", t))
+
+                    def _push_research_stage(msg: str) -> None:
+                        if on_stage:
+                            on_stage(msg)
+
+                    rtask = asyncio.create_task(
+                        run_research_agent(
+                            user_message, thread_id, document_ids,
+                            observation_id=step.observation_id,
+                            trace_id=step.trace_id,
+                            on_stage=_push_research_stage,
+                            on_token=_push_research_token,
+                            bypass_cache=bypass_cache,
+                        )
+                    )
+                    rtask.add_done_callback(lambda _: _rqueue.put_nowait(None))
+
+                    streamed_tokens = False
+                    while True:
+                        event = await _rqueue.get()
+                        if event is None:
+                            while not _rqueue.empty():
+                                rem = _rqueue.get_nowait()
+                                if rem is None:
+                                    continue
+                                etype, val = rem
+                                if etype == "token":
+                                    _streamed_response.append(val)
+                                    if plan.composition_step is None:
+                                        yield val, False, []
+                                    streamed_tokens = True
+                            break
+                        etype, val = event
+                        if etype == "token":
+                            _streamed_response.append(val)
+                            if plan.composition_step is None:
+                                yield val, False, []
+                            streamed_tokens = True
+
+                    if rtask.exception():
+                        raise rtask.exception()
+                    research_result = rtask.result()
+                    if not streamed_tokens:
+                        _streamed_response.append(research_result.response)
+                        if plan.composition_step is None:
+                            yield research_result.response, False, []
+                    _fire_and_forget(_update_memory(
+                        "research", thread_id, get_user_id(), document_ids, user_message, research_result
+                    ))
+                    last_sources = research_result.sources
+                    agent_result = research_result
+
+                elif current_route.agent_name == "question_agent":
+                    evidence_context = None
+                    evidence_sources: list[str] = []
+                    evidence_step = plan.evidence_step
+                    if evidence_step is not None:
+                        evidence = await retrieval_agent.answer(
+                            user_message, thread_id, document_ids,
+                            observation_id=evidence_step.observation_id,
+                            trace_id=evidence_step.trace_id,
+                            on_stage=on_stage,
+                            use_mini=use_mini,
+                        )
+                        evidence_context = evidence.response
+                        evidence_sources = evidence.sources
+                    async for item in question_agent.stream(
+                        user_message, thread_id, document_ids,
+                        observation_id=step.observation_id,
+                        trace_id=step.trace_id,
+                        on_stage=on_stage,
+                        use_mini=use_mini,
+                        evidence_context=evidence_context,
+                        evidence_sources=evidence_sources,
+                    ):
+                        token, is_done, sources = item
+                        if is_done == "interrupt":
+                            yield item
+                            # Interrupt exits the generator — skip finalization
+                            await asyncio.to_thread(
+                                _write_router_trace, trace_id, thread_id, document_ids, current_route,
+                                end_time=datetime.now(timezone.utc), user_id=get_user_id(),
+                            )
+                            return
+                        if is_done:
+                            last_sources = sources
+                        else:
+                            _streamed_response.append(token)
+                            if plan.composition_step is None:
+                                yield item
+
+                elif current_route.agent_name == "retrieval_agent":
+                    _retrieval_response = ""
+                    _retrieval_sources: list[str] = []
+                    async for _item in retrieval_agent.stream(
+                        user_message, thread_id, document_ids,
+                        observation_id=step.observation_id,
+                        trace_id=step.trace_id,
+                        on_stage=on_stage,
+                        use_mini=use_mini,
+                    ):
+                        _tok, _done, _src = _item
+                        if _done:
+                            _retrieval_sources = _src
+                        else:
+                            _retrieval_response += _tok
+                            _streamed_response.append(_tok)
+                            if plan.composition_step is None:
+                                yield _item
+
+                    last_sources = _retrieval_sources
+                    # Build result with proper status (fixes bug: default was always completed=True)
+                    agent_result = AgentResult(
+                        response=_retrieval_response,
+                        sources=_retrieval_sources,
+                        task_type="retrieval_qa",
+                        agent_name="retrieval_agent",
+                        status=AgentStatus(
+                            completed=bool(_retrieval_sources),
+                            gaps=[] if _retrieval_sources else ["未找到與問題相關的文件片段"],
+                            agent_limitation="" if _retrieval_sources else "單點查找，文件中可能無此資訊",
+                        ),
+                    )
+
+                else:  # chat_agent
+                    async for item in chat_agent.stream(
+                        user_message, thread_id, document_ids,
+                        observation_id=step.observation_id,
+                        trace_id=step.trace_id,
+                        on_stage=on_stage,
+                        use_mini=use_mini,
+                    ):
+                        token, is_done, sources = item
+                        if is_done == "interrupt":
+                            yield item
+                            await asyncio.to_thread(
+                                _write_router_trace, trace_id, thread_id, document_ids, current_route,
+                                end_time=datetime.now(timezone.utc), user_id=get_user_id(),
+                            )
+                            return
+                        if is_done:
+                            last_sources = sources
+                        else:
+                            _streamed_response.append(token)
+                            yield item
+
+                    # Detect self-reported context insufficiency
+                    _chat_full = "".join(_streamed_response)
+                    if "[INSUFFICIENT_CONTEXT]" in _chat_full:
+                        _chat_full = _chat_full.replace("[INSUFFICIENT_CONTEXT]", "").strip()
+                        _streamed_response = [_chat_full]
+                        agent_result = AgentResult(
+                            response=_chat_full,
+                            sources=last_sources,
+                            task_type="chat_turn",
+                            agent_name="chat_agent",
+                            status=AgentStatus(
+                                completed=False,
+                                work_summary="chat_agent 無法從現有 context 充分回答",
+                                agent_limitation="chat_agent 無文件搜尋工具，context 不足以充分回答此問題",
+                            ),
+                        )
+
+            except Exception as exc:
+                await asyncio.to_thread(
+                    _write_router_trace, trace_id, thread_id, document_ids, current_route,
+                    end_time=datetime.now(timezone.utc), error=str(exc), user_id=get_user_id(),
+                )
+                raise
+
+            # ── 4. Composition ────────────────────────────────────────────
+            _full_response = "".join(_streamed_response) or None
+
+            if plan.composition_step is not None:
+                if on_stage:
+                    on_stage("組織回答中")
+                _composed = await _run_composition(
+                    plan,
+                    AgentResult(response=_full_response or "", sources=last_sources,
+                                task_type="streaming", agent_name=current_route.agent_name),
+                    user_message, thread_id, document_ids, use_mini,
+                )
+                yield _composed.response, False, _composed.sources
+                last_sources = _composed.sources
+                _full_response = _composed.response
+
+            # ── 5. Escalation check ───────────────────────────────────────
+            if (agent_result is not None
+                    and not agent_result.status.completed
+                    and document_ids
+                    and _hop + 1 < MAX_HANDOFFS):
+                _esc = await _escalation_route_for(
+                    agent_result, current_route, user_message, document_ids, thread_id,
+                    _hop, _visited | {current_route.agent_name},
+                )
+                if _esc is not None:
+                    _visited = _visited | {current_route.agent_name}
+                    next_route = _esc
+                    _hop += 1
+                    continue
+
+            break  # No escalation needed
+
+        # ── 6. Finalize — always runs exactly once ────────────────────────
+        if plan is not None and step is not None and current_route is not None:
+            await _finalize_plan(
+                plan, current_route, thread_id, document_ids, user_message,
+                output_response=_full_response,
+                primary_observation_id=step.observation_id,
+                sources=last_sources,
+            )
 
         yield "", True, last_sources

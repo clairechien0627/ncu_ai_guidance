@@ -108,7 +108,7 @@ async def answer(
         )
 
     if not _has_questions(response) or not _questions_have_varied_openings(response):
-        retry_observation_id = new_id() if observation_id else None
+        retry_observation_id = new_id()
         r2, s2, _, _ = await run_no_tool_agent(
             user_message=user_message,
             thread_id=thread_id,
@@ -118,7 +118,7 @@ async def answer(
             agent_name=AGENT_NAME,
             task_type="question_generation",
             observation_id=retry_observation_id,
-            trace_id=trace_id or observation_id,
+            trace_id=trace_id,
             use_mini=use_mini,
             extra_system_messages=[
                 *extra_system_messages,
@@ -240,6 +240,7 @@ async def stream(
             name="Question Agent",
             start_time=agent_start,
             end_time=datetime.now(_tz.utc),
+            input_data={"messages": [{"role": "user", "content": user_message}]},
             output_data={"answer": content, "sources": evidence_sources or []},
             extra_metadata={"task_type": "question_generation", "agent_name": AGENT_NAME},
         )

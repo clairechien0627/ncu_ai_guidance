@@ -190,6 +190,22 @@ class User(Base):
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class AgentMessage(Base):
+    """Lightweight Q&A log per thread — used by evaluation_agent instead of Trace."""
+    __tablename__ = "agent_messages"
+    id = Column(Integer, primary_key=True, index=True)
+    message_id = Column(String(36), unique=True, nullable=False, index=True)
+    thread_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=True, index=True)
+    agent_name = Column(String, nullable=False, index=True)
+    user_question = Column(Text, nullable=True)
+    agent_answer = Column(Text, nullable=True)
+    sources = Column(JsonColumn, nullable=True)
+    trace_summary = Column(JsonColumn, nullable=True)
+    observation_id = Column(String, nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
     id = Column(Integer, primary_key=True, index=True)
@@ -200,6 +216,7 @@ class Conversation(Base):
     message_count = Column(Integer, default=0)
     context_summary = Column(Text, nullable=True)
     last_agent_name = Column(String, nullable=True)
+    stream_started_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 

@@ -1,6 +1,8 @@
 """List-style trace read operations."""
 from __future__ import annotations
 
+from sqlalchemy import cast, String as _SA_String, func as _sa_func
+
 from .common import *  # noqa: F401,F403
 from .core import _TraceReadCore
 
@@ -24,7 +26,9 @@ class TraceListReadService:
             .filter(
                 Trace.document_ids.isnot(None),
                 Trace.display.isnot(None),
-                Trace.document_ids.contains(doc_str),
+                # Pre-filter: regex ensures exact integer match (not substring of larger ID).
+                # Python-level _payload_has_document does the authoritative check.
+                cast(Trace.document_ids, _SA_String).op("~")(rf"(^|[^0-9]){doc_str}([^0-9]|$)"),
             )
             .order_by(Trace.start_time.desc())
             .limit(limit * 5)

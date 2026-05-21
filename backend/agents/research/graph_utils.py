@@ -195,7 +195,8 @@ def _hard_max_searches(state: ResearchGraphState) -> int:
         configured = int(state.get("max_searches") or 0)
     except Exception:
         configured = 0
-    return max(configured, derived)
+    # configured is a hard cap when set; derived is used only when unconfigured.
+    return configured if configured > 0 else derived
 
 
 def _slot_search_counts(state: ResearchGraphState) -> dict[str, int]:

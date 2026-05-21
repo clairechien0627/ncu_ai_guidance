@@ -262,7 +262,9 @@ class LocalTracer(BaseCallbackHandler):
         if parent_obs_id is None and self._root_observation_id is None:
             self._root_observation_id = rid
         s = serialized or {}
-        name = s.get("name") or (s.get("id") or ["chain"])[-1]
+        # Prefer the run name from kwargs (LangGraph passes node name here),
+        # then fall back to serialized fields.
+        name = kwargs.get("name") or s.get("name") or (s.get("id") or ["chain"])[-1]
         ev = self._ev(rid)
         ev.update({
             "run_id": rid,
@@ -404,11 +406,27 @@ class LocalTracer(BaseCallbackHandler):
         total_prompt_tokens = sum(ev.get("prompt_tokens") or 0 for ev in self._events.values())
         total_completion_tokens = sum(ev.get("completion_tokens") or 0 for ev in self._events.values())
 
+        # Run IDs that are referenced as a parent by at least one other run.
+        # Used to skip LangGraph's internal state-passing nodes (e.g. __start__,
+        # __end__) which fire on_chain_start/end with no real work and no children.
+        parent_ids = {
+            ev["parent_observation_id"]
+            for ev in self._events.values()
+            if ev.get("parent_observation_id")
+        }
+
         rows = []
         for ev in self._events.values():
             if "run_id" not in ev or "run_type" not in ev:
                 continue
             is_root = ev["run_id"] == self._root_observation_id
+            # Skip leaf chains with the default name "chain" — these are LangGraph
+            # internal graph-traversal nodes that contain no LLM/tool work.
+            if (not is_root
+                    and ev.get("run_type") == "chain"
+                    and ev.get("name") == "chain"
+                    and ev["run_id"] not in parent_ids):
+                continue
             parent_id = ev.get("parent_observation_id")
             rows.append({
                 "run_id": ev["run_id"],

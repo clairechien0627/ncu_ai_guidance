@@ -29,7 +29,7 @@ def _get_langfuse_base_url() -> str | None:
 
 def _build_langfuse_handler():
     from langfuse.langchain import CallbackHandler
-    from agents.request_context import get_user_id
+    from context import get_user_id
 
     uid = get_user_id()
     return CallbackHandler(user_id=uid) if uid else CallbackHandler()
@@ -199,6 +199,65 @@ def _serialize_generation_io(value):
             "content": getattr(value, "content", ""),
         }
     return value
+
+
+async def astream_traced_generation(
+    runnable,
+    input_value,
+    *,
+    prompt_name: str,
+    name: str = "AzureChatOpenAI",
+    metadata: dict | None = None,
+):
+    """Stream a LangChain runnable as a Langfuse generation, yielding text tokens.
+
+    Mirrors ainvoke_traced_generation but for streaming calls.
+    The generation observation is opened before the first token and closed
+    (with full output) after the stream completes.
+    """
+    configure_langfuse_environment()
+    if not langfuse_is_configured():
+        async for chunk in runnable.astream(input_value):
+            token = getattr(chunk, "content", None)
+            if token:
+                yield str(token)
+        return
+
+    try:
+        from langfuse import get_client
+        langfuse = get_client()
+        prompt_obj = get_langfuse_obj(prompt_name)
+        observation = langfuse.start_as_current_observation(
+            as_type="generation",
+            name=name,
+            input=_serialize_generation_io(input_value),
+            model=settings.azure_chat_deployment,
+            prompt=prompt_obj,
+            metadata=generation_prompt_metadata(metadata, prompt_name=prompt_name),
+        )
+    except Exception as exc:
+        logger.warning("Langfuse stream generation tracing setup failed for %s: %s", prompt_name, exc)
+        async for chunk in runnable.astream(input_value):
+            token = getattr(chunk, "content", None)
+            if token:
+                yield str(token)
+        return
+
+    content = ""
+    with observation as generation:
+        async for chunk in runnable.astream(input_value):
+            token = getattr(chunk, "content", None)
+            if token:
+                token_text = str(token)
+                content += token_text
+                yield token_text
+        try:
+            generation.update(
+                output=content,
+                metadata=generation_prompt_metadata(metadata, prompt_name=prompt_name),
+            )
+        except Exception as exc:
+            logger.warning("Langfuse stream generation output update failed for %s: %s", prompt_name, exc)
 
 
 async def ainvoke_traced_generation(

@@ -507,41 +507,9 @@ async def _get_structured_response(thread_id: str) -> AgentResponse | None:
 
 
 def _get_conversation_context(thread_id: str) -> str | None:
-    """Read the compressed context_summary for this conversation.
-
-    Falls back to the latest research trace (pre-memory-service data) when
-    context_summary has not been populated yet.
-    """
+    """Read the compressed context_summary for this conversation."""
     from services.memory_service import get_context_summary_text
-    text = get_context_summary_text(thread_id)
-    if text:
-        return text
-    # Fallback: query Trace table for conversations that predate context_summary
-    from db import db_session, Trace
-    import json as _json
-    try:
-        with db_session() as db:
-            row = (
-                db.query(Trace.display)
-                .filter(
-                    Trace.thread_id == thread_id,
-                    Trace.task_type.in_(["research_task", "document_extraction"]),
-                    Trace.display.isnot(None),
-                    Trace.error.is_(None),
-                )
-                .order_by(Trace.start_time.desc())
-                .first()
-            )
-            if not row or not row[0]:
-                return None
-            display = _json.loads(row[0])
-            answer = str(display.get("answer") or "").strip()
-            if len(answer) < 50:
-                return None
-            return answer[:600] + ("…" if len(answer) > 600 else "")
-    except Exception as _e:
-        logger.debug("_get_conversation_context(%s): failed to parse trace display: %s", thread_id, _e)
-        return None
+    return get_context_summary_text(thread_id)
 
 
 def _build_messages(

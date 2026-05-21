@@ -22,12 +22,12 @@ from agents.runner import (
     run_tool_agent_resume_stream,
 )
 from agents.router_agent import (
-    run_research_agent,
     route_request,
     route_agent_message,
     route_agent_stream,
 )
 import agents.steering as steering
+import agents.chat_jobs as chat_jobs
 from agents.request_context import set_user_id
 from api.dependencies import get_current_user
 from db import get_db, Conversation, Document, Trace
@@ -274,124 +274,72 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
         conv.stream_started_at = datetime.now(timezone.utc)
         db.commit()
     await asyncio.to_thread(_set_stream_lock)
+    chat_jobs.start(conv.thread_id, req.message, user_id=str(current_user.id), title=conv.title)
 
     is_new = req.thread_id is None
     set_user_id(str(current_user.id))
 
     prev_agent = await asyncio.to_thread(_get_previous_agent, db, conv.thread_id if req.thread_id else None)
-    route = await route_request(req.message, req.document_ids, conv.thread_id, previous_agent_name=prev_agent)
     trace_id = new_id()
-    use_mini = _should_use_mini(req.model, route.agent_name, req.document_ids)
+    use_mini = "mini" in (req.model or "").lower()
 
     async def event_stream():
+        from services.llm_gate import get_gate
+        _gate = get_gate()
+        await _gate.acquire()
         sources = []
         full_response = ""
         route_payload = {
             "task_type": "chat_turn",
-            "agent_name": route.agent_name,
-            "prompt_name": route.prompt_name,
-            "prompt_version": route.prompt_version,
+            "agent_name": None,
+            "prompt_name": None,
+            "prompt_version": None,
             "trace_id": trace_id,
             "agent_observation_id": None,
         }
+        _initial_emitted = False
+        _stage_buf: deque[str] = deque()
+
+        def _on_route(r: "AgentRoute") -> None:
+            route_payload["agent_name"] = r.agent_name
+            route_payload["prompt_name"] = r.prompt_name
+            route_payload["prompt_version"] = r.prompt_version
+
+        def _push_stage(msg: str) -> None:
+            _stage_buf.append(msg)
+
+        observation_id = new_id()
         try:
-            yield f"data: {_json_dumps({'thread_id': conv.thread_id, **route_payload})}\n\n"
-            observation_id = new_id()
             try:
-                if route.agent_name == "research_agent":
-                    # Merged event queue: ("token", t) | ("stage", msg) | None (sentinel on done)
-                    event_queue: asyncio.Queue = asyncio.Queue()
-
-                    def _push_stage(msg: str) -> None:
-                        event_queue.put_nowait(("stage", msg))
-
-                    def _push_token(t: str) -> None:
-                        event_queue.put_nowait(("token", t))
-
-                    task = asyncio.create_task(
-                        run_research_agent(
-                            req.message, conv.thread_id, req.document_ids,
-                            observation_id=observation_id,
-                            trace_id=trace_id,
-                            on_stage=_push_stage,
-                            on_token=_push_token,
-                            bypass_cache=req.bypass_cache,
-                        )
-                    )
-                    task.add_done_callback(lambda _: event_queue.put_nowait(None))
-
-                    streamed_tokens = False
-                    while True:
-                        event = await event_queue.get()
-                        if event is None:
-                            # sentinel: drain any events that arrived simultaneously
-                            while not event_queue.empty():
-                                remaining = event_queue.get_nowait()
-                                if remaining is None:
-                                    continue
-                                etype, val = remaining
-                                if etype == "token":
-                                    yield f"data: {_json_dumps({'token': val})}\n\n"
-                                    streamed_tokens = True
-                                else:
-                                    yield f"data: {_json_dumps({'stage': val})}\n\n"
-                            break
-                        etype, val = event
-                        if etype == "token":
-                            yield f"data: {_json_dumps({'token': val})}\n\n"
-                            streamed_tokens = True
-                        else:
-                            yield f"data: {_json_dumps({'stage': val})}\n\n"
-
-                    if task.exception():
-                        raise task.exception()
-                    result = task.result()
-                    full_response = result.response
-                    sources = result.sources
-                    route_payload["agent_observation_id"] = result.observation_id
-                    # Tokens were already streamed token-by-token; only send bulk
-                    # response as fallback when the writer stream produced nothing.
-                    if not streamed_tokens:
-                        yield f"data: {_json_dumps({'token': full_response})}\n\n"
-                else:
-                    # Emit routing-decision stage immediately
-                    from agents.router_agent import _AGENT_STAGE_LABELS
-                    routing_label = _AGENT_STAGE_LABELS.get(route.agent_name)
-                    if routing_label:
-                        yield f"data: {_json_dumps({'stage': routing_label})}\n\n"
-
-                    # Buffer sub-agent stage events and flush before each token
-                    _stage_buf: deque[str] = deque()
-
-                    def _push_stage_buf(msg: str) -> None:
-                        _stage_buf.append(msg)
-
-                    async for token, is_done, src in route_agent_stream(
-                        req.message,
-                        conv.thread_id,
-                        req.document_ids,
-                        route=route,
-                        trace_id=trace_id,
-                        observation_id=observation_id,
-                        on_stage=_push_stage_buf,
-                        use_mini=use_mini,
-                    ):
-                        while _stage_buf:
-                            yield f"data: {_json_dumps({'stage': _stage_buf.popleft()})}\n\n"
-                        if is_done == "interrupt":
-                            yield f"data: {_json_dumps(_interrupt_event(token))}\n\n"
-                            return
-                        elif is_done:
-                            sources = src
-                        else:
-                            full_response += token
-                            yield f"data: {_json_dumps({'token': token})}\n\n"
-                    # Flush any remaining stages (e.g. from non-streaming agents)
+                async for token, is_done, src in route_agent_stream(
+                    req.message,
+                    conv.thread_id,
+                    req.document_ids,
+                    trace_id=trace_id,
+                    observation_id=observation_id,
+                    on_stage=_push_stage,
+                    on_route=_on_route,
+                    previous_agent_name=prev_agent,
+                    bypass_cache=req.bypass_cache,
+                    use_mini=use_mini,
+                ):
+                    if not _initial_emitted:
+                        yield f"data: {_json_dumps({'thread_id': conv.thread_id, **route_payload})}\n\n"
+                        _initial_emitted = True
                     while _stage_buf:
                         yield f"data: {_json_dumps({'stage': _stage_buf.popleft()})}\n\n"
-                    route_payload["agent_observation_id"] = observation_id
+                    if is_done == "interrupt":
+                        yield f"data: {_json_dumps(_interrupt_event(token))}\n\n"
+                        return
+                    elif is_done:
+                        sources = src
+                    else:
+                        full_response += token
+                        yield f"data: {_json_dumps({'token': token})}\n\n"
+                while _stage_buf:
+                    yield f"data: {_json_dumps({'stage': _stage_buf.popleft()})}\n\n"
+                route_payload["agent_observation_id"] = observation_id
 
-                    # ── Stream handoff: retrieval → research ─────────────────
             except Exception as e:
                 yield f"data: {_json_dumps({'error': str(e)})}\n\n"
                 # Commit to persist any conversation state changes (e.g. model field)
@@ -403,7 +351,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
                 return
 
             conv.message_count = (conv.message_count or 0) + 2
-            conv.last_agent_name = route_payload.get("agent_name") or route.agent_name
+            conv.last_agent_name = route_payload.get("agent_name")
 
             # Generate title for new conversations using the message pair just exchanged.
             title = conv.title
@@ -420,6 +368,8 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
             await asyncio.to_thread(db.commit)
             yield f"data: {_json_dumps({'done': True, 'sources': sources, 'title': title, **route_payload})}\n\n"
         finally:
+            _gate.release()
+            chat_jobs.finish(conv.thread_id)
             def _clear_stream_lock():
                 try:
                     conv.stream_started_at = None
@@ -429,6 +379,25 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
             await asyncio.to_thread(_clear_stream_lock)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.get("/api/chat/active")
+def get_active_chats(current_user: User = Depends(get_current_user)):
+    """Return currently streaming chat sessions for this user."""
+    return [j for j in chat_jobs.get_active() if j.get("user_id") == str(current_user.id)]
+
+
+@router.post("/api/chat/{thread_id}/cancel")
+async def cancel_chat(thread_id: str, current_user: User = Depends(get_current_user),
+                      db: Session = Depends(get_db)):
+    conv = db.query(Conversation).filter(
+        Conversation.thread_id == thread_id,
+        Conversation.user_id == str(current_user.id),
+    ).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    ok = chat_jobs.request_cancel(thread_id)
+    return {"ok": ok, "thread_id": thread_id}
 
 
 @router.get("/api/conversations")

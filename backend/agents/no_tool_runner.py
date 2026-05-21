@@ -15,7 +15,7 @@ from langchain_openai import AzureChatOpenAI
 from langfuse import propagate_attributes
 
 from config import settings
-from observability import ainvoke_traced_generation
+from observability import ainvoke_traced_generation, astream_traced_generation
 from prompting.loader import load_stack
 
 from .request_context import get_user_id
@@ -143,12 +143,25 @@ def _write_trace(
             db.rollback()
 
 
+def _get_document_abstracts(document_ids: list[int]) -> list[dict]:
+    from db import db_session
+    from db.models import Document as DocModel
+    with db_session() as db:
+        rows = (
+            db.query(DocModel.id, DocModel.filename, DocModel.abstract_text)
+            .filter(DocModel.status == "ready", DocModel.id.in_(document_ids))
+            .all()
+        )
+    return [{"filename": r.filename, "abstract": r.abstract_text} for r in rows if r.abstract_text]
+
+
 def _prepare_no_tool_call(
     *,
     user_message: str,
     stack_name: str,
     agent_name: str,
     task_type: str,
+    document_ids: list[int] | None = None,
     extra_system_messages: list[str] | None = None,
     payload: dict | None = None,
     sources: list[str] | None = None,
@@ -166,6 +179,13 @@ def _prepare_no_tool_call(
         "sources": sources or [],
     }
     messages = [SystemMessage(content=content) for content in stack.contents]
+    if document_ids:
+        abstracts = _get_document_abstracts(document_ids)
+        if abstracts:
+            block = "\n\n".join(f"【{a['filename']}】\n{a['abstract']}" for a in abstracts)
+            messages.append(SystemMessage(content=(
+                "以下是本次對話引用的文件摘要，請以此作為背景資訊回答問題：\n\n" + block
+            )))
     for content in extra_system_messages or []:
         if content:
             messages.append(SystemMessage(content=content))
@@ -199,6 +219,7 @@ async def run_no_tool_agent(
         stack_name=stack_name,
         agent_name=agent_name,
         task_type=task_type,
+        document_ids=document_ids,
         extra_system_messages=extra_system_messages,
         payload=payload,
         sources=sources,
@@ -215,13 +236,14 @@ async def run_no_tool_agent(
 
     try:
         llm_start = datetime.now(timezone.utc)
+        _llm_instance = _llm(use_mini=use_mini)
         with propagate_attributes(
             session_id=thread_id,
             user_id=get_user_id(),
             version=metadata.get("prompt_version"),
         ) if thread_id else contextlib.nullcontext():
             response = await ainvoke_traced_generation(
-                _llm(use_mini=use_mini),
+                _llm_instance,
                 messages,
                 prompt_name=prompt_name,
                 name=f"AzureChatOpenAI {agent_name}",
@@ -232,18 +254,14 @@ async def run_no_tool_agent(
         result_sources = sources or []
         output = {"answer": content, "sources": result_sources}
 
-        # Extract token usage from LLM response
         token_usage = getattr(response, "response_metadata", {}).get("token_usage", {})
         if not token_usage:
             token_usage = getattr(response, "usage_metadata", {}) or {}
         prompt_tokens = token_usage.get("prompt_tokens") or token_usage.get("input_tokens")
         completion_tokens = token_usage.get("completion_tokens") or token_usage.get("output_tokens")
-
-        # Write GENERATION observation (child of the agent SPAN)
         if trace_id and (prompt_tokens or completion_tokens):
             try:
                 from services.trace_ingestion import TraceEventIngestor as _TEI
-                llm_instance = _llm(use_mini=use_mini)
                 _TEI.enqueue_sync([{
                     "event_type": "observation-create",
                     "body": {
@@ -254,7 +272,7 @@ async def run_no_tool_agent(
                         "type": "GENERATION",
                         "name": f"AzureChatOpenAI {agent_name}",
                         "model": settings.azure_mini_deployment if use_mini else settings.azure_chat_deployment,
-                        "model_parameters": {"temperature": llm_instance.temperature},
+                        "model_parameters": {"temperature": _llm_instance.temperature},
                         "prompt_tokens": prompt_tokens,
                         "completion_tokens": completion_tokens,
                         "total_tokens": (prompt_tokens or 0) + (completion_tokens or 0),
@@ -315,6 +333,7 @@ async def stream_no_tool_agent(
         stack_name=stack_name,
         agent_name=agent_name,
         task_type=task_type,
+        document_ids=document_ids,
         extra_system_messages=extra_system_messages,
         payload=payload,
         sources=sources,
@@ -339,14 +358,16 @@ async def stream_no_tool_agent(
             user_id=get_user_id(),
             version=metadata.get("prompt_version"),
         ) if thread_id else contextlib.nullcontext():
-            async for chunk in llm_instance.astream(messages):
-                token = getattr(chunk, "content", None)
-                if token:
-                    token_text = str(token)
-                    if completion_start_time is None:
-                        completion_start_time = datetime.now(timezone.utc)
-                    content += token_text
-                    yield token_text
+            async for token_text in astream_traced_generation(
+                llm_instance, messages,
+                prompt_name=prompt_name,
+                name=f"AzureChatOpenAI {agent_name}",
+                metadata=metadata,
+            ):
+                if completion_start_time is None:
+                    completion_start_time = datetime.now(timezone.utc)
+                content += token_text
+                yield token_text
         stream_end = datetime.now(timezone.utc)
         result_sources = sources or []
         _write_trace(

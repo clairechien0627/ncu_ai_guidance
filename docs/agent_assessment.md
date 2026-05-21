@@ -9,7 +9,7 @@
 ## 12-Factor Agents 對照
 
 | # | Factor | 說明 | 評分 | 備註 |
-|---|--------|------|------|------|
+| --- | -------- | ------ | ------ | ------ |
 | 1 | Natural Language → Tool Calls | NL 轉結構化工具指令 | ✅ | `_orchestrate()` → `RouterDecision(agent_name)`；工具用 Pydantic schema |
 | 2 | Own Your Prompts | Prompt 版本控制 | ✅ | `prompts/` 目錄 + Langfuse versioning + 本地 txt fallback |
 | 3 | Own Your Context Window | 主動管理 context | ✅ 強 | Summarization/ContextEditing middleware；memory_service 三層記憶 |
@@ -31,7 +31,7 @@
 
 ### 記憶體系（完全自足，可移植）
 
-```
+```text
 LangGraph checkpoint     ← 完整對話訊息歷史
 Conversation.context_summary   ← research 摘要（短期記憶）
 Conversation.last_agent_name   ← routing state（本次新增）
@@ -47,7 +47,7 @@ Agent 核心完全不讀 trace 做決策；trace 系統僅作 observability 用�
 
 ### 路由架構
 
-```
+```text
 route_request()          ← 公開 API（Orchestrator LLM 決策）
   └─ _orchestrate()      ← 帶 document context + agent_status
       └─ _route_for_agent() → AgentRoute

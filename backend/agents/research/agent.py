@@ -10,10 +10,8 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 
 from langchain_openai import AzureChatOpenAI
-from sqlalchemy.exc import IntegrityError
-
 from config import settings
-from db import Document, db_session, Trace
+from db import Document, db_session  # Trace imported lazily inside _write_trace
 from prompting.registry import resolve
 from tools.rag_tool import set_query_expander_llm
 
@@ -530,6 +528,9 @@ def _write_trace(
     import os
     if os.environ.get("LEGACY_TRACE_WRITE", "true").lower() in ("0", "false", "no"):
         return
+
+    from db import Trace  # lazy — not needed when LEGACY_TRACE_WRITE=0
+    from sqlalchemy.exc import IntegrityError
 
     db = None
     try:
