@@ -207,6 +207,40 @@ def _prompt_key(thread_id: str | None, document_ids: list[int] | None) -> str:
 
 
 
+async def _escalation_route_for(
+    result: AgentResult,
+    route: AgentRoute,
+    user_message: str,
+    document_ids: list[int] | None,
+    thread_id: str | None,
+    hop_count: int,
+    visited_agents: frozenset[str],
+) -> AgentRoute | None:
+    """Return an escalation AgentRoute if the result warrants re-routing, else None.
+
+    Guards against ping-pong: will not suggest an agent that has already been
+    visited in this request chain (_visited_agents).
+    """
+    if result.status.completed or not document_ids or hop_count + 1 >= MAX_HANDOFFS:
+        return None
+    decision = await _orchestrate(
+        user_message,
+        has_docs=True,
+        document_ids=document_ids,
+        previous_agent=route.agent_name,
+        agent_status=result.status,
+    )
+    if decision.agent_name == route.agent_name or decision.agent_name in visited_agents:
+        logger.debug(
+            "escalation skipped: agent=%s already_visited=%s",
+            decision.agent_name, visited_agents,
+        )
+        return None
+    return _route_for_agent(
+        decision.agent_name, document_ids, thread_id, evaluate_after=decision.evaluate_after
+    )
+
+
 def _allows_background_evaluation(agent_name: str, has_docs: bool) -> bool:
     """Deterministic gate for router-triggered background evaluation.
 
@@ -536,6 +570,7 @@ async def route_agent_message(
     route: AgentRoute | None = None,
     trace_id: str | None = None,
     _hop_count: int = 0,
+    _visited_agents: frozenset[str] = frozenset(),
     use_mini: bool = False,
 ) -> AgentResult:
     with propagate_attributes(session_id=thread_id, user_id=get_user_id()) if thread_id else contextlib.nullcontext():
@@ -613,32 +648,18 @@ async def route_agent_message(
                     trace_id=step.trace_id,
                     use_mini=use_mini,
                 )
-                # Re-routing: if retrieval did not complete and docs are available,
-                # ask orchestrator whether to escalate to a different agent.
-                if not result.status.completed and document_ids and _hop_count + 1 < MAX_HANDOFFS:
-                    escalation_decision = await _orchestrate(
-                        user_message,
-                        has_docs=bool(document_ids),
-                        document_ids=document_ids,
-                        previous_agent=route.agent_name,
-                        agent_status=result.status,
+                escalation_route = await _escalation_route_for(
+                    result, route, user_message, document_ids, thread_id,
+                    _hop_count, _visited_agents | {route.agent_name},
+                )
+                if escalation_route is not None:
+                    return await route_agent_message(
+                        user_message, thread_id, document_ids,
+                        route=escalation_route, trace_id=trace_id,
+                        _hop_count=_hop_count + 1,
+                        _visited_agents=_visited_agents | {route.agent_name},
+                        use_mini=use_mini,
                     )
-                    if escalation_decision.agent_name != route.agent_name:
-                        escalation_route = _route_for_agent(
-                            escalation_decision.agent_name,
-                            document_ids,
-                            thread_id,
-                            evaluate_after=escalation_decision.evaluate_after,
-                        )
-                        return await route_agent_message(
-                            user_message,
-                            thread_id,
-                            document_ids,
-                            route=escalation_route,
-                            trace_id=trace_id,
-                            _hop_count=_hop_count + 1,
-                            use_mini=use_mini,
-                        )
             else:
                 result = await chat_agent.answer(
                     user_message,
@@ -698,6 +719,7 @@ async def route_agent_stream(
     trace_id: str | None = None,
     observation_id: str | None = None,
     _hop_count: int = 0,
+    _visited_agents: frozenset[str] = frozenset(),
     use_mini: bool = False,
 ) -> AsyncIterator[tuple[str, bool, list[str]]]:
     with propagate_attributes(session_id=thread_id, user_id=get_user_id()) if thread_id else contextlib.nullcontext():
@@ -794,34 +816,20 @@ async def route_agent_stream(
                 trace_id=step.trace_id,
                 use_mini=use_mini,
             )
-            # Re-routing: if retrieval did not complete and docs are available,
-            # ask orchestrator whether to escalate to a different agent.
-            if not _retrieval_result.status.completed and document_ids and _hop_count + 1 < MAX_HANDOFFS:
-                _escalation_decision = await _orchestrate(
-                    user_message,
-                    has_docs=bool(document_ids),
-                    document_ids=document_ids,
-                    previous_agent=route.agent_name,
-                    agent_status=_retrieval_result.status,
-                )
-                if _escalation_decision.agent_name != route.agent_name:
-                    _escalation_route = _route_for_agent(
-                        _escalation_decision.agent_name,
-                        document_ids,
-                        thread_id,
-                        evaluate_after=_escalation_decision.evaluate_after,
-                    )
-                    async for item in route_agent_stream(
-                        user_message,
-                        thread_id,
-                        document_ids,
-                        route=_escalation_route,
-                        trace_id=trace_id,
-                        _hop_count=_hop_count + 1,
-                        use_mini=use_mini,
-                    ):
-                        yield item
-                    return
+            _escalation_route = await _escalation_route_for(
+                _retrieval_result, route, user_message, document_ids, thread_id,
+                _hop_count, _visited_agents | {route.agent_name},
+            )
+            if _escalation_route is not None:
+                async for item in route_agent_stream(
+                    user_message, thread_id, document_ids,
+                    route=_escalation_route, trace_id=trace_id,
+                    _hop_count=_hop_count + 1,
+                    _visited_agents=_visited_agents | {route.agent_name},
+                    use_mini=use_mini,
+                ):
+                    yield item
+                return
             yield _retrieval_result.response, False, []
             last_sources = _retrieval_result.sources
         else:

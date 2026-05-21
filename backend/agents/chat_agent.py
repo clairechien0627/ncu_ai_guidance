@@ -231,7 +231,10 @@ async def compose_final_response(
             prompt_name=str(metadata.get("prompt_name", PROMPT_NAME)),
             prompt_version=str(metadata.get("prompt_version", "unknown")),
             observation_id=observation_id,
-            status=AgentStatus(completed=True, work_summary="直接從對話 context 回答。"),
+            status=AgentStatus(
+                completed=True,
+                work_summary="從對話 context 和文件摘要回答。" if document_ids else "從對話 context 回答（無文件）。",
+            ),
         )
     except Exception as exc:
         _write_composition_trace(
