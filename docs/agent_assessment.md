@@ -23,13 +23,14 @@
 | 11 | Trigger from Anywhere | 任何地方觸發 | 🟡 | 目前只有 HTTP；無 webhook / message queue |
 | 12 | Stateless Reducer | Agent 是純函式 | 🟡 | `AgentResult` frozen dataclass（好）；`runner.py` 有全局 LLM/checkpointer 單例 |
 
-**符合 9/12，部分符合 3/12，缺失 0/12**
+## 總結：符合 9/12，部分符合 3/12，缺失 0/12
 
 ---
 
 ## 架構優點
 
 ### 記憶體系（完全自足，可移植）
+
 ```
 LangGraph checkpoint     ← 完整對話訊息歷史
 Conversation.context_summary   ← research 摘要（短期記憶）
@@ -37,12 +38,15 @@ Conversation.last_agent_name   ← routing state（本次新增）
 memory_service (Qdrant)  ← 長期語意記憶
 document_research_cache  ← 文件研究快取（per-document, per-coverage）
 ```
+
 Agent 核心完全不讀 trace 做決策；trace 系統僅作 observability 用途。
 
 ### Middleware 堆疊
+
 12 層清晰的 middleware：token cap、call limit、summarization、fallback、retry、human-in-the-loop。每層職責單一，可獨立測試。
 
 ### 路由架構
+
 ```
 route_request()          ← 公開 API（Orchestrator LLM 決策）
   └─ _orchestrate()      ← 帶 document context + agent_status
@@ -50,9 +54,11 @@ route_request()          ← 公開 API（Orchestrator LLM 決策）
           └─ route_agent_message / route_agent_stream
               └─ _escalation_route_for()  ← 防 ping-pong
 ```
+
 路由決策集中在 router，agent 不知道彼此的存在。
 
 ### AgentStatus 設計
+
 每個 agent 回傳自我評估，讓 Orchestrator LLM 可以做出有根據的 re-routing 決策，而非 agent 直接指定下一步。
 
 ---
@@ -71,6 +77,7 @@ route_request()          ← 公開 API（Orchestrator LLM 決策）
 ## 剩餘改進方向
 
 ### Factor 7：Human-in-the-Loop（中優先）
+
 ```python
 # 現在
 HumanInTheLoopMiddleware(interrupt_on={})   # 未啟用
@@ -78,16 +85,20 @@ HumanInTheLoopMiddleware(interrupt_on={})   # 未啟用
 # 目標
 HumanInTheLoopMiddleware(interrupt_on={"high_risk_tool", "write_operation"})
 ```
+
 需要定義哪些 tool 呼叫需要人類確認，並在前端實作確認 UI。
 
 ### Factor 12：Runner 全局狀態（低優先）
+
 `runner.py` 的 `_checkpointer`、`_llm`、`_tool_agent` 等全局單例是模組初始化副作用。
 嚴格的 stateless reducer 設計應將這些依賴注入，但對於 Python FastAPI 服務這是可接受的折衷。
 
 ### route_agent_stream 非串流路徑
+
 `research_agent` 和 `evaluation_agent` 在 stream 函式內仍是 `await`（非真正串流），最終以 `yield result.response, False, []` 一次性輸出。未來可改為真正的 token-by-token 串流。
 
 ### 評估 Agent 獨立化
+
 `_run_evaluation_agent` 目前在 `router_agent.py` 內，本質上是 evaluation_agent 的入口點。若 evaluation 邏輯增長，可考慮移到 `evaluation_agent.py` 並提供標準的 `answer()` 介面。
 
 ---
