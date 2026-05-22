@@ -136,7 +136,9 @@ async def evaluate_output(
     )
     coverage_score = _completion_from_coverage(trace_summary)
     if coverage_score is not None:
-        result = result.model_copy(update={"completeness": coverage_score})
+        # coverage filled = retrieval found content; answer may still be shallow.
+        # Use minimum: coverage is a ceiling, not a floor.
+        result = result.model_copy(update={"completeness": min(result.completeness, coverage_score)})
     return result.model_copy(update={"overall": _weighted_overall(result)})
 
 
