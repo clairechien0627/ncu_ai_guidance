@@ -209,7 +209,6 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db),
             req.document_ids,
             route=route,
             trace_id=trace_id,
-            _hop_count=0,
             use_mini=use_mini,
         )
         response, sources = result.response, result.sources
@@ -275,6 +274,8 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
         db.commit()
     await asyncio.to_thread(_set_stream_lock)
     chat_jobs.start(conv.thread_id, req.message, user_id=str(current_user.id), title=conv.title)
+    from services.job_service import push_jobs as _push_jobs
+    asyncio.create_task(_push_jobs())
 
     is_new = req.thread_id is None
     set_user_id(str(current_user.id))
@@ -370,6 +371,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
         finally:
             _gate.release()
             chat_jobs.finish(conv.thread_id)
+            asyncio.create_task(_push_jobs())
             def _clear_stream_lock():
                 try:
                     conv.stream_started_at = None
