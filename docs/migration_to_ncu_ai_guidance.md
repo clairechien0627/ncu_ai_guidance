@@ -2,13 +2,13 @@
 
 ## 遷移目標
 
-將 `D:\try\backend` 的 multi-agent chat 核心（路由、串流、多輪對話、取消機制、tracing）整合進 `D:\try\_reference\ncu_ai_guidance` 的 Projects 頁 AI 對話區，使其具備與 PDF Chat 相同的基礎能力。
+將 `D:\try\backend` 的 multi-agent chat 核心（路由、串流、多輪對話、取消機制）整合進 `D:\try\_reference\ncu_ai_guidance` 的 Projects 頁 AI 對話區，使其具備與 PDF Chat 相同的基礎能力。
 
 **不在本次遷移範圍內：**
 - 文件處理 pipeline（upload / parse / extract / reindex / job queue）
 - Qdrant chunk 索引與 PDF 段落搜尋工具
 - Alembic migration history（僅攜帶必要的新 migration）
-- Langfuse / LangSmith observability（可選，本文標示 `[選用]`）
+- **Tracing 基礎設施**（Langfuse / LangSmith / LocalTracer / TraceV2 / Observation / Score / TraceEventOutbox 等，完整排除）
 - Research Graph（LangGraph multi-hop 研究流程，目前課程場景不需要）
 - 評估實驗框架（EvaluationRun / Dataset / ExperimentRun）
 
@@ -94,11 +94,10 @@ chat_turns    : session_id, user_msg, assistant_msg, course_cards,
 | 表格 | 用途 | 優先度 |
 |------|------|--------|
 | `conversations` | 取代 `chat_sessions`，記錄 thread_id、last_agent_name、steering lock | 必要 |
-| `agent_messages` | 每輪 Q&A 輕量記錄（供 evaluation_agent 評估） | 必要 |
-| `traces_v2` | Multi-agent run 根 trace（輕量 observability） | 建議 |
-| `observations` | 各 agent span 詳情（LLM tokens、latency） | 建議 |
-| `scores` | evaluation_agent 輸出的品質分數 | 建議 |
-| `trace_events_outbox` | 非同步 trace 寫入佇列 | 若用 tracing 則必要 |
+| `agent_messages` | 每輪 Q&A 輕量記錄（供 evaluation_agent 事後評估用） | 必要 |
+
+**不需要的表格（tracing 排除）：**  
+`traces_v2`、`observations`、`scores`、`trace_events_outbox` 全部不遷移。evaluation_agent 的輸出不寫 Score 表，改為直接回傳給前端或記在 `agent_messages.trace_summary` 欄位即可。
 
 **是否廢棄現有表格？**  
 `chat_sessions` 和 `chat_turns` 建議保留並平行運行，舊版 chat endpoint 繼續用舊表，新版 multi-agent endpoint 用新表。等驗證穩定後再遷移歷史資料或棄用舊表。
@@ -138,74 +137,7 @@ def upgrade():
     )
 ```
 
-```python
-# alembic/versions/002_add_tracing.py  （若需要 observability）
-def upgrade():
-    op.create_table(
-        'traces_v2',
-        sa.Column('id', sa.Integer(), primary_key=True),
-        sa.Column('trace_id', sa.String(), unique=True, nullable=False, index=True),
-        sa.Column('name', sa.String(), nullable=False),
-        sa.Column('thread_id', sa.String(), nullable=True, index=True),
-        sa.Column('user_id', sa.String(), nullable=True, index=True),
-        sa.Column('environment', sa.String(40), nullable=False, default='default'),
-        sa.Column('input', postgresql.JSONB(), nullable=True),
-        sa.Column('output', postgresql.JSONB(), nullable=True),
-        sa.Column('metadata', postgresql.JSONB(), nullable=True),
-        sa.Column('start_time', sa.DateTime(), nullable=False, index=True),
-        sa.Column('end_time', sa.DateTime(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=False),
-        sa.Column('updated_at', sa.DateTime(), nullable=False),
-    )
-
-    op.create_table(
-        'observations',
-        sa.Column('id', sa.Integer(), primary_key=True),
-        sa.Column('observation_id', sa.String(), unique=True, nullable=False, index=True),
-        sa.Column('trace_id', sa.String(), nullable=False, index=True),
-        sa.Column('parent_observation_id', sa.String(), nullable=True, index=True),
-        sa.Column('type', sa.String(), nullable=False),
-        sa.Column('name', sa.String(), nullable=False),
-        sa.Column('level', sa.String(20), nullable=False, default='DEFAULT'),
-        sa.Column('input', postgresql.JSONB(), nullable=True),
-        sa.Column('output', postgresql.JSONB(), nullable=True),
-        sa.Column('metadata', postgresql.JSONB(), nullable=True),
-        sa.Column('model', sa.String(), nullable=True),
-        sa.Column('prompt_tokens', sa.Integer(), nullable=True),
-        sa.Column('completion_tokens', sa.Integer(), nullable=True),
-        sa.Column('input_cost', sa.Float(), nullable=True),
-        sa.Column('output_cost', sa.Float(), nullable=True),
-        sa.Column('status_message', sa.Text(), nullable=True),
-        sa.Column('start_time', sa.DateTime(), nullable=False),
-        sa.Column('end_time', sa.DateTime(), nullable=True),
-    )
-
-    op.create_table(
-        'scores',
-        sa.Column('id', sa.Integer(), primary_key=True),
-        sa.Column('score_id', sa.String(), unique=True, nullable=False, index=True),
-        sa.Column('trace_id', sa.String(), nullable=True, index=True),
-        sa.Column('observation_id', sa.String(), nullable=True, index=True),
-        sa.Column('name', sa.String(), nullable=False),
-        sa.Column('value', sa.Float(), nullable=False),
-        sa.Column('timestamp', sa.DateTime(), nullable=False, index=True),
-    )
-
-    op.create_table(
-        'trace_events_outbox',
-        sa.Column('id', sa.Integer(), primary_key=True),
-        sa.Column('event_id', sa.String(), unique=True, nullable=False),
-        sa.Column('event_type', sa.String(), nullable=False),
-        sa.Column('body', postgresql.JSONB(), nullable=False),
-        sa.Column('status', sa.String(20), default='pending'),
-        sa.Column('attempts', sa.Integer(), default=0),
-        sa.Column('last_error', sa.Text(), nullable=True),
-        sa.Column('locked_at', sa.DateTime(), nullable=True),
-        sa.Column('locked_by', sa.String(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=False),
-        sa.Column('processed_at', sa.DateTime(), nullable=True),
-    )
-```
+（Tracing 相關表格：`traces_v2`、`observations`、`scores`、`trace_events_outbox` 不遷移，無需建立此 migration。）
 
 **是否需要為目標系統引入 Alembic？**  
 是。目標系統目前用直接建表，但新增 multi-agent 所需的表格之後，未來維護需要版本化的 migration。建議在本次遷移時同步設置 Alembic。
@@ -238,16 +170,15 @@ def upgrade():
 | `agents/no_tool_runner.py` | `app/agents/no_tool_runner.py` | 見 §2.2.5 |
 | `agents/runner.py` | `app/agents/runner.py` | 見 §2.2.6 |
 | `services/memory_service.py` | `app/services/memory_service.py` | 見 §2.2.7 |
-| `services/trace_capture.py` | `app/services/trace_capture.py` | 見 §2.2.8 |
-| `services/trace_ingestion.py` | `app/services/trace_ingestion.py` | 見 §2.2.8 |
-| `services/trace_repositories.py` | `app/services/trace_repositories.py` | 見 §2.2.8 |
-| `services/quota_service.py` | `app/services/quota_service.py` | 見 §2.2.9 |
-| `observability/__init__.py` | `app/observability/__init__.py` | 見 §2.2.10 |
-| `api/chat.py` | `app/routes/chat.py` | 見 §2.2.11 |
-| `db/models.py`（部分） | `app/models/db_models.py` | 見 §2.2.12 |
-| `config.py` | `app/config.py` | 見 §2.2.13 |
-| `main.py`（lifespan 部分） | `app/main.py` | 見 §2.2.14 |
+| `services/quota_service.py` | `app/services/quota_service.py` | 見 §2.2.8 |
+| `api/chat.py` | `app/routes/chat.py` | 見 §2.2.9 |
+| `db/models.py`（部分） | `app/models/db_models.py` | 見 §2.2.10 |
+| `config.py` | `app/config.py` | 見 §2.2.11 |
+| `main.py`（lifespan 部分） | `app/main.py` | 見 §2.2.12 |
 | `logging_config.py` | `app/logging_config.py` | 直接複製 |
+
+**不遷移（tracing 排除）：**  
+`services/trace_capture.py`、`services/trace_ingestion.py`、`services/trace_repositories.py`、`services/trace_read/`、`observability/__init__.py` 全部不搬。agent 程式碼中凡是呼叫 `TraceEventIngestor.enqueue_sync()`、`_write_router_trace()`、`ainvoke_traced_generation()`、`@observe` decorator 的地方，遷移時一律移除或替換為空操作。
 
 #### C. 重新撰寫（不適合直接移植）
 
@@ -306,7 +237,7 @@ def upgrade():
 
 1. **基本上可直接複製**，評估邏輯是通用的
 
-2. **`_trace_payload()` 和 `evaluate_trace_by_observation_id()`**：這兩個函式讀舊版 `Trace` 表；目標系統只有 `traces_v2`，需移除或只保留 `TraceV2` 查詢路徑
+2. **`_trace_payload()`、`evaluate_trace_by_observation_id()`、`score_trace()`**：這三個函式讀 Trace / TraceV2 表，tracing 不遷移，直接刪除。只保留 `evaluate_output()` 和 `format_evaluation_for_user()`。
 
 3. **`evaluate_latest_thread_message()`**：讀 `AgentMessage` 表，需確認表格有建立
 
@@ -338,31 +269,13 @@ def upgrade():
 
 4. pgvector 部分（`ensure_memory_collection()`）：若目標 PostgreSQL 有安裝 pgvector 擴充則可用，否則簡化為不使用向量記憶
 
-#### §2.2.8 Tracing 相關 (`trace_capture`, `trace_ingestion`, `trace_repositories`)
+#### §2.2.8 `services/quota_service.py` 修改點
 
-這三個檔案是 multi-agent observability 的骨幹，**整體可複製**，但需要注意：
-
-1. `trace_capture.py` 的 `LocalTracer`：來源用 LangChain `BaseCallbackHandler` 攔截所有 LangGraph 節點呼叫；課程場景若不用 LangGraph，這部分可以 stubbed（傳 `tracer=None` 給 agent 呼叫）
-
-2. `trace_ingestion.py` 的 `_worker_session()`：使用來源系統的 `SessionLocal`；需改為目標系統的 session factory
-
-3. `trace_repositories.py` 的 `TraceRepository`：讀寫 `TraceV2` 表，只需確認 ORM model 名稱一致
-
-4. **最簡方案**：若暫時不需要完整 observability，可只保留 `AgentMessage` 寫入（記錄每輪問答），跳過 `TraceV2`/`Observation` 的雙寫
-
-#### §2.2.9 `services/quota_service.py` 修改點
-
-1. 來源讀 `Trace` 表統計當日 token 用量；目標可改為讀 `agent_messages` 表的記錄數，或直接略去（Render 付費方案通常不需要 token 配額）
+1. 來源讀 `Trace` 表統計當日 token 用量；tracing 不遷移，改為讀 `agent_messages` 表的記錄數，或直接略去（Render 付費方案通常不需要 token 配額）
 
 2. 若不需要 quota 檢查，在 `api/chat.py` 移除 `check_quota()` 呼叫即可
 
-#### §2.2.10 `observability/__init__.py` 修改點
-
-1. 直接複製，但確認 `LANGFUSE_*` 環境變數在 Render 有設置
-
-2. 若不用 Langfuse，設定 `LANGFUSE_ENABLED=false`，相關函式會自動 stub（來源已有 graceful fallback）
-
-#### §2.2.11 `api/chat.py` 整合進 `app/routes/chat.py`
+#### §2.2.9 `api/chat.py` 整合進 `app/routes/chat.py`
 
 這是最複雜的整合點，需要把來源的 multi-agent 流程接入目標已有的 chat endpoint：
 
@@ -453,11 +366,11 @@ async def chat_stream(req: ChatRequest,
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 ```
 
-#### §2.2.12 DB Models 整合
+#### §2.2.10 DB Models 整合
 
 來源的 `db/models.py` 有很多文件相關的 model（Document、JobHistory、DocumentExtraction 等）**不需要**遷移。
 
-需要遷移的 ORM class：
+需要遷移的 ORM class（僅這兩個）：
 
 ```python
 # app/models/agent_models.py（新增）
@@ -469,25 +382,11 @@ class Conversation(Base):
 class AgentMessage(Base):
     __tablename__ = "agent_messages"
     # ... 欄位同 §2.1 DDL
-
-class TraceV2(Base):    # [選用]
-    __tablename__ = "traces_v2"
-    # ...
-
-class Observation(Base):  # [選用]
-    __tablename__ = "observations"
-    # ...
-
-class Score(Base):       # [選用]
-    __tablename__ = "scores"
-    # ...
-
-class TraceEventOutbox(Base):  # [若用 trace_ingestion]
-    __tablename__ = "trace_events_outbox"
-    # ...
 ```
 
-#### §2.2.13 `config.py` 修改點
+`TraceV2`、`Observation`、`Score`、`TraceEventOutbox` 不需要建立。
+
+#### §2.2.11 `config.py` 修改點
 
 目標已有 `AZURE_OPENAI_API_KEY`、`AZURE_OPENAI_ENDPOINT` 等。需確認或新增：
 
@@ -503,13 +402,11 @@ DATABASE_URL
 AZURE_MINI_DEPLOYMENT      # gpt-4o-mini，用於 composition / evaluation
 JWT_SECRET_KEY             # 若要支援 JWT auth（除了 Firebase）
 JWT_ALGORITHM              # HS256
-LANGFUSE_ENABLED           # true/false
-LANGFUSE_PUBLIC_KEY        # [選用]
-LANGFUSE_SECRET_KEY        # [選用]
 REDIS_URL                  # [選用] 快取用
+# Langfuse / LangSmith 相關變數：不需要（tracing 不遷移）
 ```
 
-#### §2.2.14 `main.py` lifespan 修改
+#### §2.2.12 `main.py` lifespan 修改
 
 ```python
 # app/main.py（新增至 lifespan）
@@ -521,18 +418,16 @@ async def lifespan(app: FastAPI):
 
     # 新增
     from agents.runner import setup_checkpointer, shutdown_checkpointer
-    from services.trace_ingestion import init_trace_ingestion_worker, stop_trace_ingestion_worker
     from services.memory_service import ensure_memory_collection  # [選用]
     from services.redis_service import init_redis, close_redis    # [選用]
 
     await setup_checkpointer()      # LangGraph checkpointer
     ensure_memory_collection()      # [選用] pgvector
     await init_redis()              # [選用]
-    init_trace_ingestion_worker()   # 背景寫 Trace 的 worker
+    # trace_ingestion_worker 不需要（tracing 不遷移）
 
     yield
 
-    await stop_trace_ingestion_worker()
     await shutdown_checkpointer()
     await close_redis()  # [選用]
 ```
@@ -742,15 +637,13 @@ for (const line of lines) {
 | Redis | ❌ 無 | Render 上加 Redis 附加服務（或暫時跳過 Redis 功能） |
 | Qdrant | ✅ 已有 | 不需改動（課程向量索引保持） |
 | LangGraph checkpointer | ❌ 無 | 用 PostgreSQL 建立（Render 已有 pg） |
-| Langfuse | ❌ 無 | 可選：在 cloud.langfuse.com 建立 project，設定環境變數 |
+| Langfuse | ❌ 無 | 不需要（tracing 不遷移） |
 
 **Render 需要新增的環境變數：**
 ```
 AZURE_MINI_DEPLOYMENT    = gpt-4o-mini
 JWT_SECRET_KEY           = <隨機字串，若要支援 JWT>
-LANGFUSE_ENABLED         = true
-LANGFUSE_PUBLIC_KEY      = pk-lf-...
-LANGFUSE_SECRET_KEY      = sk-lf-...
+# Langfuse 相關環境變數：不需要
 ```
 
 **Build command 更新（加上 Alembic migration）：**
@@ -778,9 +671,6 @@ langchain-core>=0.2.0
 langchain-openai>=0.1.0
 langgraph>=0.1.0           # LangGraph checkpointer
 langchain>=0.2.0           # 若 runner.py 用到 LangChain agents
-
-# Observability
-langfuse>=2.0.0            # 選用
 
 # Database / Schema
 alembic>=1.13.0            # Migration 管理
@@ -814,8 +704,7 @@ python-jose[cryptography]>=3.3.0  # 若需要 JWT 支援
 2. 複製 `agents/types.py`、`agents/steering.py`、`agents/chat_jobs.py`、`agents/request_context.py`
 3. 複製 `services/llm_gate.py`
 4. 複製並修改 `services/memory_service.py`（移除 document cache 部分）
-5. 複製並修改 `services/trace_ingestion.py`（改 session factory）[選用]
-6. 更新 `app/config.py` 加入新環境變數
+5. 更新 `app/config.py` 加入新環境變數
 7. 確認可 import 不報錯
 
 ### 階段三：提示系統（0.5 天）
