@@ -160,7 +160,9 @@ def _persist_doc_job(doc_id: int) -> None:
 
 async def push_jobs():
     from agents.chat_jobs import get_active as _get_chat_jobs
-    payload = {"jobs": _active_jobs, "chat_jobs": _get_chat_jobs()}
+    with _jobs_lock:
+        snapshot = list(_active_jobs)
+    payload = {"jobs": snapshot, "chat_jobs": _get_chat_jobs()}
     data = json.dumps(payload)
     await _push_jobs_payload(data)
 

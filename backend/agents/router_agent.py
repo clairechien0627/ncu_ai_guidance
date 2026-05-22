@@ -1020,6 +1020,8 @@ async def route_agent_stream(
                                 yield val, False, []
                             streamed_tokens = True
 
+                    if rtask.cancelled():
+                        raise asyncio.CancelledError("research task was cancelled")
                     if rtask.exception():
                         raise rtask.exception()
                     research_result = rtask.result()
