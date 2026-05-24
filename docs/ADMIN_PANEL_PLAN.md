@@ -181,14 +181,14 @@ Documents ──→ Jobs                  Prompts ──→ Prompt Metrics
 
 - 19 欄可自訂寬度表格，12 個 filter 維度
 - Bulk eval（批次評分）、Bulk delete
-- Obs. Levels 顯示子觀察健康狀態
-- Level 欄（ERROR/WARNING/DEFAULT/DEBUG）
+- Obs. Statuses 顯示子觀察健康狀態
+- Status 欄（ERROR/WARNING/DEFAULT/DEBUG）
 - 點擊行 → 側邊詳情抽屜（trace detail + observation tree）
 
 **目標：**
 
 - 任何一次使用者請求都能在這裡找到、診斷、評分
-- trace 的 input/output/latency/cost/level 一目瞭然
+- trace 的 input/output/latency/cost/status 一目瞭然
 
 **現狀評分：** ⭐⭐⭐⭐⭐ 接近 Langfuse 水準
 
@@ -342,7 +342,7 @@ Documents ──→ Jobs                  Prompts ──→ Prompt Metrics
 
 **待補充：**
 
-- [ ] Dataset 覆蓋率統計（有幾個 intent / task_type 被覆蓋）
+- [ ] Dataset 覆蓋率統計（有幾個 intent / agent_name 被覆蓋）
 - [ ] 重複 item 偵測
 - [ ] 從 Observation 層面建 dataset item（測特定步驟而非整體輸出）
 
@@ -513,7 +513,7 @@ Documents ──→ Jobs                  Prompts ──→ Prompt Metrics
 | Users | ⭐⭐⭐ 65% | 活動時間線 |
 | Scores | ⭐⭐⭐ 70% | 趨勢線、按 intent 細分 |
 | Eval Runs | ⭐⭐⭐⭐ 85% | Retry 快捷、Cost 估算 |
-| **Datasets** | ⭐⭐⭐⭐ 85% | Observation-level item |
+| **Datasets** | ⭐⭐⭐⭐ 85% | Observation item |
 | Experiments | ⭐⭐⭐⭐ 85% | 統計顯著性、Cost 對比 |
 | Documents | ⭐⭐⭐⭐ 90% | 摘要品質顯示 |
 | Prompts | ⭐⭐⭐⭐ 85% | 同步狀態、統計顯著性 |

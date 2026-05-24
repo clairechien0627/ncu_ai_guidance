@@ -28,8 +28,7 @@ class AgentRoute:
 class AgentResult:
     response: str
     sources: list[str] = field(default_factory=list)
-    task_type: str = "chat_turn"
-    agent_name: str = "chat_agent"
+    agent_name: str = "chat"
     prompt_name: str = "chat"
     prompt_version: str = "unknown"
     observation_id: str | None = None

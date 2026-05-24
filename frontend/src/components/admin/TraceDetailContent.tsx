@@ -62,6 +62,24 @@ function fmtObsOutput(v: unknown): string {
   try { return JSON.stringify(v, null, 2) } catch { return String(v) }
 }
 
+function sourcesFromTrace(trace: TraceDetail): unknown[] {
+  const outputs = trace.outputs_raw
+  if (outputs && typeof outputs === 'object' && !Array.isArray(outputs)) {
+    const raw = (outputs as Record<string, unknown>).sources
+    if (Array.isArray(raw)) return raw
+  }
+  const childSources: unknown[] = []
+  for (const child of trace.children ?? []) {
+    const output = child.outputs_raw
+    if (output && typeof output === 'object' && !Array.isArray(output)) {
+      const raw = (output as Record<string, unknown>).sources
+      if (Array.isArray(raw)) childSources.push(...raw)
+    }
+  }
+  if (childSources.length > 0) return childSources
+  return []
+}
+
 // ── Quality breakdown ─────────────────────────────────────────────────────────
 
 function QualityBars({ detail }: { detail: NonNullable<TraceDetail['quality_detail']> }) {
@@ -142,13 +160,13 @@ function FeedbackForm({ trace, onSaved }: { trace: TraceDetail; onSaved: (t: Tra
 
 function ChildSpan({ child }: { child: TraceDetail }) {
   const [open, setOpen] = useState(false)
-  const isErr = child.level === 'ERROR'
+  const isErr = child.status === 'ERROR'
   return (
     <div style={{ border: '1px solid var(--adm-border)', borderRadius: 'var(--adm-radius)', marginBottom: 6, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer', background: open ? 'var(--adm-surface-2)' : 'var(--adm-surface)' }}
         onClick={() => setOpen(o => !o)}>
         {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        <span className="adm-badge adm-badge--info" style={{ fontSize: 10, textTransform: 'uppercase' }}>{child.run_type ?? 'chain'}</span>
+        <span className="adm-badge adm-badge--info" style={{ fontSize: 10, textTransform: 'uppercase' }}>{child.type ?? 'SPAN'}</span>
         <span style={{ fontSize: 12, fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{child.name}</span>
         <div style={{ display: 'flex', gap: 8, fontSize: 11, color: 'var(--adm-text-3)', flexShrink: 0 }}>
           {child.latency != null && <span>{child.latency}s</span>}
@@ -205,16 +223,9 @@ export function TraceDetailContent({ traceId, compact = false }: Props) {
   if (isLoading) return <div style={{ padding: 32, textAlign: 'center', color: 'var(--adm-text-3)' }}><div className="adm-spinner" style={{ margin: '0 auto 8px' }} />載入中…</div>
   if (!trace) return <div style={{ padding: 32, color: 'var(--adm-red)' }}>Trace 不存在</div>
 
-  const isErr      = trace.level === 'ERROR'
-  const sources    = trace.display?.sources ?? []
+  const isErr      = trace.status === 'ERROR'
+  const sources    = sourcesFromTrace(trace)
   const hasChildren = (trace.children?.length ?? 0) > 0
-
-  const promptStack = (() => {
-    const stack = trace.prompt_stack_json
-    if (Array.isArray(stack)) return stack.map((s: any) => s.name ?? s.source_name ?? '').filter(Boolean).join(' + ')
-    if (typeof stack === 'string') { try { const arr = JSON.parse(stack); return Array.isArray(arr) ? arr.map((s: any) => s.name ?? '').join(' + ') : stack } catch { return stack } }
-    return null
-  })()
 
   const tabs: { key: Tab; label: string; show: boolean }[] = [
     { key: 'overview',  label: 'Overview',                          show: true },
@@ -227,13 +238,10 @@ export function TraceDetailContent({ traceId, compact = false }: Props) {
   const metaItems = [
     ['Agent',  trace.agent_name ?? null],
     ['Mode',    trace.mode],
-    ['Prompt',  trace.prompt_name],
-    ['Version', trace.prompt_version],
     ['Latency', trace.latency != null ? `${trace.latency}s` : null],
-    ['Tokens',  String((trace.prompt_tokens ?? 0) + (trace.completion_tokens ?? 0))],
+    ['Tokens',  String(trace.total_tokens ?? ((trace.prompt_tokens ?? 0) + (trace.completion_tokens ?? 0)))],
     ['Tools',   trace.tool_count != null ? String(trace.tool_count) : null],
     ['LLM',     trace.llm_call_count != null ? String(trace.llm_call_count) : null],
-    ['Stack',   promptStack],
     ['Time',    fmtTime(trace.start_time)],
   ].filter(([, v]) => v)
 
@@ -242,9 +250,6 @@ export function TraceDetailContent({ traceId, compact = false }: Props) {
       {/* Compact header (inside drawer) */}
       {compact && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-          <span className="adm-badge adm-badge--info" style={{ fontFamily: 'var(--adm-font-mono)', fontSize: 10 }}>
-            {trace.run_type ?? 'chain'}
-          </span>
           <span className={`adm-badge adm-badge--${isErr ? 'error' : 'completed'}`}>
             {isErr ? 'Error' : 'OK'}
           </span>

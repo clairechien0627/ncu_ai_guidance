@@ -1,12 +1,11 @@
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import or_, and_, select
 from sqlalchemy.orm import Session
 
-from db import get_db, Trace, Observation, Score, TraceV2
+from db import get_db, Observation, Score, TraceV2
 from services.datasets import DatasetService
 from services.evaluation.analytics import EvaluationAnalyticsService
 from services.evaluation.reports import EvaluationReportService
@@ -22,245 +21,9 @@ from api.dependencies import require_admin
 router = APIRouter(dependencies=[Depends(require_admin)])
 
 
-def _agent_execution_root():
-    """
-    SQLAlchemy filter condition that matches each routed agent execution root.
-
-    Supports both old data where the task agent was the DB root
-    (trace_id=None) and new data where the task agent is a child of
-    router_agent.
-    """
-    router_observation_ids = (
-        select(Trace.observation_id).where(Trace.agent_name == "router_agent").scalar_subquery()
-    )
-    return or_(
-        Trace.trace_id.in_(router_observation_ids),
-        and_(Trace.trace_id.is_(None), Trace.agent_name != "router_agent"),
-    )
-
-
 class TraceFeedbackRequest(BaseModel):
     quality_score: float | None = None
     user_feedback: str | None = None
-
-
-def _truncate(obj, max_len: int = 200) -> str | None:
-    if not obj:
-        return None
-    text = str(obj)
-    return text[:max_len] + "..." if len(text) > max_len else text
-
-
-def _latency_seconds(t: Trace) -> float | None:
-    if t.start_time and t.end_time:
-        return round((t.end_time - t.start_time).total_seconds(), 2)
-    return None
-
-
-def _trace_meta(t: Trace) -> dict:
-    prompt_stack = _parse_json(getattr(t, "prompt_stack_json", None))
-    primary_prompt = _parse_json(getattr(t, "primary_prompt_json", None))
-    workflow_prompts = _parse_json(getattr(t, "workflow_prompts_json", None))
-    return {
-        "task_type": getattr(t, "task_type", None),
-        "agent_name": getattr(t, "agent_name", None),
-        "prompt_name": getattr(t, "prompt_name", None),
-        "prompt_version": getattr(t, "prompt_version", None),
-        "base_prompt_name": getattr(t, "base_prompt_name", None),
-        "task_prompt_name": getattr(t, "task_prompt_name", None),
-        "quality_prompt_name": getattr(t, "quality_prompt_name", None),
-        "base_prompt_hash": getattr(t, "base_prompt_hash", None),
-        "task_prompt_hash": getattr(t, "task_prompt_hash", None),
-        "quality_prompt_hash": getattr(t, "quality_prompt_hash", None),
-        "prompt_stack_name": getattr(t, "prompt_stack_name", None),
-        "prompt_stack_json": prompt_stack,
-        "primary_prompt_json": primary_prompt,
-        "workflow_prompts_json": workflow_prompts,
-        "prompt_stack_tokens": getattr(t, "prompt_stack_tokens", None),
-        "tool_count": getattr(t, "tool_count", None),
-        "llm_call_count": getattr(t, "llm_call_count", None),
-        "quality_score": getattr(t, "quality_score", None),
-        "user_feedback": getattr(t, "user_feedback", None),
-        "quality_detail": _parse_quality_detail(getattr(t, "quality_detail", None)),
-    }
-
-
-def _prompt_metadata_from_display(t: Trace) -> dict:
-    if not t.display:
-        return {}
-    try:
-        display = json.loads(t.display)
-    except Exception:
-        return {}
-    if not isinstance(display, dict) or not isinstance(display.get("prompt_metadata"), dict):
-        return {}
-    return display["prompt_metadata"]
-
-
-def _display(t: Trace) -> dict | None:
-    if not t.display:
-        return None
-    try:
-        display = json.loads(t.display)
-    except Exception:
-        return None
-    if isinstance(display, dict) and isinstance(display.get("messages"), list):
-        display["messages"] = _normalize_trace_messages(display["messages"])
-    return display
-
-
-def _normalize_trace_messages(messages: list[dict]) -> list[dict]:
-    normalized: list[dict] = []
-    for msg in messages:
-        if not isinstance(msg, dict):
-            continue
-        kind = msg.get("role") or msg.get("type")
-        content = str(msg.get("content") or "")
-
-        if kind in ("system", "human"):
-            normalized.append({"role": kind, "content": content})
-        elif kind == "ai":
-            if content:
-                normalized.append({"role": "ai", "content": content})
-            tool_calls = msg.get("tool_calls") or []
-            if tool_calls:
-                normalized.append({
-                    "role": "ai_tool_call",
-                    "tool_calls": [
-                        {
-                            "tool": call.get("tool") or call.get("name") or "tool",
-                            "call_id": call.get("call_id") or call.get("id") or "",
-                            "args": call.get("args") or {},
-                        }
-                        for call in tool_calls
-                        if isinstance(call, dict)
-                    ],
-                })
-        elif kind == "ai_tool_call":
-            normalized.append({"role": "ai_tool_call", "tool_calls": msg.get("tool_calls") or []})
-        elif kind == "tool":
-            raw = msg.get("raw") or content
-            chunks = msg.get("chunks") if isinstance(msg.get("chunks"), list) else []
-            if not chunks and raw:
-                try:
-                    payload = json.loads(raw)
-                    chunks = [
-                        {
-                            "filename": chunk.get("filename", ""),
-                            "page": chunk.get("page"),
-                            "content": str(chunk.get("content", ""))[:900],
-                        }
-                        for chunk in payload.get("results", [])[:4]
-                    ]
-                except Exception:
-                    chunks = []
-            normalized.append({
-                "role": "tool",
-                "tool": msg.get("tool") or msg.get("name") or "tool",
-                "call_id": msg.get("call_id") or msg.get("tool_call_id") or "",
-                "chunks": chunks,
-                "raw": raw,
-            })
-    return normalized
-
-
-def _parse_json(text: str | None):
-    if not text:
-        return None
-    try:
-        return json.loads(text)
-    except Exception:
-        return text
-
-
-def _parse_quality_detail(value) -> dict | None:
-    if value is None:
-        return None
-    if isinstance(value, dict):
-        return value
-    try:
-        return json.loads(value)
-    except Exception:
-        return None
-
-
-def _trace_payload(t: Trace, *, include_raw: bool = False) -> dict:
-    payload = {
-        "id": t.observation_id,
-        "name": t.name,
-        "status": "error" if t.error else "success",
-        "start_time": t.start_time.isoformat() + "Z" if t.start_time else None,
-        "end_time": t.end_time.isoformat() + "Z" if t.end_time else None,
-        "latency": _latency_seconds(t),
-        "error": t.error,
-        "input": None,
-        "output": None,
-        "url": None,
-        "display": _display(t),
-        "prompt_tokens": t.prompt_tokens,
-        "completion_tokens": t.completion_tokens,
-        "input_cost": t.input_cost,
-        "output_cost": t.output_cost,
-        **_trace_meta(t),
-        "runtime_prompt_metadata": _prompt_metadata_from_display(t),
-    }
-    if t.inputs:
-        try:
-            inp = json.loads(t.inputs)
-            msgs = inp.get("messages", []) if isinstance(inp, dict) else []
-            if msgs:
-                payload["input"] = _truncate(msgs[0].get("content", ""))
-        except Exception:
-            payload["input"] = _truncate(t.inputs)
-    display = payload.get("display")
-    if isinstance(display, dict):
-        payload["output"] = _truncate(display.get("answer", ""))
-    if include_raw:
-        payload.update({
-            "run_type": t.run_type,
-            "trace_id": t.trace_id,
-            "thread_id": t.thread_id,
-            "document_ids": _parse_json(t.document_ids),
-            "inputs_raw": _parse_json(t.inputs),
-            "outputs_raw": _parse_json(t.outputs),
-        })
-    return payload
-
-
-def _clean_filter(value: str | None) -> str | None:
-    if value is None:
-        return None
-    value = value.strip()
-    return value if value and value != "all" else None
-
-
-def _matches_trace_filters(
-    t: Trace,
-    *,
-    task_type: str | None = None,
-    prompt_name: str | None = None,
-    prompt_version: str | None = None,
-    status: str | None = None,
-    min_latency: float | None = None,
-) -> bool:
-    task_type = _clean_filter(task_type)
-    prompt_name = _clean_filter(prompt_name)
-    prompt_version = _clean_filter(prompt_version)
-    status = _clean_filter(status)
-
-    if task_type and (t.task_type or "unknown") != task_type:
-        return False
-    if prompt_name and (t.prompt_name or "unknown") != prompt_name:
-        return False
-    if prompt_version and (t.prompt_version or "unknown") != prompt_version:
-        return False
-    if status == "success" and t.error:
-        return False
-    if status == "error" and not t.error:
-        return False
-    if min_latency is not None and (_latency_seconds(t) or 0) < min_latency:
-        return False
-    return True
 
 
 @router.get("/api/documents/{doc_id}/traces")
@@ -288,8 +51,7 @@ def batch_delete_traces(
         return {"deleted": 0}
     db.query(Score).filter(Score.trace_id.in_(trace_ids)).delete(synchronize_session=False)
     db.query(Observation).filter(Observation.trace_id.in_(trace_ids)).delete(synchronize_session=False)
-    db.query(TraceV2).filter(TraceV2.trace_id.in_(trace_ids)).delete(synchronize_session=False)
-    deleted = db.query(Trace).filter(Trace.observation_id.in_(trace_ids)).delete(synchronize_session=False)
+    deleted = db.query(TraceV2).filter(TraceV2.trace_id.in_(trace_ids)).delete(synchronize_session=False)
     db.commit()
     return {"deleted": deleted}
 
@@ -345,7 +107,6 @@ def list_trace_tags(db: Session = Depends(get_db)):
 def list_traces(
     limit: int = 40,
     offset: int = 0,
-    task_type: str | None = None,
     prompt_name: str | None = None,
     prompt_version: str | None = None,
     status: str | None = None,
@@ -362,7 +123,6 @@ def list_traces(
     names: str | None = None,
     user_id: str | None = None,
     user_ids: str | None = None,
-    level: str | None = None,
     min_quality: float | None = None,
     min_tokens: int | None = None,
     max_tokens: int | None = None,
@@ -373,7 +133,6 @@ def list_traces(
     return TraceReadService(db).list_traces(
         limit=limit,
         offset=offset,
-        task_type=task_type,
         prompt_name=prompt_name,
         prompt_version=prompt_version,
         status=status,
@@ -391,7 +150,6 @@ def list_traces(
         names=names,
         user_id=user_id,
         user_ids=user_ids,
-        level=level,
         min_tokens=min_tokens,
         max_tokens=max_tokens,
         min_input_tokens=min_input_tokens,
@@ -402,83 +160,6 @@ def list_traces(
 @router.get("/api/traces/stats")
 def trace_stats(days: int = 7, db: Session = Depends(get_db)):
     return TraceReadService(db).stats(days=days)
-
-
-def _grouped_trace_stats(traces: list[Trace], field: str) -> list[dict]:
-    groups: dict[str, dict] = {}
-    for t in traces:
-        key = getattr(t, field) or "unknown"
-        item = groups.setdefault(key, {
-            "key": key,
-            "runs": 0,
-            "errors": 0,
-            "latencies": [],
-            "tokens": 0,
-            "quality_scores": [],
-            "feedback_count": 0,
-        })
-        item["runs"] += 1
-        if t.error:
-            item["errors"] += 1
-        latency = _latency_seconds(t)
-        if latency is not None:
-            item["latencies"].append(latency)
-        item["tokens"] += (t.prompt_tokens or 0) + (t.completion_tokens or 0)
-        if t.quality_score is not None:
-            item["quality_scores"].append(t.quality_score)
-        if t.user_feedback:
-            item["feedback_count"] += 1
-
-    result = []
-    for item in groups.values():
-        latencies = item.pop("latencies")
-        quality_scores = item.pop("quality_scores")
-        item["avg_latency"] = round(sum(latencies) / len(latencies), 2) if latencies else None
-        item["avg_quality_score"] = round(sum(quality_scores) / len(quality_scores), 2) if quality_scores else None
-        result.append(item)
-    return sorted(result, key=lambda x: x["runs"], reverse=True)
-
-
-def _grouped_prompt_version_stats(traces: list[Trace]) -> list[dict]:
-    groups: dict[str, dict] = {}
-    for t in traces:
-        prompt_name = t.prompt_name or "unknown"
-        prompt_version = t.prompt_version or "unknown"
-        key = f"{prompt_name}@{prompt_version}"
-        item = groups.setdefault(key, {
-            "key": key,
-            "runs": 0,
-            "errors": 0,
-            "latencies": [],
-            "tokens": 0,
-            "quality_scores": [],
-            "feedback_count": 0,
-        })
-        item["runs"] += 1
-        if t.error:
-            item["errors"] += 1
-        latency = _latency_seconds(t)
-        if latency is not None:
-            item["latencies"].append(latency)
-        item["tokens"] += (t.prompt_tokens or 0) + (t.completion_tokens or 0)
-        if t.quality_score is not None:
-            item["quality_scores"].append(t.quality_score)
-        if t.user_feedback:
-            item["feedback_count"] += 1
-
-    result = []
-    for item in groups.values():
-        latencies = item.pop("latencies")
-        quality_scores = item.pop("quality_scores")
-        item["avg_latency"] = round(sum(latencies) / len(latencies), 2) if latencies else None
-        item["avg_quality_score"] = round(sum(quality_scores) / len(quality_scores), 2) if quality_scores else None
-        result.append(item)
-    return sorted(result, key=lambda x: x["runs"], reverse=True)
-
-
-@router.get("/api/traces/by-task-type")
-def traces_by_task_type(db: Session = Depends(get_db)):
-    return TraceReadService(db).grouped("task_type")
 
 
 @router.get("/api/traces/by-agent")
@@ -505,11 +186,11 @@ def trace_errors(limit: int = 40, db: Session = Depends(get_db)):
 def list_observations(
     limit: int = 100,
     offset: int = 0,
-    run_type: str | None = None,
+    obs_type: str | None = Query(default=None, alias="type"),
     db: Session = Depends(get_db),
 ):
-    """Return child spans (LLM calls, tool calls, chains) — i.e. non-root traces."""
-    return TraceReadService(db).observations(limit=limit, offset=offset, run_type=run_type)
+    """Return observations (LLM calls, tool calls, spans) for the Observations page."""
+    return TraceReadService(db).observations(limit=limit, offset=offset, obs_type=obs_type)
 
 
 @router.get("/api/traces/observations/stats")
@@ -528,14 +209,14 @@ def slow_runs(limit: int = 40, min_latency: float = 10, db: Session = Depends(ge
 @router.get("/api/traces/timeline")
 def trace_timeline(
     prompt_name: str | None = None,
-    task_type: str | None = None,
+    agent_name: str | None = None,
     days: int = 14,
     db: Session = Depends(get_db),
 ):
     """每日 avg_quality / avg_latency 走勢，供前端折線圖使用。"""
     return TraceReadService(db).timeline(
         prompt_name=prompt_name,
-        task_type=task_type,
+        agent_name=agent_name,
         days=days,
     )
 
@@ -930,14 +611,13 @@ def get_trace_detail(observation_id: str, db: Session = Depends(get_db)):
 
 @router.patch("/api/traces/{observation_id}/feedback")
 def update_trace_feedback(observation_id: str, body: TraceFeedbackRequest, db: Session = Depends(get_db)):
-    trace = db.query(Trace).filter(Trace.observation_id == observation_id).first()
-    if not trace:
+    trace_v2 = db.query(TraceV2).filter(TraceV2.trace_id == observation_id).first()
+    if not trace_v2:
         raise HTTPException(status_code=404, detail="Trace not found")
     if body.quality_score is not None and not 0 <= body.quality_score <= 5:
         raise HTTPException(status_code=400, detail="quality_score must be between 0 and 5")
 
-    trace.quality_score = body.quality_score
-    trace.user_feedback = body.user_feedback.strip() if body.user_feedback else None
+    feedback_text = body.user_feedback.strip() if body.user_feedback else None
     if body.quality_score is not None:
         ScoreRepository.upsert_score(db, {
             "score_id": f"{observation_id}:overall:annotation",
@@ -946,23 +626,22 @@ def update_trace_feedback(observation_id: str, body: TraceFeedbackRequest, db: S
             "value": body.quality_score,
             "data_type": "NUMERIC",
             "source": "ANNOTATION",
-            "comment": trace.user_feedback,
+            "comment": feedback_text,
             "metadata": {"source": "trace_feedback"},
-        }, sync_legacy_cache=False)
-    if trace.user_feedback:
+        })
+    if feedback_text:
         ScoreRepository.upsert_score(db, {
             "score_id": f"{observation_id}:feedback:annotation",
             "trace_id": observation_id,
             "name": "feedback",
-            "string_value": trace.user_feedback,
+            "string_value": feedback_text,
             "data_type": "TEXT",
             "source": "ANNOTATION",
-            "comment": trace.user_feedback,
+            "comment": feedback_text,
             "metadata": {"source": "trace_feedback"},
-        }, sync_legacy_cache=False)
+        })
     db.commit()
-    db.refresh(trace)
-    return _trace_payload(trace, include_raw=True)
+    return TraceReadService(db).trace_detail(observation_id)
 
 
 @router.post("/api/eval/run")

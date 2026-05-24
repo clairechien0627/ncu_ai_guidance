@@ -81,16 +81,16 @@ def auth_check_langfuse() -> None:
     if not langfuse_is_configured():
         logger.info("Langfuse disabled or missing credentials.")
         return
+    # Use a direct HTTP health check instead of sdk.auth_check() — the SDK method
+    # triggers WinError 10054 on Windows due to IPv6/Docker networking quirks.
+    # Normalize localhost → 127.0.0.1 so urllib always connects via IPv4.
+    import urllib.request
+    base_url = (_get_langfuse_base_url() or "http://localhost:3000").rstrip("/")
+    base_url = base_url.replace("//localhost:", "//127.0.0.1:")
     try:
-        client = initialize_langfuse_client()
-        if client is None:
-            return
-        auth_check = getattr(client, "auth_check", None)
-        if callable(auth_check):
-            ok = auth_check()
-            logger.info("Langfuse auth check: %s", "ok" if ok else "failed")
-        else:
-            logger.info("Langfuse configured; auth_check unavailable in installed SDK.")
+        with urllib.request.urlopen(f"{base_url}/api/public/health", timeout=5) as resp:
+            ok = resp.status == 200
+        logger.info("Langfuse auth check: %s", "ok" if ok else "failed")
     except Exception as exc:
         logger.warning("Langfuse auth check failed: %s", exc)
 
@@ -179,7 +179,6 @@ def generation_prompt_metadata(metadata: dict | None = None, *, prompt_name: str
         "primary_prompt": prompt,
         "prompt_stack_json": stack_json,
         "agent_name": metadata.get("agent_name"),
-        "task_type": metadata.get("task_type"),
     }
 
 

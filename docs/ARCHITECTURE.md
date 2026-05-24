@@ -330,22 +330,27 @@ core.txt                    ← 所有 stack 的共用基底
 
 ## Trace 追蹤架構
 
-所有 LLM 呼叫都透過 `observability.ainvoke_traced_generation()` 記錄到 PostgreSQL `traces` 表和 Langfuse。
+TraceV2 以 `traces_v2` 作為一次 request 的 root 容器，細節步驟寫入 `observations`，評分與回饋寫入 `scores`。
 
 ```text
-traces
-├── run_id（唯一）
-├── parent_run_id（階層關係）
-├── thread_id（對話緒）
-├── task_type（chat_turn / research_task / document_extraction / ...）
-├── route_intent（chat / retrieval / question / research）
-├── agent_name（router_agent / research_agent / ...）
-├── prompt_stack_name + prompt_stack_json（完整 prompt 快照）
-├── llm_call_count, tool_count
-└── quality_score, quality_detail（評估結果）
+traces_v2
+├── trace_id（request root）
+├── thread_id / user_id / environment
+├── input / output
+├── tags
+└── metadata_json（只保留 request-level extras，例如 agent_name、document_ids）
+
+observations
+├── observation_id
+├── trace_id
+├── parent_observation_id
+├── type（SPAN / GENERATION / TOOL）
+├── status / status_message
+├── prompt_name / prompt_version
+└── token、cost、model、input/output、step metadata
 ```
 
-Router 寫 root trace，其他 agent trace 以 router 的 `run_id` 為 `parent_run_id`，形成完整的請求追蹤樹。
+Trace root 不保存 prompt stack、display、run_type、token、error、tool_count 或 llm_call_count。Trace Monitor 的 root `status/error/tokens/counts/quality` 都由 observations 與 scores 聚合產生；Prompt metrics/filter 由 observation-level `prompt_name/prompt_version` 聚合。
 
 ---
 

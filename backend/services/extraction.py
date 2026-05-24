@@ -37,9 +37,8 @@ def _stack_system_messages(stack_name: str) -> list[SystemMessage]:
     return [SystemMessage(content=content) for content in load_stack(stack_name).contents]
 
 
-def _generation_metadata(stack_name: str, task_type: str, agent_name: str) -> dict:
+def _generation_metadata(stack_name: str, agent_name: str) -> dict:
     return {
-        "task_type": task_type,
         "agent_name": agent_name,
         **load_stack(stack_name).metadata(),
     }
@@ -104,15 +103,34 @@ def _get_document_abstract(document_id: int) -> str | None:
         return row[0] if row and row[0] else None
 
 
-def _save_quality_score(observation_id: str, score: float, note: str) -> None:
-    from db import db_session, Trace
+def _save_quality_score(observation_id: str, score: float, note: str, *, thread_id: str | None = None) -> None:
+    from db import db_session
+    from db.models import TraceV2
+    from services.trace_repositories import ScoreRepository
 
     with db_session() as db:
-        trace = db.query(Trace).filter(Trace.observation_id == observation_id).first()
-        if trace:
-            trace.quality_score = score
-            trace.user_feedback = note[:500]
-            db.commit()
+        trace_id: str | None = None
+        if thread_id:
+            v2_row = (
+                db.query(TraceV2)
+                .filter(TraceV2.thread_id == thread_id)
+                .order_by(TraceV2.start_time.desc())
+                .first()
+            )
+            if v2_row:
+                trace_id = v2_row.trace_id
+
+        if trace_id:
+            ScoreRepository.upsert_score(db, {
+                "name": "overall",
+                "trace_id": trace_id,
+                "observation_id": observation_id,
+                "value": score,
+                "comment": note[:500] if note else None,
+                "source": "API",
+            })
+
+        db.commit()
 
 
 STEP1_RESEARCH_QUESTION = (
@@ -140,7 +158,7 @@ async def run_document_research_step1(
     trace_meta.update({
         "document_id": str(document_id),
         "type": "extraction",
-        "agent_name": "research_agent",
+        "agent_name": "research",
         **_prefixed_stack_metadata("extract_step2", "extract_step2"),
         **_prefixed_stack_metadata("extract_step3", "extract_step3"),
         **_prefixed_stack_metadata("extract_step4", "extract_step4"),
@@ -174,7 +192,7 @@ async def structure_research_step2(
         _structure_llm,
         messages,
         prompt_name="summary_structure",
-        metadata=_generation_metadata("extract_step2", "document_extraction", "summary_structure"),
+        metadata=_generation_metadata("extract_step2", "summary_structure"),
     )
     return core.model_dump()
 
@@ -203,7 +221,7 @@ async def generate_interest_step3(
         _question_llm,
         messages,
         prompt_name="question_generator",
-        metadata=_generation_metadata("extract_step3", "document_extraction", "question_generator"),
+        metadata=_generation_metadata("extract_step3", "question_generator"),
     )
     return questions_resp.model_dump()
 
@@ -288,5 +306,5 @@ async def _run_quality_check(
 
     result["quality_score"] = score
     result["quality_note"] = note
-    await asyncio.to_thread(_save_quality_score, observation_id, score, note)
+    await asyncio.to_thread(_save_quality_score, observation_id, score, note, thread_id=_extraction_thread_id(document_id))
     return result, observation_id, answer, sources

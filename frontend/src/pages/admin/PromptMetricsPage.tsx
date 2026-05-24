@@ -318,7 +318,6 @@ export default function PromptMetricsPage() {
                 <tr>
                   <th>Time</th>
                   <th>Agent</th>
-                  <th>Version</th>
                   <th>Status</th>
                   <th>Latency</th>
                   <th>Score</th>
@@ -326,7 +325,7 @@ export default function PromptMetricsPage() {
               </thead>
               <tbody>
                 {recentTraces.map((t: TraceItem) => {
-                  const isErr = t.level === 'ERROR'
+                  const isErr = t.status === 'ERROR'
                   const score = t.quality_score
                   const scoreCls = score == null ? '' : score >= 4 ? 'high' : score >= 3 ? 'mid' : 'low'
                   return (
@@ -338,9 +337,6 @@ export default function PromptMetricsPage() {
                       <td style={{ whiteSpace: 'nowrap', color: '#6b7280' }}>{fmtDate(t.start_time)}</td>
                       <td>
                         {t.agent_name ? <span className="pm-agent-badge">{t.agent_name}</span> : '—'}
-                      </td>
-                      <td style={{ fontFamily: 'monospace', fontSize: 11, color: '#6b7280' }}>
-                        {t.prompt_version ? t.prompt_version.slice(0, 8) : '—'}
                       </td>
                       <td>
                         <span className={isErr ? 'pm-status-err' : 'pm-status-ok'}>

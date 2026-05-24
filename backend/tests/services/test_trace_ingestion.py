@@ -50,6 +50,14 @@ def test_worker_processes_trace_observation_and_score(monkeypatch):
                 "trace_id": "t1",
                 "name": "root",
                 "thread_id": "thread-1",
+                "metadata": {
+                    "agent_name": "chat",
+                    "document_ids": [1],
+                    "display": {"answer": "legacy"},
+                    "tool_count": 99,
+                    "prompt_name": "chat_mode",
+                    "prompt_stack_json": [{"name": "chat_mode"}],
+                },
                 "start_time": datetime(2026, 5, 18, 1, 0, 0),
                 "end_time": datetime(2026, 5, 18, 1, 0, 2),
             },
@@ -63,6 +71,7 @@ def test_worker_processes_trace_observation_and_score(monkeypatch):
                 "type": "llm",
                 "name": "LLM",
                 "usage": {"input": 10, "output": 5, "total": 15},
+                "status": "WARNING",
                 "start_time": datetime(2026, 5, 18, 1, 0, 0),
                 "end_time": datetime(2026, 5, 18, 1, 0, 1),
             },
@@ -86,7 +95,11 @@ def test_worker_processes_trace_observation_and_score(monkeypatch):
     db = SessionLocal()
     try:
         assert db.query(TraceV2).filter(TraceV2.trace_id == "t1").count() == 1
-        assert db.query(Observation).filter(Observation.observation_id == "o1").count() == 1
+        trace = db.query(TraceV2).filter(TraceV2.trace_id == "t1").one()
+        assert trace.metadata_json == '{"agent_name": "chat", "document_ids": [1]}'
+        obs = db.query(Observation).filter(Observation.observation_id == "o1").one()
+        assert obs.status == "WARNING"
+        assert obs.total_tokens == 15
         assert db.query(Score).filter(Score.score_id == "s1").one().value == 4.5
         assert db.query(TraceEventOutbox).filter(TraceEventOutbox.status == "processed").count() == 3
     finally:

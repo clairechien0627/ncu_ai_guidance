@@ -735,7 +735,7 @@ function DocDetailDrawer({ item, onClose, onFlash, jobs }: DetailProps) {
             <div style={{ fontSize: 12, color: 'var(--adm-text-3)', fontStyle: 'italic' }}>尚無追蹤紀錄</div>
           ) : docTraces.map(trace => {
             const isOpen = expandedTraceId === trace.id
-            const isErr  = trace.level === 'ERROR'
+            const isErr  = trace.status === 'ERROR'
             return (
               <div key={trace.id}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 0', cursor: 'pointer', borderBottom: '1px solid var(--adm-border)' }}
@@ -747,25 +747,20 @@ function DocDetailDrawer({ item, onClose, onFlash, jobs }: DetailProps) {
                   <button className="adm-btn-icon" title="在 Trace 監控開啟" onClick={e => { e.stopPropagation(); setTraceDetailId(trace.id) }}><ExternalLink size={11} /></button>
                   <ChevronRight size={12} style={{ color: 'var(--adm-text-3)', transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 150ms', flexShrink: 0 }} />
                 </div>
-                {isOpen && trace.display && (
+                {isOpen && (trace.input || trace.output) && (
                   <div style={{ padding: '8px 0 8px 13px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    {(trace.display.messages ?? []).map((msg: any, mi: number) => {
-                      if (msg.role === 'ai_tool_call') return (msg.tool_calls ?? []).map((tc: any) => (
-                        <div key={tc.call_id} style={{ fontSize: 11 }}>
-                          <span style={{ color: 'var(--adm-violet)', fontWeight: 600 }}>AI › {tc.tool}</span>
-                          <pre style={{ margin: '2px 0 0', fontSize: 10, background: 'var(--adm-surface-2)', padding: '4px 6px', borderRadius: 4, overflow: 'auto', maxHeight: 80 }}>{JSON.stringify(tc.args, null, 2)}</pre>
-                        </div>
-                      ))
-                      if (!msg.content || msg.role === 'tool_result') return null
-                      const roleColor: Record<string, string> = { system: 'var(--adm-text-3)', human: 'var(--adm-blue)', ai: 'var(--adm-violet)' }
-                      const roleLabel: Record<string, string> = { system: '系統', human: '問題', ai: 'AI' }
-                      return (
-                        <div key={mi} style={{ fontSize: 11 }}>
-                          <span style={{ color: roleColor[msg.role] ?? 'var(--adm-text-3)', fontWeight: 600, marginRight: 6 }}>{roleLabel[msg.role] ?? msg.role}</span>
-                          <span style={{ color: 'var(--adm-text-2)', lineHeight: 1.5 }}>{String(msg.content).slice(0, 300)}{String(msg.content).length > 300 ? '…' : ''}</span>
-                        </div>
-                      )
-                    })}
+                    {trace.input && (
+                      <div style={{ fontSize: 11 }}>
+                        <span style={{ color: 'var(--adm-blue)', fontWeight: 600, marginRight: 6 }}>問題</span>
+                        <span style={{ color: 'var(--adm-text-2)', lineHeight: 1.5 }}>{String(trace.input).slice(0, 300)}{String(trace.input).length > 300 ? '…' : ''}</span>
+                      </div>
+                    )}
+                    {trace.output && (
+                      <div style={{ fontSize: 11 }}>
+                        <span style={{ color: 'var(--adm-violet)', fontWeight: 600, marginRight: 6 }}>回答</span>
+                        <span style={{ color: 'var(--adm-text-2)', lineHeight: 1.5 }}>{String(trace.output).slice(0, 300)}{String(trace.output).length > 300 ? '…' : ''}</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

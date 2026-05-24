@@ -34,7 +34,7 @@ def _seed_dataset(db):
         input=json.dumps({"messages": [{"role": "human", "content": "question"}]}),
         output=json.dumps({"answer": "old"}),
         expected_output=json.dumps({"answer": "expected"}),
-        context=json.dumps({"task_type": "retrieval_qa", "agent_name": "retrieval_agent"}),
+        context=json.dumps({"agent_name": "retrieval"}),
         is_archived=False,
         created_at=datetime(2026, 5, 18, 1, 1, 0),
     ))
@@ -61,7 +61,7 @@ def test_experiment_api_create_list_detail_eval_and_stats(monkeypatch):
         item = db.query(ExperimentRunItem).filter(ExperimentRunItem.experiment_run_id == experiment_run_id).one()
         item.status = "completed"
         item.generated_output = json.dumps({"answer": "new"})
-        item.generated_context = json.dumps({"task_type": "retrieval_qa", "agent_name": "retrieval_agent"})
+        item.generated_context = json.dumps({"agent_name": "retrieval"})
         item.trace_id = "generated-trace"
         db.commit()
 

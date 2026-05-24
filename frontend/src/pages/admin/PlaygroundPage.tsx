@@ -2,9 +2,9 @@ import { useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { RefreshCw, Send, Zap, Activity, Wrench, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react'
 import {
-  getQueueStatus, runBackfill, testRoute, createEvalRun,
+  getQueueStatus, testRoute, createEvalRun,
   sendChat, getHealth,
-  type QueueStatus, type BackfillResult, type TestRouteResult,
+  type QueueStatus, type TestRouteResult,
 } from '../../api'
 
 // ── Chat Tester ───────────────────────────────────────────────────────────────
@@ -228,18 +228,9 @@ function QRow({ label, value, warn }: { label: string; value: number; warn?: boo
 
 function Maintenance() {
   const [open, setOpen] = useState(false)
-  const [dryRun, setDryRun] = useState(true)
   const [batchLimit, setBatchLimit] = useState(50)
-  const [backfillResult, setBackfillResult] = useState<BackfillResult | null>(null)
   const [batchMsg, setBatchMsg] = useState<string | null>(null)
   const [loading, setLoading] = useState<string | null>(null)
-
-  const doBackfill = async () => {
-    setLoading('backfill'); setBackfillResult(null)
-    try { setBackfillResult(await runBackfill({ dry_run: dryRun })) }
-    catch { setBackfillResult({ ok: false, error: 'Request failed' }) }
-    finally { setLoading(null) }
-  }
 
   const doBatch = async () => {
     setLoading('batch'); setBatchMsg(null)
@@ -261,26 +252,6 @@ function Maintenance() {
 
       {open && (
         <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div>
-            <div style={S.sectionLabel}>Backfill traces_v2</div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, color: 'var(--adm-text-2)' }}>
-                <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} />
-                dry-run
-              </label>
-              <button className="adm-btn adm-btn-secondary" onClick={doBackfill} disabled={loading === 'backfill'} style={{ fontSize: 11 }}>
-                {loading === 'backfill' ? '…' : 'Run Backfill'}
-              </button>
-            </div>
-            {backfillResult && (
-              <div style={{ fontSize: 11, marginTop: 6, color: backfillResult.ok ? 'var(--adm-text-2)' : 'var(--adm-red)' }}>
-                {backfillResult.ok
-                  ? `${backfillResult.dry_run ? '[dry-run] ' : ''}roots=${backfillResult.roots_seen} traces=${backfillResult.traces_written} obs=${backfillResult.observations_written}`
-                  : `Error: ${backfillResult.error}`}
-              </div>
-            )}
-          </div>
-
           <div>
             <div style={S.sectionLabel}>Batch Score</div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

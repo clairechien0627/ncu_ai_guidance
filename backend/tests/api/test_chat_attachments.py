@@ -1,4 +1,11 @@
 from api.chat import _hydrate_assistant_meta, _hydrate_message_attachments
+import json
+
+
+class FakeTraceRow:
+    def __init__(self, trace_id: str, metadata: dict):
+        self.trace_id = trace_id
+        self.metadata_json = json.dumps(metadata, ensure_ascii=False)
 
 
 class FakeQuery:
@@ -22,7 +29,10 @@ class FakeSession:
     def query(self, *_args, **_kwargs):
         self.calls += 1
         if self.calls == 1:
-            return FakeQuery([('[545, 96]',), ('[96]',)])
+            return FakeQuery([
+                FakeTraceRow("run-1", {"document_ids": [545, 96]}),
+                FakeTraceRow("run-2", {"document_ids": [96]}),
+            ])
         return FakeQuery([
             (545, "navigation.pdf"),
             (96, "materials.pdf"),
@@ -54,8 +64,8 @@ class FakeMetaSession:
         self._calls += 1
         if self._calls == 1:
             return FakeQuery([
-                ("run-1", "document_extraction", "research_agent", "research_writer", "sha256:abc"),
-                ("run-2", "retrieval_qa", "retrieval_agent", "chat", "sha256:def"),
+                ("run-1", json.dumps({"agent_name": "research", "prompt_name": "research_writer", "prompt_version": "sha256:abc"})),
+                ("run-2", json.dumps({"agent_name": "retrieval", "prompt_name": "chat", "prompt_version": "sha256:def"})),
             ])
         return FakeQuery([])
 
@@ -70,7 +80,8 @@ def test_hydrate_assistant_meta_uses_root_traces_by_assistant_turn():
 
     hydrated = _hydrate_assistant_meta(1, messages, FakeMetaSession())
 
-    assert hydrated[1]["task_type"] == "document_extraction"
+    assert hydrated[1]["agent_name"] == "research"
     assert hydrated[1]["trace_id"] == "run-1"
-    assert hydrated[3]["agent_name"] == "retrieval_agent"
-    assert hydrated[3]["prompt_version"] == "sha256:def"
+    assert hydrated[3]["agent_name"] == "retrieval"
+    assert "prompt_name" not in hydrated[3]
+    assert "prompt_version" not in hydrated[3]

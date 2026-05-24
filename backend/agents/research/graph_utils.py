@@ -136,7 +136,6 @@ def _trace_summary(state: ResearchGraphState) -> dict:
         "task": {
             "question": state.get("question", ""),
             "document_ids": state.get("document_ids", []),
-            "task_type": state.get("metadata", {}).get("task_type"),
             "goal": state.get("task_goal", ""),
         },
         "limits": {
@@ -195,8 +194,8 @@ def _hard_max_searches(state: ResearchGraphState) -> int:
         configured = int(state.get("max_searches") or 0)
     except Exception:
         configured = 0
-    # configured is a hard cap when set; derived is used only when unconfigured.
-    return configured if configured > 0 else derived
+    # configured is a floor; derived scales with coverage count so more slots always get budget.
+    return max(configured, derived) if configured > 0 else derived
 
 
 def _slot_search_counts(state: ResearchGraphState) -> dict[str, int]:

@@ -25,7 +25,7 @@ from prompting.loader import load_stack
 logger = logging.getLogger(__name__)
 
 PROMPT_NAME = "evaluation_agent"
-AGENT_NAME = "evaluation_agent"
+AGENT_NAME = "evaluation"
 STACK_NAME = "evaluation_default"
 
 
@@ -34,16 +34,49 @@ class EvaluationResult(BaseModel):
     task_fit: float = Field(ge=0, le=5, description="How well the answer addresses the task.")
     completeness: float = Field(ge=0, le=5, description="Coverage of required task aspects.")
     specificity: float = Field(ge=0, le=5, description="Concrete detail and useful specificity.")
-    source_quality: float = Field(ge=0, le=5, description="Quality and relevance of cited sources.")
+    source_quality: float = Field(ge=0, le=5, description="Topical coherence between claims and cited sources.")
     uncertainty_honesty: float = Field(ge=0, le=5, description="Honesty about missing evidence or uncertainty.")
     format_fit: float = Field(ge=0, le=5, description="Fit to requested format, language, and audience.")
     overall: float = Field(default=0.0, ge=0, le=5, description="Weighted overall score.")
+    dimension_reasoning: dict[str, str] = Field(
+        default_factory=dict,
+        description="One-sentence reasoning per dimension before scoring.",
+    )
     verdict: str = Field(description="Short verdict in Traditional Chinese.")
-    issues: list[str] = Field(default_factory=list, description="Concrete problems, max 5.")
-    evidence_gaps: list[str] = Field(default_factory=list, description="Missing or weak evidence, max 5.")
-    suggested_fixes: list[str] = Field(default_factory=list, description="Actionable fixes, max 5.")
-    should_rerun_retrieval: bool = False
-    should_rerun_research: bool = False
+    failure_modes: list[str] = Field(
+        default_factory=list,
+        description="Detected failure modes from taxonomy, max 5.",
+    )
+    suggested_fixes: list[str] = Field(default_factory=list, description="Actionable fixes, max 3.")
+
+
+WEIGHT_PROFILES: dict[str, dict[str, float]] = {
+    "chat": {
+        "grounding": 0.15, "task_fit": 0.25, "completeness": 0.15,
+        "specificity": 0.12, "source_quality": 0.08, "uncertainty_honesty": 0.15, "format_fit": 0.10,
+    },
+    "retrieval": {
+        "grounding": 0.30, "task_fit": 0.20, "completeness": 0.15,
+        "specificity": 0.12, "source_quality": 0.10, "uncertainty_honesty": 0.08, "format_fit": 0.05,
+    },
+    "research": {
+        "grounding": 0.25, "task_fit": 0.18, "completeness": 0.22,
+        "specificity": 0.12, "source_quality": 0.10, "uncertainty_honesty": 0.08, "format_fit": 0.05,
+    },
+    "question": {
+        "grounding": 0.10, "task_fit": 0.25, "completeness": 0.20,
+        "specificity": 0.15, "source_quality": 0.08, "uncertainty_honesty": 0.07, "format_fit": 0.15,
+    },
+    "document_extraction": {
+        "grounding": 0.20, "task_fit": 0.20, "completeness": 0.25,
+        "specificity": 0.15, "source_quality": 0.10, "uncertainty_honesty": 0.05, "format_fit": 0.05,
+    },
+}
+
+DEFAULT_WEIGHTS: dict[str, float] = {
+    "grounding": 0.25, "task_fit": 0.18, "completeness": 0.17,
+    "specificity": 0.12, "source_quality": 0.10, "uncertainty_honesty": 0.10, "format_fit": 0.08,
+}
 
 
 def _llm():
@@ -56,16 +89,9 @@ def _llm():
     )
 
 
-def _weighted_overall(result: EvaluationResult) -> float:
-    raw = (
-        result.grounding * 0.25
-        + result.task_fit * 0.18
-        + result.completeness * 0.17
-        + result.specificity * 0.12
-        + result.source_quality * 0.10
-        + result.uncertainty_honesty * 0.10
-        + result.format_fit * 0.08
-    )
+def _weighted_overall(result: EvaluationResult, agent_name: str = "chat") -> float:
+    weights = WEIGHT_PROFILES.get(agent_name, DEFAULT_WEIGHTS)
+    raw = sum(getattr(result, dim) * w for dim, w in weights.items())
     return max(0.0, min(5.0, round(raw, 2)))
 
 
@@ -94,7 +120,7 @@ async def evaluate_output(
     *,
     user_task: str,
     answer: str,
-    task_type: str = "chat_turn",
+    agent_name: str = "chat",
     sources: list[str] | None = None,
     trace_summary: dict | None = None,
     extra_context: dict | None = None,
@@ -102,17 +128,18 @@ async def evaluate_output(
     """Evaluate an answer without mutating application state."""
     trace_summary = trace_summary or {}
     sources = sources or []
+    answer_limit = 8000 if agent_name == "research" else 5000
     payload = {
         "user_task": user_task,
-        "answer": answer[:5000],
-        "task_type": task_type,
+        "answer": answer[:answer_limit],
+        "agent_name": agent_name,
         "sources": sources[:12],
+        "sources_empty": not sources,
         "trace_summary": trace_summary,
         "extra_context": extra_context or {},
         "response_contract": {
-            "issues_max": 5,
-            "evidence_gaps_max": 5,
-            "suggested_fixes_max": 5,
+            "failure_modes_max": 5,
+            "suggested_fixes_max": 3,
         },
     }
     stack = load_stack(STACK_NAME)
@@ -124,83 +151,24 @@ async def evaluate_output(
     result: EvaluationResult = await ainvoke_traced_generation(
         scorer,
         [
-        *system_messages,
-        HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+            *system_messages,
+            HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
         ],
         prompt_name=PROMPT_NAME,
         metadata={
-            "task_type": task_type,
             "agent_name": AGENT_NAME,
             **stack.metadata(),
         },
     )
-    coverage_score = _completion_from_coverage(trace_summary)
-    if coverage_score is not None:
-        # coverage filled = retrieval found content; answer may still be shallow.
-        # Use minimum: coverage is a ceiling, not a floor.
-        result = result.model_copy(update={"completeness": min(result.completeness, coverage_score)})
-    return result.model_copy(update={"overall": _weighted_overall(result)})
-
-
-async def score_trace(
-    display: dict,
-    task_type: str = "chat_turn",
-) -> tuple[float, str, dict]:
-    """Compatibility scoring API for trace monitor batch scoring."""
-    answer = str(display.get("answer") or "")
-    trace_summary = display.get("trace_summary") if isinstance(display.get("trace_summary"), dict) else {}
-    sources = display.get("sources") if isinstance(display.get("sources"), list) else []
-    user_task = ""
-    messages = display.get("messages") if isinstance(display.get("messages"), list) else []
-    for msg in messages:
-        if msg.get("role") in ("human", "user"):
-            user_task = str(msg.get("content") or "")
-            break
-    try:
-        result = await evaluate_output(
-            user_task=user_task,
-            answer=answer,
-            task_type=task_type,
-            sources=sources,
-            trace_summary=trace_summary,
-        )
-        detail = result.model_dump()
-        explanation = _format_evaluation(result)
-        return result.overall, explanation, detail
-    except Exception as exc:
-        logger.warning("score_trace failed: %s", exc)
-        return 0.0, f"score_trace_failed: {exc}", {}
-
-
-def _format_evaluation(result: EvaluationResult) -> str:
-    issues = "；".join(result.issues[:3]) if result.issues else "未列出明顯問題"
-    return (
-        f"overall {result.overall:.1f} | grounding {result.grounding:.1f} / "
-        f"task_fit {result.task_fit:.1f} / completeness {result.completeness:.1f} | "
-        f"{result.verdict} | {issues}"
-    )
-
-
-def _trace_payload(trace: Trace) -> tuple[str, str, list[str], dict]:
-    display = _json_loads(trace.display) or {}
-    outputs = _json_loads(trace.outputs) or {}
-    inputs = _json_loads(trace.inputs) or {}
-    answer = str(display.get("answer") or outputs.get("answer") or "")
-    sources = display.get("sources") if isinstance(display.get("sources"), list) else []
-    trace_summary = display.get("trace_summary") if isinstance(display.get("trace_summary"), dict) else {}
-    user_task = ""
-    messages = display.get("messages") if isinstance(display.get("messages"), list) else []
-    for msg in messages:
-        if msg.get("role") in ("human", "user"):
-            user_task = str(msg.get("content") or "")
-            break
-    if not user_task:
-        user_task = json.dumps(inputs, ensure_ascii=False)[:1200] if inputs else ""
-    return user_task, answer, sources, trace_summary
+    # source_quality override: if no sources were provided, the LLM cannot
+    # evaluate citation coherence — set to 0 deterministically.
+    if not sources:
+        result = result.model_copy(update={"source_quality": 0.0})
+    return result.model_copy(update={"overall": _weighted_overall(result, agent_name)})
 
 
 async def evaluate_trace_by_observation_id(observation_id: str) -> EvaluationResult | None:
-    """Evaluate a root trace and persist score/detail back to the Trace row."""
+    """Evaluate a Trace v2 root and persist scores."""
     try:
         from services.evaluation.runs import EvaluationRunService
         result = await EvaluationRunService.evaluate_single_trace(
@@ -221,7 +189,7 @@ async def evaluate_direct_answer(
     user_task: str,
     answer: str,
     sources: list[str],
-    task_type: str = "chat_turn",
+    agent_name: str = "chat",
 ) -> EvaluationResult | None:
     """Evaluate a provided answer directly without searching the DB for a matching trace.
 
@@ -234,7 +202,7 @@ async def evaluate_direct_answer(
         return await evaluate_output(
             user_task=user_task,
             answer=answer,
-            task_type=task_type,
+            agent_name=agent_name,
             sources=sources,
         )
     except Exception as exc:
@@ -247,7 +215,7 @@ async def evaluate_latest_thread_message(
     *,
     exclude_observation_id: str | None = None,
 ) -> EvaluationResult | None:
-    """Evaluate the latest AgentMessage for a thread without touching the Trace table."""
+    """Evaluate the latest AgentMessage for a thread without reading trace tables."""
     def _find():
         with db_session() as db:
             from db.models import AgentMessage
@@ -267,10 +235,8 @@ async def evaluate_latest_thread_message(
         answer=msg.agent_answer or "",
         sources=msg.sources or [],
         trace_summary=msg.trace_summary or {},
-        task_type=msg.agent_name,
+        agent_name=msg.agent_name,
     )
-
-
 
 
 def format_evaluation_for_user(result: EvaluationResult | None) -> str:
@@ -281,17 +247,8 @@ def format_evaluation_for_user(result: EvaluationResult | None) -> str:
         f"總分：{result.overall:.1f}/5",
         f"證據支撐：{result.grounding:.1f}，任務符合：{result.task_fit:.1f}，完整度：{result.completeness:.1f}",
     ]
-    if result.issues:
-        lines.append("主要問題：" + "；".join(result.issues[:3]))
-    if result.evidence_gaps:
-        lines.append("證據缺口：" + "；".join(result.evidence_gaps[:3]))
+    if result.failure_modes:
+        lines.append("問題類型：" + "、".join(result.failure_modes[:3]))
     if result.suggested_fixes:
         lines.append("建議修正：" + "；".join(result.suggested_fixes[:3]))
-    if result.should_rerun_retrieval or result.should_rerun_research:
-        actions = []
-        if result.should_rerun_retrieval:
-            actions.append("補做 focused retrieval")
-        if result.should_rerun_research:
-            actions.append("重跑 research workflow")
-        lines.append("後續建議：" + "、".join(actions))
     return "\n".join(lines)

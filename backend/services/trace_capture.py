@@ -48,118 +48,6 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-# ── Display builder ────────────────────────────────────────────────────────────
-
-def _build_display(outputs: dict) -> dict:
-    """Reconstruct a TraceDisplay-compatible dict from LangGraph root chain outputs."""
-    display: dict = {"messages": [], "answer": None, "sources": []}
-    if not outputs:
-        return display
-
-    # Structured response (answer + sources)
-    sr = outputs.get("structured_response")
-    if isinstance(sr, dict):
-        display["answer"] = sr.get("answer")
-        display["sources"] = sr.get("sources", [])
-    elif hasattr(sr, "answer"):
-        display["answer"] = sr.answer
-        display["sources"] = list(getattr(sr, "sources", []))
-
-    # Message sequence — each message is parsed individually; a format change in
-    # one message only skips that message, it never aborts the whole tracer write.
-    for msg in outputs.get("messages", []):
-        try:
-            if not isinstance(msg, dict):
-                if hasattr(msg, "model_dump"):
-                    msg = msg.model_dump()
-                else:
-                    continue
-
-            msg_type = msg.get("type", "")
-
-            if msg_type == "human":
-                content = msg.get("content", "")
-                if isinstance(content, list):
-                    content = " ".join(
-                        c.get("text", "") for c in content if isinstance(c, dict)
-                    )
-                display["messages"].append({"role": "human", "content": content})
-
-            elif msg_type == "ai":
-                tool_calls_lc = msg.get("tool_calls", [])
-                tool_calls_ak = (msg.get("additional_kwargs") or {}).get("tool_calls", [])
-                content = msg.get("content", "")
-
-                if tool_calls_lc:
-                    parsed = []
-                    for tc in tool_calls_lc:
-                        args = tc.get("args", {})
-                        if isinstance(args, str):
-                            try:
-                                args = json.loads(args)
-                            except Exception:
-                                args = {}
-                        parsed.append({
-                            "tool": tc.get("name", ""),
-                            "call_id": tc.get("id", ""),
-                            "args": args,
-                        })
-                    display["messages"].append({"role": "ai_tool_call", "tool_calls": parsed})
-                elif tool_calls_ak:
-                    parsed = []
-                    for tc in tool_calls_ak:
-                        func = tc.get("function", {})
-                        try:
-                            args = json.loads(func.get("arguments", "{}"))
-                        except Exception:
-                            args = {}
-                        parsed.append({
-                            "tool": func.get("name", tc.get("name", "")),
-                            "call_id": tc.get("id", ""),
-                            "args": args,
-                        })
-                    display["messages"].append({"role": "ai_tool_call", "tool_calls": parsed})
-                elif content and not display["answer"]:
-                    try:
-                        parsed_content = json.loads(content)
-                        if isinstance(parsed_content, dict) and "answer" in parsed_content:
-                            if not display["answer"]:
-                                display["answer"] = parsed_content["answer"]
-                            if not display["sources"]:
-                                display["sources"] = parsed_content.get("sources", [])
-                        else:
-                            display["messages"].append({"role": "ai", "content": content})
-                    except Exception:
-                        display["messages"].append({"role": "ai", "content": content})
-
-            elif msg_type == "tool":
-                content_raw = str(msg.get("content", ""))
-                chunks = []
-                try:
-                    parsed = json.loads(content_raw)
-                    if isinstance(parsed, dict):
-                        for r in parsed.get("results", []):
-                            if isinstance(r, dict):
-                                chunks.append({
-                                    "filename": r.get("filename", ""),
-                                    "page": r.get("page"),
-                                    "content": r.get("content", ""),
-                                })
-                except Exception:
-                    pass
-                display["messages"].append({
-                    "role": "tool",
-                    "tool": msg.get("name", ""),
-                    "call_id": msg.get("tool_call_id", ""),
-                    "chunks": chunks,
-                    "raw": content_raw,
-                })
-        except Exception as _msg_exc:
-            logger.debug("_build_display: skipping unparseable message: %s", _msg_exc)
-
-    return display
-
-
 # ── Tracer ─────────────────────────────────────────────────────────────────────
 
 class LocalTracer(BaseCallbackHandler):
@@ -175,21 +63,9 @@ class LocalTracer(BaseCallbackHandler):
         self,
         thread_id: str,
         document_ids: list[int] | None = None,
-        task_type: str | None = None,
         agent_name: str | None = None,
         prompt_name: str | None = None,
         prompt_version: str | None = None,
-        base_prompt_name: str | None = None,
-        task_prompt_name: str | None = None,
-        quality_prompt_name: str | None = None,
-        base_prompt_hash: str | None = None,
-        task_prompt_hash: str | None = None,
-        quality_prompt_hash: str | None = None,
-        prompt_stack_name: str | None = None,
-        prompt_stack_json: str | None = None,
-        primary_prompt_json: str | None = None,
-        workflow_prompts_json: str | None = None,
-        prompt_stack_tokens: int | None = None,
         quality_score: float | None = None,
         user_feedback: str | None = None,
         trace_id: str | None = None,
@@ -201,49 +77,23 @@ class LocalTracer(BaseCallbackHandler):
         self.thread_id = thread_id
         self.document_ids = document_ids
         self._events: dict[str, dict] = {}   # run_id (str) → event data
-        self.task_type = task_type
         self.agent_name = agent_name
         self.prompt_name = prompt_name
         self.prompt_version = prompt_version
-        self.base_prompt_name = base_prompt_name
-        self.task_prompt_name = task_prompt_name
-        self.quality_prompt_name = quality_prompt_name
-        self.base_prompt_hash = base_prompt_hash
-        self.task_prompt_hash = task_prompt_hash
-        self.quality_prompt_hash = quality_prompt_hash
-        self.prompt_stack_name = prompt_stack_name
-        self.prompt_stack_json = prompt_stack_json
-        self.primary_prompt_json = primary_prompt_json
-        self.workflow_prompts_json = workflow_prompts_json
-        self.prompt_stack_tokens = prompt_stack_tokens
         self.quality_score = quality_score
         self.user_feedback = user_feedback
         self.trace_id = trace_id
         self.parent_observation_id = parent_observation_id
         self.environment = environment or _get_default_environment()
         self.user_id = user_id
-        self._tool_count = 0
-        self._llm_call_count = 0
         self._root_observation_id: str | None = None
 
     def _apply_metadata(self, metadata: dict | None) -> None:
         if not isinstance(metadata, dict):
             return
-        self.task_type = self.task_type or metadata.get("task_type")
         self.agent_name = self.agent_name or metadata.get("agent_name")
         self.prompt_name = self.prompt_name or metadata.get("prompt_name")
         self.prompt_version = self.prompt_version or metadata.get("prompt_version")
-        self.base_prompt_name = self.base_prompt_name or metadata.get("base_prompt_name")
-        self.task_prompt_name = self.task_prompt_name or metadata.get("task_prompt_name")
-        self.quality_prompt_name = self.quality_prompt_name or metadata.get("quality_prompt_name")
-        self.base_prompt_hash = self.base_prompt_hash or metadata.get("base_prompt_hash")
-        self.task_prompt_hash = self.task_prompt_hash or metadata.get("task_prompt_hash")
-        self.quality_prompt_hash = self.quality_prompt_hash or metadata.get("quality_prompt_hash")
-        self.prompt_stack_name = self.prompt_stack_name or metadata.get("prompt_stack_name")
-        self.prompt_stack_json = self.prompt_stack_json or metadata.get("prompt_stack_json")
-        self.primary_prompt_json = self.primary_prompt_json or metadata.get("primary_prompt_json")
-        self.workflow_prompts_json = self.workflow_prompts_json or metadata.get("workflow_prompts_json")
-        self.prompt_stack_tokens = self.prompt_stack_tokens if self.prompt_stack_tokens is not None else metadata.get("prompt_stack_tokens")
         self.quality_score = self.quality_score if self.quality_score is not None else metadata.get("quality_score")
         self.user_feedback = self.user_feedback or metadata.get("user_feedback")
 
@@ -269,7 +119,7 @@ class LocalTracer(BaseCallbackHandler):
         ev.update({
             "run_id": rid,
             "parent_observation_id": parent_obs_id,
-            "run_type": "chain",
+            "type": "CHAIN",
             "name": name,
             "inputs": _safe_json(inputs),
             "start_time": _utcnow(),
@@ -298,7 +148,6 @@ class LocalTracer(BaseCallbackHandler):
     # ── LLM ────────────────────────────────────────────────────────────────────
 
     def on_chat_model_start(self, serialized, messages, *, run_id, parent_run_id=None, **kwargs):
-        self._llm_call_count += 1
         rid = str(run_id)
         msg_data = []
         for batch in messages:
@@ -311,7 +160,7 @@ class LocalTracer(BaseCallbackHandler):
         ev.update({
             "run_id": rid,
             "parent_observation_id": str(parent_run_id) if parent_run_id else None,
-            "run_type": "llm",
+            "type": "GENERATION",
             "name": (serialized or {}).get("name", "LLM"),
             "inputs": json.dumps({"messages": msg_data}, ensure_ascii=False),
             "start_time": _utcnow(),
@@ -339,13 +188,12 @@ class LocalTracer(BaseCallbackHandler):
     # ── Tool ───────────────────────────────────────────────────────────────────
 
     def on_tool_start(self, serialized, input_str, *, run_id, parent_run_id=None, **kwargs):
-        self._tool_count += 1
         rid = str(run_id)
         ev = self._ev(rid)
         ev.update({
             "run_id": rid,
             "parent_observation_id": str(parent_run_id) if parent_run_id else None,
-            "run_type": "tool",
+            "type": "TOOL",
             "name": (serialized or {}).get("name", "tool"),
             "inputs": json.dumps({"input": str(input_str)}, ensure_ascii=False),
             "start_time": _utcnow(),
@@ -376,17 +224,12 @@ class LocalTracer(BaseCallbackHandler):
         if not rows:
             return
         events = self._build_trace_events(rows)
-        legacy_write = os.environ.get("LEGACY_TRACE_WRITE", "").lower() in ("1", "true", "yes")
         try:
             loop = asyncio.get_running_loop()
-            if legacy_write:
-                loop.create_task(asyncio.to_thread(LocalTracer._write_traces, rows))
             if events:
                 from services.trace_ingestion import TraceEventIngestor
                 loop.create_task(TraceEventIngestor.enqueue(events))
         except RuntimeError:
-            if legacy_write:
-                LocalTracer._write_traces(rows)
             if events:
                 from services.trace_ingestion import TraceEventIngestor, TraceIngestionWorker
                 TraceEventIngestor.enqueue_sync(events)
@@ -395,13 +238,6 @@ class LocalTracer(BaseCallbackHandler):
     def _build_trace_rows(self, root_outputs) -> list[dict]:
         """Build trace dicts from in-memory event data without any I/O."""
         doc_ids_json = json.dumps(self.document_ids) if self.document_ids else None
-
-        display_json = None
-        if root_outputs is not None:
-            try:
-                display_json = _safe_json(_build_display(root_outputs))
-            except Exception as e:
-                logger.warning("LocalTracer: display build failed: %s", e)
 
         total_prompt_tokens = sum(ev.get("prompt_tokens") or 0 for ev in self._events.values())
         total_completion_tokens = sum(ev.get("completion_tokens") or 0 for ev in self._events.values())
@@ -417,13 +253,13 @@ class LocalTracer(BaseCallbackHandler):
 
         rows = []
         for ev in self._events.values():
-            if "run_id" not in ev or "run_type" not in ev:
+            if "run_id" not in ev or "type" not in ev:
                 continue
             is_root = ev["run_id"] == self._root_observation_id
             # Skip leaf chains with the default name "chain" — these are LangGraph
             # internal graph-traversal nodes that contain no LLM/tool work.
             if (not is_root
-                    and ev.get("run_type") == "chain"
+                    and ev.get("type") == "CHAIN"
                     and ev.get("name") == "chain"
                     and ev["run_id"] not in parent_ids):
                 continue
@@ -431,7 +267,7 @@ class LocalTracer(BaseCallbackHandler):
             rows.append({
                 "run_id": ev["run_id"],
                 "parent_observation_id": parent_id,
-                "run_type": ev["run_type"],
+                "type": ev["type"],
                 "name": ev.get("name", "unknown"),
                 "inputs": ev.get("inputs"),
                 "outputs": ev.get("outputs"),
@@ -442,25 +278,10 @@ class LocalTracer(BaseCallbackHandler):
                 "completion_tokens": total_completion_tokens if is_root else ev.get("completion_tokens"),
                 "thread_id": self.thread_id,
                 "document_ids": doc_ids_json,
-                "display": display_json if is_root else None,
                 "event_metadata": ev.get("metadata") or {},
-                "task_type": self.task_type,
                 "agent_name": self.agent_name,
                 "prompt_name": self.prompt_name,
                 "prompt_version": self.prompt_version,
-                "base_prompt_name": self.base_prompt_name,
-                "task_prompt_name": self.task_prompt_name,
-                "quality_prompt_name": self.quality_prompt_name,
-                "base_prompt_hash": self.base_prompt_hash,
-                "task_prompt_hash": self.task_prompt_hash,
-                "quality_prompt_hash": self.quality_prompt_hash,
-                "prompt_stack_name": self.prompt_stack_name,
-                "prompt_stack_json": self.prompt_stack_json,
-                "primary_prompt_json": self.primary_prompt_json,
-                "workflow_prompts_json": self.workflow_prompts_json,
-                "prompt_stack_tokens": self.prompt_stack_tokens if is_root else None,
-                "tool_count": self._tool_count if is_root else None,
-                "llm_call_count": self._llm_call_count if is_root else None,
                 "quality_score": self.quality_score if is_root else None,
                 "user_feedback": self.user_feedback if is_root else None,
                 "environment": self.environment,
@@ -469,7 +290,7 @@ class LocalTracer(BaseCallbackHandler):
         return rows
 
     def _build_trace_events(self, rows: list[dict]) -> list[dict]:
-        """Build normalized Trace System v2 events from legacy trace rows."""
+        """Build normalized Trace System v2 events from collected callback rows."""
         root_row = next((row for row in rows if row["run_id"] == self._root_observation_id), None)
         if root_row is None:
             return []
@@ -484,35 +305,19 @@ class LocalTracer(BaseCallbackHandler):
                     return value
             return value
 
-        metadata = {
-            "task_type": self.task_type,
+        root_metadata = {
             "agent_name": self.agent_name,
-            "prompt_name": self.prompt_name,
-            "prompt_version": self.prompt_version,
-            "base_prompt_name": self.base_prompt_name,
-            "task_prompt_name": self.task_prompt_name,
-            "quality_prompt_name": self.quality_prompt_name,
-            "base_prompt_hash": self.base_prompt_hash,
-            "task_prompt_hash": self.task_prompt_hash,
-            "quality_prompt_hash": self.quality_prompt_hash,
-            "prompt_stack_name": self.prompt_stack_name,
-            "prompt_stack_json": _loads(self.prompt_stack_json),
-            "primary_prompt_json": _loads(self.primary_prompt_json),
-            "workflow_prompts_json": _loads(self.workflow_prompts_json),
-            "prompt_stack_tokens": self.prompt_stack_tokens,
-            "tool_count": self._tool_count,
-            "llm_call_count": self._llm_call_count,
             "document_ids": self.document_ids,
         }
-        metadata = {k: v for k, v in metadata.items() if v is not None}
+        root_metadata = {k: v for k, v in root_metadata.items() if v is not None}
 
-        _VALID_LEVELS = {"DEBUG", "DEFAULT", "WARNING", "ERROR"}
+        _VALID_STATUSES = {"DEBUG", "DEFAULT", "WARNING", "ERROR"}
 
-        def _resolve_level(row: dict) -> str:
+        def _resolve_status(row: dict) -> str:
             if row.get("error"):
                 return "ERROR"
-            meta_level = str(row.get("event_metadata", {}).get("level") or "").upper()
-            return meta_level if meta_level in _VALID_LEVELS else "DEFAULT"
+            meta_status = str(row.get("event_metadata", {}).get("status") or "").upper()
+            return meta_status if meta_status in _VALID_STATUSES else "DEFAULT"
 
         def _obs_body(row: dict, trace_id: str, parent_observation_id) -> dict:
             usage: dict = {}
@@ -527,15 +332,15 @@ class LocalTracer(BaseCallbackHandler):
                 "observation_id": row["run_id"],
                 "trace_id": trace_id,
                 "parent_observation_id": parent_observation_id,
-                "type": row.get("run_type") or "span",
+                "type": row.get("type") or "SPAN",
                 "name": row.get("name") or "observation",
                 "usage": usage or None,
                 "prompt_name": row.get("prompt_name"),
                 "prompt_version": row.get("prompt_version"),
                 "input": _loads(row.get("inputs")),
                 "output": _loads(row.get("outputs")),
-                "metadata": metadata,
-                "level": _resolve_level(row),
+                "metadata": row.get("event_metadata") or None,
+                "status": _resolve_status(row),
                 "status_message": row.get("error"),
                 "start_time": row.get("start_time"),
                 "end_time": row.get("end_time"),
@@ -568,7 +373,7 @@ class LocalTracer(BaseCallbackHandler):
                 "environment": self.environment,
                 "input": _loads(root_row.get("inputs")),
                 "output": _loads(root_row.get("outputs")),
-                "metadata": metadata,
+                "metadata": root_metadata,
                 "tags": [self.agent_name] if self.agent_name else [],
                 "start_time": root_row.get("start_time"),
                 "end_time": root_row.get("end_time"),
@@ -586,40 +391,3 @@ class LocalTracer(BaseCallbackHandler):
                 "body": _obs_body(row, root_row["run_id"], parent_obs),
             })
         return events
-
-    @staticmethod
-    def _write_traces(rows: list[dict]) -> None:
-        """Synchronous DB write — intended to run inside asyncio.to_thread.
-
-        Each row is flushed individually so that a run_id collision on one row
-        only rolls back that row, not the entire batch.
-        """
-        from sqlalchemy.exc import IntegrityError
-        from db import SessionLocal, Trace
-        db = SessionLocal()
-        written = 0
-        try:
-            for row in rows:
-                try:
-                    db.add(Trace(**row))
-                    db.flush()
-                    written += 1
-                except IntegrityError:
-                    db.rollback()
-                    # run_id already exists — update the existing row instead.
-                    run_id = row.get("run_id")
-                    if run_id:
-                        existing = db.query(Trace).filter(Trace.observation_id == run_id).first()
-                        if existing:
-                            for k, v in row.items():
-                                if k != "run_id" and v is not None:
-                                    setattr(existing, k, v)
-                            db.flush()
-                            written += 1
-            db.commit()
-            logger.debug("LocalTracer: flushed %d/%d events", written, len(rows))
-        except Exception as e:
-            logger.error("LocalTracer: flush failed: %s", e)
-            db.rollback()
-        finally:
-            db.close()

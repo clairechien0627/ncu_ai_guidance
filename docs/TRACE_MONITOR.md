@@ -97,13 +97,13 @@ Trace Monitor 預設只顯示 root trace。
 依 slot 分組，顯示每筆被採用的 chunk 來自哪個文件、哪頁、quote 和 interpretation。
 
 ### 原始 JSON tab
-完整的 inputs、outputs 和 display JSON，debug 用。
+完整的 trace root input/output、metadata extras、observations 和 scores，debug 用。Trace root 不再保存 display JSON；畫面需要的答案、來源與步驟資訊由 root output 和 child observations 組成。
 
 ---
 
 ## 品質走勢圖（14 天）
 
-藍線 = 每日平均品質分（0-5），橘虛線 = 每日平均延遲。可選擇只看特定 prompt 的走勢。
+藍線 = 每日平均品質分（0-5），橘虛線 = 每日平均延遲。可選擇只看特定 prompt 的走勢；prompt 篩選來源是 observations 的 `prompt_name/prompt_version`，不是 Trace root metadata。
 
 **怎麼用：** 改了 prompt 後，看品質線有沒有往上走。
 

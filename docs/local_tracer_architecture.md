@@ -44,6 +44,14 @@ observations
 └── parent_observation_id    parent node id, null 表示 trace root 下第一層
 ```
 
+`traces_v2` 是 request/root 容器，只保存全局欄位與 request-level extras，例如 `agent_name`、`document_ids`、route 結果。它不保存 prompt stack、display、run_type、token、error、tool_count 或 llm_call_count。這些資料的來源如下：
+
+- prompt identity：`Observation.prompt_name` / `Observation.prompt_version`
+- status/error：由 observations 的 `status` / `status_message` 聚合
+- tokens/cost/counts：由 observations 聚合
+- quality/feedback：由 scores 重建
+- UI preview/sources：由 root input/output 與 child observations 組成
+
 Router 建立 `trace-create` 事件，並建立一個 Router SPAN observation。刻意讓：
 
 ```text
@@ -185,7 +193,7 @@ No-tool agents 不依賴 LocalTracer；它們透過 `write_agent_span()` 和手�
 {
     "run_id": str,                         # LangChain run UUID
     "parent_observation_id": str | None,   # 暫存 LangChain parent_run_id
-    "run_type": "chain" | "llm" | "tool",
+    "type": "CHAIN" | "GENERATION" | "TOOL",  # 暫存 callback type，寫入 Observation.type
     "name": str,
     "inputs": str | None,
     "outputs": str | None,
@@ -209,6 +217,7 @@ No-tool agents 不依賴 LocalTracer；它們透過 `write_agent_span()` 和手�
 - callback method signature 保留 `run_id` / `parent_run_id`
 - `_events` 暫存保留 `"run_id"`
 - outbox body 和 DB 欄位使用 `observation_id` / `parent_observation_id`
+- LocalTracer 只把 `prompt_name` / `prompt_version` 寫到 observation body，不再接收或保存 prompt stack/hash/root prompt 快照
 
 ---
 
@@ -270,7 +279,7 @@ Router 管理的正式 request 不應依賴 root 模式。
         "input": {...},
         "output": {...},
         "metadata": {...},
-        "level": "DEFAULT|WARNING|ERROR",
+        "status": "DEFAULT|WARNING|ERROR|DEBUG",
         "status_message": None,
         "start_time": "...",
         "end_time": "...",
@@ -299,8 +308,7 @@ Router 管理的正式 request 不應依賴 root 模式。
 | `prompt_tokens` / `completion_tokens` / `total_tokens` | token 欄位快取 |
 | `completion_start_time` | streaming 第一個 token 時間 |
 | `input_cost` / `output_cost` / `total_cost` | 成本欄位 |
-| `level` | `DEFAULT` / `WARNING` / `ERROR` |
-| `status` | 由 `level` 派生：`success` / `error` |
+| `status` | `DEFAULT` / `WARNING` / `ERROR` / `DEBUG` |
 | `status_message` | 錯誤訊息 |
 
 ---
@@ -315,7 +323,6 @@ class AgentContext:
     observation_id: str | None = None
     thread_id: str | None = None
     document_ids: list[int] | None = None
-    task_type: str | None = None
 ```
 
 `runner.run_tool_agent()` 建立 context 時必須傳入：
@@ -325,7 +332,6 @@ AgentContext(
     thread_id=thread_id,
     observation_id=observation_id,
     document_ids=document_ids,
-    task_type=metadata.get("task_type"),
 )
 ```
 
@@ -388,7 +394,7 @@ kwargs["run_id"]
 ```python
 return AgentResult(
     response="answer",
-    agent_name="retrieval_agent",
+    agent_name="retrieval",
     observation_id=kwargs.get("observation_id"),
 )
 ```

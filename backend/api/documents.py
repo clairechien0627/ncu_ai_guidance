@@ -390,7 +390,7 @@ def export_document(doc_id: int, db: Session = Depends(get_db)):
     import re
     import zipfile
     from datetime import datetime, timezone
-    from db import Trace
+    from services.trace_read.service import TraceReadService
 
     doc = db.query(Document).filter(Document.id == doc_id, Document.deleted_at.is_(None)).first()
     if not doc:
@@ -443,42 +443,7 @@ def export_document(doc_id: int, db: Session = Depends(get_db)):
     chunks.sort(key=lambda c: (c["chunk_index"] if c["chunk_index"] is not None else 9999, c["page"] if isinstance(c["page"], int) else 9999, c["id"]))
     chunks_data = {"doc_id": doc_id, "filename": doc.filename, "total": len(chunks), "chunks": chunks}
 
-    traces_raw = []
-    if not traces_raw:
-        candidates = (
-            db.query(Trace)
-            .filter(Trace.document_ids.isnot(None), Trace.display.isnot(None))
-            .order_by(Trace.start_time.desc()).limit(200).all()
-        )
-        for t in candidates:
-            try:
-                if doc_id in json.loads(t.document_ids):
-                    traces_raw.append(t)
-                    if len(traces_raw) >= 5:
-                        break
-            except Exception:
-                pass
-
-    traces_data = []
-    for t in traces_raw:
-        latency = None
-        if t.start_time and t.end_time:
-            latency = round((t.end_time - t.start_time).total_seconds(), 2)
-        display = None
-        if t.display:
-            try:
-                display = json.loads(t.display)
-            except Exception:
-                pass
-        traces_data.append({
-            "id": t.observation_id,
-            "name": t.name,
-            "status": "error" if t.error else "success",
-            "start_time": t.start_time.isoformat() if t.start_time else None,
-            "latency_seconds": latency,
-            "error": t.error,
-            "display": display,
-        })
+    traces_data = TraceReadService(db).document_traces(doc_id, limit=5)
 
     from starlette.background import BackgroundTask
 

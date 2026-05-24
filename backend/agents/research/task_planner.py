@@ -304,8 +304,7 @@ async def create_research_plan(
             messages,
             prompt_name="task_planner",
             metadata={
-                "task_type": "research_task",
-                "agent_name": "research_agent",
+                "agent_name": "research",
                 **research_node_stack_metadata("task_planner"),
             },
         )

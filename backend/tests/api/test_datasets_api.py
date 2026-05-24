@@ -13,7 +13,7 @@ from api.traces import (
     DatasetManualItemRequest,
     DatasetTraceItemRequest,
 )
-from db import Trace
+from db import Score, TraceV2
 from db.session import Base
 
 
@@ -23,21 +23,17 @@ def _session_factory():
     return sessionmaker(bind=engine)
 
 
-def _trace(observation_id: str, quality_score: float | None = None) -> Trace:
+def _trace(trace_id: str, quality_score: float | None = None) -> TraceV2:
     now = datetime(2026, 5, 18, 1, 0, 0)
-    return Trace(
-        observation_id=observation_id,
-        run_type="chain",
-        name=observation_id,
+    return TraceV2(
+        trace_id=trace_id,
+        name=trace_id,
         start_time=now,
         end_time=now + timedelta(seconds=2),
-        agent_name="retrieval_agent",
         environment="test",
-        task_type="retrieval_qa",
-        quality_score=quality_score,
-        inputs=json.dumps({"messages": [{"role": "human", "content": "question"}]}),
-        outputs=json.dumps({"answer": "answer"}),
-        display=json.dumps({"answer": "answer"}),
+        input=json.dumps({"messages": [{"role": "human", "content": "question"}]}),
+        output=json.dumps({"answer": "answer"}),
+        metadata_json=json.dumps({"agent_name": "retrieval"}),
     )
 
 
@@ -78,7 +74,7 @@ def test_dataset_api_manual_item_create_and_soft_delete():
                 input={"messages": [{"role": "human", "content": "manual question"}]},
                 output={"answer": "candidate"},
                 expected_output={"answer": "expected"},
-                context={"task_type": "manual_eval"},
+                context={"agent_name": "manual_eval"},
                 tags=["manual"],
             ),
             db=db,
@@ -102,6 +98,10 @@ def test_dataset_api_low_quality_and_eval_run(monkeypatch):
     db = SessionLocal()
     db.add(_trace("low", quality_score=2.0))
     db.add(_trace("high", quality_score=4.0))
+    db.add_all([
+        Score(score_id="low:overall", trace_id="low", name="overall", value=2.0),
+        Score(score_id="high:overall", trace_id="high", name="overall", value=4.0),
+    ])
     db.commit()
 
     queued = []

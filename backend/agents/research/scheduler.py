@@ -103,8 +103,7 @@ async def decide_slot_ordering(
             _build_scheduler_prompt(rs, candidate_slots, void_slot_attempts),
             prompt_name="research_scheduler",
             metadata={
-                "task_type": "research_task",
-                "agent_name": "research_agent",
+                "agent_name": "research",
                 **research_node_stack_metadata("research_scheduler"),
             },
         )

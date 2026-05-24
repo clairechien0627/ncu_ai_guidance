@@ -29,8 +29,6 @@ import { TraceDetailContent } from '../../components/admin/TraceDetailContent'
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 40
-const STATUS_OPTIONS  = ['success', 'error']
-
 const DATE_PRESETS = [
   { label: 'Today',       days: 0  },
   { label: 'Past 7d',     days: 7  },
@@ -55,7 +53,7 @@ const ALL_COLS: ColEntry[] = [
   { key: 'name',        label: 'Name',                            width: 120, resizable: true, minWidth: 65, maxWidth: 150  },
   { key: 'input',       label: 'Input',                           width: 180, resizable: true, minWidth: 120, maxWidth: 600  },
   { key: 'output',      label: 'Output',                          width: 180, resizable: true, minWidth: 120, maxWidth: 600  },
-  { key: 'obs_levels',  label: 'Obs. Levels',                     width: 100,  resizable: false },
+  { key: 'obs_statuses', label: 'Obs. Statuses',                  width: 100,  resizable: false },
   { key: 'latency',     label: 'Latency',                         width: 80,  resizable: false },
   { key: 'tokens',        label: 'Tokens',                        width: 90,  resizable: false },
   { key: 'input_tokens',  label: 'Input Tokens',                  width: 80,  resizable: false },
@@ -70,7 +68,7 @@ const ALL_COLS: ColEntry[] = [
   { key: 'session',     label: 'Thread',                          width: 120, resizable: true, minWidth: 80, maxWidth: 300  },
   { key: 'user',        label: 'User',                            width: 100, resizable: true, minWidth: 80, maxWidth: 300  },
   { key: 'obs_count',   label: 'Observations',                    width: 110,  resizable: false },
-  { key: 'level',       label: 'Level',                           width: 110,  resizable: false },
+  { key: 'status',      label: 'Status',                          width: 110,  resizable: false },
   { key: 'trace_id',    label: 'Trace ID',                        width: 120, resizable: true, minWidth: 80, maxWidth: 300  },
   { key: 'actions',     label: '',               required: true,  width: 50,  resizable: false },
 ]
@@ -78,11 +76,11 @@ const ALL_COLS: ColEntry[] = [
 const COL_DEFAULTS: Record<string, boolean> = {
   // Langfuse defaults ON
   time: true, name: true, input: true, output: true,
-  obs_levels: true, latency: true, tokens: true, total_cost: true,
+  obs_statuses: true, latency: true, tokens: true, total_cost: true,
   environment: true, tags: true, metadata: true,
   // Langfuse defaults OFF
   score: false, session: false, user: false,
-  obs_count: false, level: false, trace_id: false,
+  obs_count: false, status: false, trace_id: false,
   input_tokens: false, output_tokens: false,
   input_cost: false, output_cost: false,
 }
@@ -95,13 +93,11 @@ function fmtTime(iso: string | null | undefined) {
 }
 function inputPreview(t: TraceItem): string {
   if (typeof t.input === 'string' && t.input) return t.input.slice(0, 100)
-  const msg = t.display?.messages?.find((m: any) => m.role === 'human' || m.role === 'user')
-  return msg && 'content' in msg ? String(msg.content ?? '').slice(0, 100) : ''
+  return ''
 }
 function outputPreview(t: TraceItem): string {
   if (typeof t.output === 'string' && t.output) return t.output.slice(0, 100)
-  const a = t.display?.answer
-  return typeof a === 'string' ? a.slice(0, 100) : ''
+  return ''
 }
 function dateAgo(days: number): string {
   const d = new Date()
@@ -112,7 +108,7 @@ function dateAgo(days: number): string {
 // ── Filter state ──────────────────────────────────────────────────────────────
 
 type FilterState = {
-  levels: string[]
+  statuses: string[]
   tags: string[]
   names: string[]
   user_ids: string[]
@@ -129,7 +125,7 @@ type FilterState = {
 }
 
 const FILTER_DEFAULT: FilterState = {
-  levels: [], tags: [], names: [], user_ids: [],
+  statuses: [], tags: [], names: [], user_ids: [],
   prompt: 'all', latency: '', min_quality: '', max_quality: '',
   min_tokens: '', max_tokens: '', search: '', date_from: '', date_to: '', datePreset: 14,
 }
@@ -369,7 +365,7 @@ export default function TracesPage() {
   const { data: userIdList = [] }  = useQuery<{ user_id: string; count: number }[]>({ queryKey: ['trace-user-ids'], queryFn: getTraceUserIds })
 
   const traceFilters: TraceFilters = useMemo(() => ({
-    level:       filters.levels.length > 0 ? filters.levels.join(',') : undefined,
+    status:      filters.statuses.length > 0 ? filters.statuses.join(',') : undefined,
     tags:        filters.tags.length > 0 ? filters.tags.join(',') : undefined,
     names:       filters.names.length > 0 ? filters.names.join(',') : undefined,
     user_ids:    filters.user_ids.length > 0 ? filters.user_ids.join(',') : undefined,
@@ -471,7 +467,7 @@ export default function TracesPage() {
         <div className="adm-filter-sidebar-header">
           <span>Filters</span>
           {/* clear all */}
-          {(filters.levels.length > 0 || filters.tags.length > 0 || filters.names.length > 0 ||
+          {(filters.statuses.length > 0 || filters.tags.length > 0 || filters.names.length > 0 ||
             filters.user_ids.length > 0 || filters.prompt !== 'all' || filters.latency ||
             filters.min_quality || filters.max_quality || filters.min_tokens || filters.max_tokens) && (
             <button className="adm-btn adm-btn-ghost adm-btn-sm" style={{ fontSize: 11, padding: '1px 6px' }}
@@ -514,16 +510,16 @@ export default function TracesPage() {
             </FilterSection>
           )}
 
-          {/* Level — multi-select */}
-          <FilterSection title="Level">
-            {(['DEFAULT', 'WARNING', 'ERROR'] as const).map(lvl => (
-              <CheckItem key={lvl} label={lvl}
-                checked={filters.levels.includes(lvl)}
+          {/* Status - multi-select */}
+          <FilterSection title="Status">
+            {(['DEFAULT', 'WARNING', 'ERROR', 'DEBUG'] as const).map(status => (
+              <CheckItem key={status} label={status}
+                checked={filters.statuses.includes(status)}
                 onChange={() => {
-                  const next = filters.levels.includes(lvl)
-                    ? filters.levels.filter(x => x !== lvl)
-                    : [...filters.levels, lvl]
-                  dispatch({ levels: next }); setPage(1)
+                  const next = filters.statuses.includes(status)
+                    ? filters.statuses.filter(x => x !== status)
+                    : [...filters.statuses, status]
+                  dispatch({ statuses: next }); setPage(1)
                 }}
               />
             ))}
@@ -696,7 +692,7 @@ export default function TracesPage() {
                   if (c.key === 'name')        return <th key="name">Name{D}</th>
                   if (c.key === 'input')       return <th key="input">Input{D}</th>
                   if (c.key === 'output')      return <th key="output">Output{D}</th>
-                  if (c.key === 'obs_levels')  return <th key="obs_levels">Obs. Levels{D}</th>
+                  if (c.key === 'obs_statuses')  return <th key="obs_statuses">Obs. Statuses{D}</th>
                   if (c.key === 'latency')     return <th key="latency" {...sort.th('latency')}>Latency{sort.ind('latency')}{D}</th>
                   if (c.key === 'tokens')        return <th key="tokens">Tokens{D}</th>
                   if (c.key === 'input_tokens')  return <th key="input_tokens">In Tokens{D}</th>
@@ -711,9 +707,8 @@ export default function TracesPage() {
                   if (c.key === 'session')     return <th key="session">Thread{D}</th>
                   if (c.key === 'user')        return <th key="user">User{D}</th>
                   if (c.key === 'obs_count')   return <th key="obs_count">Observations{D}</th>
-                  if (c.key === 'level')       return <th key="level">Level{D}</th>
                   if (c.key === 'trace_id')    return <th key="trace_id">Trace ID{D}</th>
-                  if (c.key === 'status')      return <th key="status">Level</th>
+                  if (c.key === 'status')      return <th key="status">Status{D}</th>
                   if (c.key === 'actions')     return <th key="actions" />
                   return <th key={c.key}>{c.label}</th>
                 })}
@@ -725,7 +720,7 @@ export default function TracesPage() {
               ) : traces.length === 0 ? (
                 <tr><td colSpan={visibleCols.length} className="adm-table-empty">沒有符合條件的 trace</td></tr>
               ) : sort.apply(traces).map(trace => {
-                const isErr = trace.level === 'ERROR'
+                const isErr = trace.status === 'ERROR'
                 const isSel = selected.has(trace.id)
                 const inP   = inputPreview(trace)
                 const outP  = outputPreview(trace)
@@ -750,19 +745,19 @@ export default function TracesPage() {
                           {isErr ? (trace.error?.slice(0, 80) ?? 'Error') : (outP || '—')}
                         </td>
                       )
-                      if (c.key === 'obs_levels') return (
-                        <td key="obs_levels">
-                          {trace.obs_level_counts
+                      if (c.key === 'obs_statuses') return (
+                        <td key="obs_statuses">
+                          {trace.obs_status_counts
                             ? <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                {Object.entries(trace.obs_level_counts).map(([lvl, n]) => (
-                                  <span key={lvl} style={{
+                                {Object.entries(trace.obs_status_counts).map(([status, n]) => (
+                                  <span key={status} style={{
                                     display: 'inline-flex', alignItems: 'center', gap: 2,
                                     fontSize: 10, fontWeight: 600,
-                                    color: lvl === 'ERROR' ? 'var(--adm-red)' : 'var(--adm-amber)',
+                                    color: status === 'ERROR' ? 'var(--adm-red)' : 'var(--adm-amber)',
                                   }}>
-                                    {lvl === 'ERROR'
+                                    {status === 'ERROR'
                                       ? <OctagonX size={11} />
-                                      : lvl === 'WARNING'
+                                      : status === 'WARNING'
                                       ? <TriangleAlert size={11} />
                                       : <SquareTerminal size={11} />}
                                     {n}
@@ -855,21 +850,21 @@ export default function TracesPage() {
                           {trace.observation_count ?? '—'}
                         </td>
                       )
-                      if (c.key === 'level') {
-                        const lvlColor = trace.level === 'ERROR' ? 'var(--adm-red)'
-                          : trace.level === 'WARNING' ? 'var(--adm-amber)'
-                          : trace.level === 'DEBUG'   ? 'var(--adm-text-3)'
+                      if (c.key === 'status') {
+                        const lvlColor = trace.status === 'ERROR' ? 'var(--adm-red)'
+                          : trace.status === 'WARNING' ? 'var(--adm-amber)'
+                          : trace.status === 'DEBUG'   ? 'var(--adm-text-3)'
                           : 'var(--adm-green)'
-                        const lvlLabel = trace.level === 'ERROR' ? 'Error'
-                          : trace.level === 'WARNING' ? 'Warning'
-                          : trace.level === 'DEBUG'   ? 'Debug'
+                        const lvlLabel = trace.status === 'ERROR' ? 'Error'
+                          : trace.status === 'WARNING' ? 'Warning'
+                          : trace.status === 'DEBUG'   ? 'Debug'
                           : 'Default'
                         return (
-                          <td key="level">
+                          <td key="status">
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: lvlColor, fontSize: 11, fontWeight: 500 }}>
-                              {trace.level === 'ERROR'   ? <OctagonX size={12} />
-                               : trace.level === 'WARNING' ? <TriangleAlert size={12} />
-                               : trace.level === 'DEBUG'   ? <SquareTerminal size={12} />
+                              {trace.status === 'ERROR'   ? <OctagonX size={12} />
+                               : trace.status === 'WARNING' ? <TriangleAlert size={12} />
+                               : trace.status === 'DEBUG'   ? <SquareTerminal size={12} />
                                : <CircleCheck size={12} />}
                               {lvlLabel}
                             </span>
@@ -880,17 +875,6 @@ export default function TracesPage() {
                         <td key="trace_id" className="adm-cell-mono" style={{ fontSize: 10, color: 'var(--adm-text-3)', overflow: 'hidden', textOverflow: 'ellipsis' }}
                           title={trace.id}>
                           {trace.id.slice(-12)}
-                        </td>
-                      )
-                      if (c.key === 'status') return (
-                        <td key="status">
-                          {trace.level === 'ERROR'
-                            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 600, color: 'var(--adm-red)' }}><OctagonX size={12} /> ERROR</span>
-                            : trace.level === 'WARNING'
-                            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 600, color: 'var(--adm-amber)' }}><TriangleAlert size={12} /> WARNING</span>
-                            : trace.level === 'DEBUG'
-                            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color: 'var(--adm-text-3)' }}><SquareTerminal size={12} /> DEBUG</span>
-                            : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color: 'var(--adm-green)', fontWeight: 500 }}><CircleCheck size={12} /> DEFAULT</span>}
                         </td>
                       )
                       if (c.key === 'actions') return (

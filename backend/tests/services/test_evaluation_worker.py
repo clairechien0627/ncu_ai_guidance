@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from db import Dataset, DatasetItem, EvaluationRun, EvaluationRunItem, ExperimentRun, ExperimentRunItem, Score, Trace
+from db import Dataset, DatasetItem, EvaluationRun, EvaluationRunItem, ExperimentRun, ExperimentRunItem, Score, TraceV2
 from db.session import Base
 from services.evaluation import runs as evaluation_runs, worker as evaluation_worker, experiments
 from services.evaluation.runs import EvaluationRunService
@@ -37,22 +37,24 @@ def _patch_db_session(monkeypatch, SessionLocal):
     monkeypatch.setattr(evaluation_worker, "db_session", _db_session)
 
 
-def _trace(observation_id: str) -> Trace:
+def _trace(trace_id: str) -> TraceV2:
     now = datetime(2026, 5, 18, 1, 0, 0)
-    return Trace(
-        observation_id=observation_id,
-        run_type="chain",
-        name=observation_id,
+    return TraceV2(
+        trace_id=trace_id,
+        name=trace_id,
         start_time=now,
         end_time=now + timedelta(seconds=2),
-        agent_name="retrieval_agent",
         thread_id="thread-1",
         environment="test",
-        task_type="retrieval_qa",
-        display=json.dumps({
+        input=json.dumps({"messages": [{"role": "human", "content": "question"}]}),
+        output=json.dumps({"answer": "answer"}),
+        metadata_json=json.dumps({
+            "agent_name": "retrieval",
+            "display": {
             "answer": "answer",
             "messages": [{"role": "human", "content": "question"}],
             "sources": ["source-1"],
+            },
         }),
     )
 
@@ -72,7 +74,7 @@ def _seed_dataset(db, item_count: int = 1):
             input=json.dumps({"messages": [{"role": "human", "content": f"question {idx + 1}"}]}),
             output=json.dumps({"answer": f"old {idx + 1}"}),
             expected_output=json.dumps({"answer": f"expected {idx + 1}"}),
-            context=json.dumps({"task_type": "retrieval_qa"}),
+            context=json.dumps({"agent_name": "retrieval"}),
             is_archived=False,
             is_deleted=False,
             created_at=datetime(2026, 5, 18, 1, 1, 0),
@@ -97,7 +99,7 @@ async def _successful_evaluator(**_kwargs):
 async def _successful_generator(**kwargs):
     return {
         "output": {"answer": f"generated {kwargs['dataset_item_id']}"},
-        "context": {"task_type": "retrieval_qa"},
+        "context": {"agent_name": "retrieval"},
         "trace_id": f"generated-{kwargs['dataset_item_id']}",
     }
 

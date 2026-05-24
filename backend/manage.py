@@ -4,7 +4,7 @@
 Usage:
     python manage.py migrate                  # Apply pending Alembic migrations
     python manage.py reset-stuck             # Reset documents/jobs stuck in processing state
-    python manage.py clear-traces [--days N] # Delete traces older than N days (default: 30)
+    python manage.py clear-traces [--days N] # Delete TraceV2 rows older than N days (default: 30)
     python manage.py shell                   # Drop into an interactive Python REPL with app context
 """
 import argparse
@@ -55,24 +55,34 @@ def cmd_reset_stuck(args) -> None:
 def cmd_clear_traces(args) -> None:
     """Delete traces older than --days days (default 30)."""
     from datetime import datetime, timedelta, timezone
-    from db import create_tables, db_session, Trace
+    from db import create_tables, db_session, TraceV2, Observation, Score
 
     create_tables()
     cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=args.days)
     with db_session() as db:
-        deleted = db.query(Trace).filter(Trace.start_time < cutoff).delete(synchronize_session=False)
+        trace_ids = [
+            row[0]
+            for row in db.query(TraceV2.trace_id)
+            .filter(TraceV2.start_time < cutoff)
+            .all()
+        ]
+        deleted = 0
+        if trace_ids:
+            db.query(Score).filter(Score.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+            db.query(Observation).filter(Observation.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+            deleted = db.query(TraceV2).filter(TraceV2.trace_id.in_(trace_ids)).delete(synchronize_session=False)
         db.commit()
     print(f"✓ Deleted {deleted} trace(s) older than {args.days} day(s) (before {cutoff.date()}).")
 
 
 def cmd_shell(args) -> None:
-    """Interactive REPL with db_session, Document, Trace pre-imported."""
+    """Interactive REPL with db_session, Document, TraceV2 pre-imported."""
     import code
-    from db import db_session, Document, Trace, JobHistory  # noqa: F401
+    from db import db_session, Document, TraceV2, Observation, Score, JobHistory  # noqa: F401
 
     banner = (
         "Report Agent management shell\n"
-        "Available: db_session, Document, Trace, JobHistory\n"
+        "Available: db_session, Document, TraceV2, Observation, Score, JobHistory\n"
         "Example:   with db_session() as db: print(db.query(Document).count())\n"
     )
     code.interact(banner=banner, local=locals())

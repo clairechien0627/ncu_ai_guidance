@@ -16,8 +16,6 @@ class TraceSessionUserReadService:
             p for p in self.core._merged_payloads(
                 {"user_id": user_id, "environment": environment, "date_from": date_from, "date_to": date_to},
                 include_raw=True,
-                include_display=False,
-                legacy_limit=2000,
             )
             if p.get("thread_id")
         ]
@@ -28,7 +26,7 @@ class TraceSessionUserReadService:
 
     def session_detail(self, thread_id: str) -> dict:
         payloads = [
-            p for p in self.core._merged_payloads({}, include_raw=True, include_display=False)
+            p for p in self.core._merged_payloads({}, include_raw=True)
             if p.get("thread_id") == thread_id
         ]
         if not payloads:
@@ -51,8 +49,6 @@ class TraceSessionUserReadService:
             p for p in self.core._merged_payloads(
                 {"environment": environment, "date_from": date_from, "date_to": date_to},
                 include_raw=True,
-                include_display=False,
-                legacy_limit=5000,
             )
             if self.core._payload_user_id(p)
         ]
@@ -64,7 +60,7 @@ class TraceSessionUserReadService:
 
 
     def user_detail(self, user_id: str) -> dict:
-        payloads = self.core._merged_payloads({"user_id": user_id}, include_raw=True, include_display=False, legacy_limit=500)
+        payloads = self.core._merged_payloads({"user_id": user_id}, include_raw=True)
         if not payloads:
             raise HTTPException(status_code=404, detail="User not found")
         sessions = self.core._sessions_from_payloads(payloads)

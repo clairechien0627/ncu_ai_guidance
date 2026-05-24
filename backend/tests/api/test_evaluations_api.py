@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import api.traces as traces_api
-from db import Trace
+from db import TraceV2
 from db.session import Base
 
 
@@ -15,17 +15,17 @@ def _session_factory():
     return sessionmaker(bind=engine)
 
 
-def _trace(observation_id: str) -> Trace:
+def _trace(trace_id: str) -> TraceV2:
     now = datetime(2026, 5, 18, 1, 0, 0)
-    return Trace(
-        observation_id=observation_id,
-        run_type="chain",
-        name=observation_id,
+    return TraceV2(
+        trace_id=trace_id,
+        name=trace_id,
         start_time=now,
         end_time=now + timedelta(seconds=2),
-        agent_name="retrieval_agent",
         environment="test",
-        quality_score=None,
+        input='{"messages":[{"role":"human","content":"question"}]}',
+        output='{"answer":"answer"}',
+        metadata_json='{"agent_name":"retrieval"}',
     )
 
 

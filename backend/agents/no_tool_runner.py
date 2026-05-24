@@ -63,7 +63,7 @@ def write_agent_span(
             "type": "SPAN",
             "name": name,
             "start_time": start_time.isoformat(),
-            "level": "ERROR" if error else "DEFAULT",
+            "status": "ERROR" if error else "DEFAULT",
             "status_message": error,
         }
         if end_time:
@@ -91,56 +91,9 @@ def _write_trace(
     output: dict | None = None,
     error: str | None = None,
 ) -> None:
-    import os
-    if os.environ.get("LEGACY_TRACE_WRITE", "true").lower() in ("0", "false", "no"):
-        return
-
-    from db import db_session, Trace
-
-    db = None
-    try:
-        with db_session() as db:
-            now = datetime.now(timezone.utc)
-            trace = db.query(Trace).filter(Trace.observation_id == observation_id).first()
-            if trace is None:
-                trace = Trace(
-                    observation_id=observation_id,
-                    trace_id=trace_id,
-                    run_type="llm",
-                    name=name,
-                    start_time=now,
-                    thread_id=thread_id,
-                    document_ids=json.dumps(document_ids) if document_ids else None,
-                    task_type=metadata.get("task_type"),
-                    agent_name=metadata.get("agent_name"),
-                    prompt_name=metadata.get("prompt_name"),
-                    prompt_version=metadata.get("prompt_version"),
-                    base_prompt_name=metadata.get("base_prompt_name"),
-                    task_prompt_name=metadata.get("task_prompt_name"),
-                    base_prompt_hash=metadata.get("base_prompt_hash"),
-                    task_prompt_hash=metadata.get("task_prompt_hash"),
-                    prompt_stack_name=metadata.get("prompt_stack_name"),
-                    prompt_stack_json=metadata.get("prompt_stack_json"),
-                    primary_prompt_json=metadata.get("primary_prompt_json"),
-                    workflow_prompts_json=metadata.get("workflow_prompts_json"),
-                    prompt_stack_tokens=metadata.get("prompt_stack_tokens"),
-                    inputs=json.dumps(inputs, ensure_ascii=False),
-                    tool_count=0,
-                    llm_call_count=1,
-                )
-                db.add(trace)
-            if output is not None:
-                trace.outputs = json.dumps(output, ensure_ascii=False)
-                trace.display = json.dumps(output, ensure_ascii=False)
-                trace.end_time = now
-            if error:
-                trace.error = error
-                trace.end_time = now
-            db.commit()
-    except Exception as exc:
-        logger.warning("No-tool trace write failed: %s", exc)
-        if db is not None:
-            db.rollback()
+    # Agent SPAN and GENERATION observations are written through Trace v2 outbox
+    # by write_agent_span() and the explicit GENERATION enqueue calls below.
+    return
 
 
 def _get_document_abstracts(document_ids: list[int]) -> list[dict]:
@@ -160,7 +113,6 @@ def _prepare_no_tool_call(
     user_message: str,
     stack_name: str,
     agent_name: str,
-    task_type: str,
     document_ids: list[int] | None = None,
     extra_system_messages: list[str] | None = None,
     payload: dict | None = None,
@@ -168,7 +120,6 @@ def _prepare_no_tool_call(
 ) -> tuple[list, dict, dict]:
     stack = load_stack(stack_name)
     metadata = {
-        "task_type": task_type,
         "agent_name": agent_name,
         **stack.metadata(),
     }
@@ -204,7 +155,6 @@ async def run_no_tool_agent(
     stack_name: str,
     prompt_name: str,
     agent_name: str,
-    task_type: str,
     observation_id: str | None = None,
     trace_id: str | None = None,
     use_mini: bool = False,
@@ -218,7 +168,6 @@ async def run_no_tool_agent(
         user_message=user_message,
         stack_name=stack_name,
         agent_name=agent_name,
-        task_type=task_type,
         document_ids=document_ids,
         extra_system_messages=extra_system_messages,
         payload=payload,
@@ -278,7 +227,7 @@ async def run_no_tool_agent(
                         "total_tokens": (prompt_tokens or 0) + (completion_tokens or 0),
                         "start_time": llm_start.isoformat(),
                         "end_time": llm_end.isoformat(),
-                        "level": "DEFAULT",
+                        "status": "DEFAULT",
                         "metadata": {"prompt_name": prompt_name},
                     },
                 }])
@@ -318,7 +267,6 @@ async def stream_no_tool_agent(
     stack_name: str,
     prompt_name: str,
     agent_name: str,
-    task_type: str,
     observation_id: str | None = None,
     trace_id: str | None = None,
     use_mini: bool = False,
@@ -332,7 +280,6 @@ async def stream_no_tool_agent(
         user_message=user_message,
         stack_name=stack_name,
         agent_name=agent_name,
-        task_type=task_type,
         document_ids=document_ids,
         extra_system_messages=extra_system_messages,
         payload=payload,
@@ -397,7 +344,7 @@ async def stream_no_tool_agent(
                         "start_time": stream_start.isoformat(),
                         "completion_start_time": completion_start_time.isoformat() if completion_start_time else None,
                         "end_time": stream_end.isoformat(),
-                        "level": "DEFAULT",
+                        "status": "DEFAULT",
                         "metadata": {"prompt_name": prompt_name},
                     },
                 }])

@@ -372,7 +372,7 @@ export function DocumentDetailPanel({
                       className="trace-row-head"
                       onClick={() => onExpandTrace(isOpen ? null : trace.id)}
                     >
-                      <span className="trace-dot" data-status={trace.level === 'ERROR' ? 'error' : 'success'} />
+                      <span className="trace-dot" data-status={trace.status === 'ERROR' ? 'error' : 'success'} />
                       <span className="trace-name">{trace.name}</span>
                       <span className="trace-latency" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         {timeAgo && <span>{timeAgo}</span>}
@@ -385,66 +385,18 @@ export function DocumentDetailPanel({
                       )}
                       <ChevronRight size={13} className="trace-chevron" />
                     </button>
-                    {isOpen && trace.display && (
+                    {isOpen && (trace.input || trace.output) && (
                       <div className="trace-row-body">
-                        {trace.display.messages.map((msg, i) => {
-                          if (msg.role === 'system') return (
-                            <div key={i} className="trace-msg">
-                              <span className="trace-msg-type" style={{ color: '#475569' }}>系統</span>
-                              <div className="trace-msg-content">{msg.content}</div>
-                            </div>
-                          )
-                          if (msg.role === 'human') return (
-                            <div key={i} className="trace-msg">
-                              <span className="trace-msg-type" style={{ color: '#2563eb' }}>問題</span>
-                              <div className="trace-msg-content">{msg.content}</div>
-                            </div>
-                          )
-                          if (msg.role === 'ai' && msg.content) return (
-                            <div key={i} className="trace-msg">
-                              <span className="trace-msg-type" style={{ color: '#7c3aed' }}>AI</span>
-                              <div className="trace-msg-content">{msg.content}</div>
-                            </div>
-                          )
-                          if (msg.role === 'ai_tool_call') return msg.tool_calls.map(tc => (
-                            <div key={tc.call_id} className="trace-msg">
-                              <span className="trace-msg-type" style={{ color: '#7c3aed' }}>AI</span>
-                              <div className="trace-tool-name">{tc.tool}</div>
-                              <pre className="trace-code">{JSON.stringify(tc.args, null, 2)}</pre>
-                            </div>
-                          ))
-                          if (msg.role === 'tool') {
-                            let prettyRaw = msg.raw ?? ''
-                            try { prettyRaw = JSON.stringify(JSON.parse(msg.raw ?? ''), null, 2) } catch {}
-                            const isSearch = msg.tool === 'search_report'
-                            let chunkCount = 0
-                            if (isSearch) {
-                              chunkCount = msg.chunks.length
-                              if (chunkCount === 0 && msg.raw) {
-                                try {
-                                  const p = JSON.parse(msg.raw)
-                                  chunkCount = Array.isArray(p?.results) ? p.results.length : 0
-                                } catch {}
-                              }
-                            }
-                            return (
-                              <div key={i} className="trace-msg">
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                  <span className="trace-msg-type" style={{ color: '#0d9488' }}>TOOL</span>
-                                  {isSearch && <span className="trace-chunk-badge">{chunkCount} chunks</span>}
-                                </div>
-                                {prettyRaw && (
-                                  <pre className="trace-code" style={{ maxHeight: 220, overflowY: 'auto', overflowX: 'hidden', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{prettyRaw}</pre>
-                                )}
-                              </div>
-                            )
-                          }
-                          return null
-                        })}
-                        {trace.display.answer && (
+                        {trace.input && (
+                          <div className="trace-msg">
+                            <span className="trace-msg-type" style={{ color: '#2563eb' }}>問題</span>
+                            <div className="trace-msg-content">{trace.input}</div>
+                          </div>
+                        )}
+                        {trace.output && (
                           <div className="trace-msg">
                             <span className="trace-msg-type" style={{ color: '#4f46e5' }}>回答</span>
-                            <div className="trace-msg-content">{trace.display.answer}</div>
+                            <div className="trace-msg-content">{trace.output}</div>
                           </div>
                         )}
                       </div>

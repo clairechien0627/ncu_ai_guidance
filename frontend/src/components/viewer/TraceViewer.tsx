@@ -52,7 +52,7 @@ export default function TraceViewer({ onClose }: Props) {
           ) : traces.map(t => (
             <div key={t.id} style={S.row}>
               <div style={S.rowTop} onClick={() => setExpanded(v => v === t.id ? null : t.id)}>
-                <StatusIcon status={t.level} />
+                <StatusIcon status={t.status} />
                 <span style={S.name}>{t.name}</span>
                 {t.latency != null && (
                   <span style={S.latency}><Clock size={11} style={{ marginRight: 2 }} />{t.latency}s</span>

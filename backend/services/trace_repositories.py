@@ -11,7 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from db import Observation, Score, ScoreConfig, Trace, TraceV2
+from db import Observation, Score, ScoreConfig, TraceV2
 
 
 def _utcnow() -> datetime:
@@ -35,6 +35,41 @@ def _json_obj(value: Any) -> Any:
         except Exception:
             return value
     return value
+
+
+_ROOT_TRACE_METADATA_DROP_KEYS = {
+    "display",
+    "tool_count",
+    "llm_call_count",
+    "prompt_name",
+    "prompt_version",
+    "base_prompt_name",
+    "task_prompt_name",
+    "quality_prompt_name",
+    "base_prompt_hash",
+    "task_prompt_hash",
+    "quality_prompt_hash",
+    "prompt_stack_name",
+    "prompt_stack_json",
+    "primary_prompt_json",
+    "workflow_prompts_json",
+    "prompt_stack_tokens",
+    "research_effective_base_prompt_stack_json",
+    "research_effective_system_prompt_json",
+    "research_runtime_prompt_json",
+    "research_runtime_prompt_summary",
+    "extract_step2_prompt_stack_json",
+    "extract_step3_prompt_stack_json",
+    "extract_step4_prompt_stack_json",
+}
+
+
+def _root_trace_metadata(value: Any) -> dict | None:
+    data = _json_obj(value)
+    if not isinstance(data, dict):
+        return None
+    cleaned = {k: v for k, v in data.items() if k not in _ROOT_TRACE_METADATA_DROP_KEYS}
+    return cleaned or None
 
 
 def _dt(value: Any) -> datetime | None:
@@ -136,6 +171,16 @@ def _normalize_observation_type(value: Any) -> str:
     return mapping.get(raw, raw)
 
 
+def _normalize_observation_status(value: Any, status_message: Any = None) -> str:
+    raw = str(value or "").upper()
+    valid = {"DEBUG", "DEFAULT", "WARNING", "ERROR"}
+    if raw in valid:
+        return raw
+    if raw in {"FAILED", "FAILURE", "ERROR"} or status_message:
+        return "ERROR"
+    return "DEFAULT"
+
+
 class TraceRepository:
     @staticmethod
     def upsert_trace(db: Session, body: dict) -> TraceV2:
@@ -154,7 +199,7 @@ class TraceRepository:
             row.input = _json_text(body["input"])
         if body.get("output") is not None:
             row.output = _json_text(body["output"])
-        row.metadata_json = _json_text(body.get("metadata"))
+        row.metadata_json = _json_text(_root_trace_metadata(body.get("metadata")))
         row.tags = _json_text(body.get("tags") or [])
         row.start_time = _dt(body.get("start_time")) or row.start_time or _utcnow()
         row.end_time = _dt(body.get("end_time"))
@@ -197,6 +242,7 @@ class ObservationRepository:
         row.total_tokens = _int_from(
             body.get("total_tokens"),
             usage.get("total_tokens"),
+            usage.get("total"),
             (row.prompt_tokens or 0) + (row.completion_tokens or 0)
             if row.prompt_tokens is not None or row.completion_tokens is not None
             else None,
@@ -225,8 +271,7 @@ class ObservationRepository:
         if "output" in body:
             row.output = _json_text(body["output"])
         row.metadata_json = _json_text(body.get("metadata"))
-        row.level = body.get("level") or ("ERROR" if body.get("status_message") else "DEFAULT")
-        row.status = "error" if row.level == "ERROR" else "success"
+        row.status = _normalize_observation_status(body.get("status"), body.get("status_message"))
         row.status_message = body.get("status_message")
         row.start_time = _dt(body.get("start_time")) or row.start_time or _utcnow()
         row.completion_start_time = _dt(body.get("completion_start_time"))
@@ -245,10 +290,10 @@ class ObservationRepository:
         )
 
     @staticmethod
-    def list_recent(db: Session, *, limit: int = 100, offset: int = 0, run_type: str | None = None) -> list[Observation]:
+    def list_recent(db: Session, *, limit: int = 100, offset: int = 0, obs_type: str | None = None) -> list[Observation]:
         q = db.query(Observation)
-        if run_type and run_type != "all":
-            q = q.filter(Observation.type == run_type)
+        if obs_type and obs_type != "all":
+            q = q.filter(Observation.type == obs_type)
         return q.order_by(Observation.start_time.desc()).offset(offset).limit(limit).all()
 
 
@@ -347,7 +392,7 @@ class ScoreRepository:
         return config_type
 
     @staticmethod
-    def upsert_score(db: Session, body: dict, *, sync_legacy_cache: bool = True) -> Score:
+    def upsert_score(db: Session, body: dict) -> Score:
         name = body["name"]
         data_type = body.get("data_type") or "NUMERIC"
         config = ScoreRepository.ensure_config(db, name=name, data_type=data_type)
@@ -387,33 +432,7 @@ class ScoreRepository:
         row.timestamp = body.get("timestamp") or getattr(row, "timestamp", None) or _utcnow()
         row.updated_at = _utcnow()
 
-        if sync_legacy_cache and row.trace_id:
-            ScoreRepository.sync_legacy_trace_cache(db, row.trace_id)
         return row
-
-    @staticmethod
-    def sync_legacy_trace_cache(db: Session, trace_id: str) -> None:
-        trace = db.query(Trace).filter(Trace.observation_id == trace_id).first()
-        if trace is None:
-            return
-
-        scores = db.query(Score).filter(Score.trace_id == trace_id).all()
-        numeric = {s.name: s.value for s in scores if s.value is not None}
-        comments = [s.comment for s in scores if s.comment]
-
-        if "overall" in numeric:
-            trace.quality_score = numeric["overall"]
-        elif numeric:
-            trace.quality_score = sum(numeric.values()) / len(numeric)
-
-        if numeric:
-            detail = dict(numeric)
-            verdict = next((s.string_value for s in scores if s.name == "verdict" and s.string_value), None)
-            if verdict:
-                detail["verdict"] = verdict
-            trace.quality_detail = json.dumps(detail, ensure_ascii=False)
-        if comments and not trace.user_feedback:
-            trace.user_feedback = comments[-1][:500]
 
     @staticmethod
     def score_stats(db: Session) -> dict | None:
@@ -476,16 +495,18 @@ def observation_to_trace_payload(obs: Observation) -> dict:
     usage = _json_obj(obs.usage) or {}
     return {
         "id": obs.observation_id,
-        "run_type": obs.type,
+        "type": obs.type,
         "name": obs.name,
         "parent_observation_id": obs.parent_observation_id,
         "thread_id": None,
         "start_time": obs.start_time.isoformat() + "Z" if obs.start_time else None,
         "end_time": obs.end_time.isoformat() + "Z" if obs.end_time else None,
         "latency": round((obs.end_time - obs.start_time).total_seconds(), 2) if obs.start_time and obs.end_time else None,
-        "prompt_tokens": usage.get("input") or usage.get("prompt_tokens"),
-        "completion_tokens": usage.get("output") or usage.get("completion_tokens"),
-        "error": obs.status_message if obs.level == "ERROR" else None,
+        "prompt_tokens": obs.prompt_tokens if obs.prompt_tokens is not None else (usage.get("input") or usage.get("prompt_tokens")),
+        "completion_tokens": obs.completion_tokens if obs.completion_tokens is not None else (usage.get("output") or usage.get("completion_tokens")),
+        "total_tokens": obs.total_tokens,
+        "status": obs.status,
+        "error": obs.status_message if obs.status == "ERROR" else None,
         "input": str(_json_obj(obs.input) or "")[:120] if obs.input else None,
         "output": str(_json_obj(obs.output) or "")[:120] if obs.output else None,
         "inputs_raw": _json_obj(obs.input),

@@ -74,12 +74,12 @@ def test_router_reports_research_runtime_prompt(monkeypatch):
     from agents.router_agent import RouterDecision
     monkeypatch.setenv("PROMPT_AB_TESTS", '{"question_task":["question_generator"]}')
     async def fake_orchestrate(*args, **kwargs):
-        return RouterDecision(agent_name="research_agent", evaluate_after=False, reason="test")
+        return RouterDecision(agent_name="research", evaluate_after=False, reason="test")
     monkeypatch.setattr("agents.router_agent._orchestrate", fake_orchestrate)
 
     route = asyncio.run(route_request("summary this document", [1], thread_id="thread-1"))
 
-    assert route.agent_name == "research_agent"
+    assert route.agent_name == "research"
     assert route.prompt_name == "research_writer"
     assert route.prompt_version == version("research_writer")
 
@@ -88,12 +88,12 @@ def test_prompt_ab_test_no_longer_changes_research_runtime_route(monkeypatch):
     from agents.router_agent import RouterDecision
     monkeypatch.setenv("PROMPT_AB_TESTS", '{"question_task":["question_generator"]}')
     async def fake_orchestrate(*args, **kwargs):
-        return RouterDecision(agent_name="research_agent", evaluate_after=False, reason="test")
+        return RouterDecision(agent_name="research", evaluate_after=False, reason="test")
     monkeypatch.setattr("agents.router_agent._orchestrate", fake_orchestrate)
 
     route = asyncio.run(route_request("summary this document", [1], thread_id="thread-1"))
 
-    assert route.agent_name == "research_agent"
+    assert route.agent_name == "research"
     assert route.prompt_name == "research_writer"
     assert route.prompt_version == version("research_writer")
 

@@ -1,16 +1,19 @@
 import type { TraceDetail } from '../../api'
 import './LatencyWaterfall.css'
 
-const RUN_TYPE_COLORS: Record<string, string> = {
+const OBS_TYPE_COLORS: Record<string, string> = {
   llm:   '#3b82f6',   // blue
   tool:  '#f59e0b',   // amber
   chain: '#8b5cf6',   // purple
+  generation: '#3b82f6',
+  span: '#8b5cf6',
   retriever: '#10b981', // emerald
 }
 
-function colorFor(runType: string | undefined, name: string | undefined) {
-  if (runType && RUN_TYPE_COLORS[runType]) return RUN_TYPE_COLORS[runType]
-  if (name?.includes('search') || name?.includes('retriev')) return RUN_TYPE_COLORS.tool
+function colorFor(obsType: string | undefined, name: string | undefined) {
+  const key = obsType?.toLowerCase()
+  if (key && OBS_TYPE_COLORS[key]) return OBS_TYPE_COLORS[key]
+  if (name?.includes('search') || name?.includes('retriev')) return OBS_TYPE_COLORS.tool
   return '#6b7280'
 }
 
@@ -32,7 +35,7 @@ function shortName(name: string) {
 interface Bar {
   id: string
   name: string
-  runType: string | undefined
+  type: string | undefined
   startMs: number
   durationMs: number
   isRoot: boolean
@@ -69,7 +72,7 @@ export default function LatencyWaterfall({ root }: Props) {
       return {
         id:         s.id ?? s.name,
         name:       shortName(s.name ?? 'unknown'),
-        runType:    s.run_type,
+        type:       s.type,
         startMs,
         durationMs,
         isRoot:     s.id === root.id,
@@ -89,18 +92,18 @@ export default function LatencyWaterfall({ root }: Props) {
       {bars.map((bar) => {
         const leftPct  = (bar.startMs / totalMs) * 100
         const widthPct = Math.max((bar.durationMs / totalMs) * 100, 0.3)
-        const color    = colorFor(bar.runType, bar.name)
+        const color    = colorFor(bar.type, bar.name)
         const pct      = Math.round((bar.durationMs / totalMs) * 100)
 
         return (
           <div key={bar.id} className={`lw-row${bar.isRoot ? ' lw-row--root' : ''}`}>
             {/* Name */}
             <div className="lw-name" title={bar.name}>
-              {bar.runType && (
+              {bar.type && (
                 <span
                   className="lw-type-dot"
                   style={{ background: color }}
-                  title={bar.runType}
+                  title={bar.type}
                 />
               )}
               <span className="lw-name-text">{bar.name}</span>
@@ -133,7 +136,7 @@ export default function LatencyWaterfall({ root }: Props) {
 
       {/* Legend */}
       <div className="lw-legend">
-        {Object.entries(RUN_TYPE_COLORS).map(([type, color]) => (
+        {Object.entries(OBS_TYPE_COLORS).map(([type, color]) => (
           <span key={type} className="lw-legend-item">
             <span className="lw-legend-dot" style={{ background: color }} />
             {type}

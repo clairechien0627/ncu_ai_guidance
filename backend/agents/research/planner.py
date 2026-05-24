@@ -304,8 +304,7 @@ async def plan_query_for_slot(
                 messages,
                 prompt_name="research_planner",
                 metadata={
-                    "task_type": "research_task",
-                    "agent_name": "research_agent",
+                    "agent_name": "research",
                     **research_node_stack_metadata("research_planner"),
                 },
             )
@@ -350,8 +349,7 @@ async def plan_next_query(llm, state: ResearchState) -> PlannerDecision:
             messages,
             prompt_name="research_planner",
             metadata={
-                "task_type": "research_task",
-                "agent_name": "research_agent",
+                "agent_name": "research",
                 **research_node_stack_metadata("research_planner"),
             },
         )

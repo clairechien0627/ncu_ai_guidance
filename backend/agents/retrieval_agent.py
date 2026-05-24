@@ -18,12 +18,11 @@ async def _emit_stage(on_stage, msg: str) -> None:
 
 STACK_NAME = "retrieval_default"
 PROMPT_NAME = "retrieval_capability"
-AGENT_NAME = "retrieval_agent"
+AGENT_NAME = "retrieval"
 
 def trace_metadata() -> dict[str, str | int]:
     stack = load_stack(STACK_NAME)
     return {
-        "task_type": "retrieval_qa",
         "agent_name": AGENT_NAME,
         **stack.metadata(),
     }
@@ -49,7 +48,6 @@ async def answer(
     import uuid as _uuid
     stack = load_stack(STACK_NAME)
     metadata = metadata or {
-        "task_type": "retrieval_qa",
         "agent_name": AGENT_NAME,
         **stack.metadata(),
     }
@@ -66,7 +64,7 @@ async def answer(
             name="Retrieval Agent",
             start_time=agent_start,
             input_data={"messages": [{"role": "user", "content": user_message}]},
-            extra_metadata={"task_type": "retrieval_qa", "agent_name": AGENT_NAME},
+            extra_metadata={"agent_name": AGENT_NAME},
         )
 
     effective_prompt = task_prompt if task_prompt is not None else stack.contents
@@ -98,13 +96,12 @@ async def answer(
             end_time=datetime.now(_tz.utc),
             input_data={"messages": [{"role": "user", "content": user_message}]},
             output_data={"answer": response, "sources": sources},
-            extra_metadata={"task_type": "retrieval_qa", "agent_name": AGENT_NAME},
+            extra_metadata={"agent_name": AGENT_NAME},
         )
     completed = bool(sources)
     return AgentResult(
         response=response,
         sources=sources,
-        task_type=str(metadata.get("task_type") or "retrieval_qa"),
         agent_name=metadata.get("agent_name", AGENT_NAME),
         prompt_name=metadata.get("prompt_name", PROMPT_NAME),
         prompt_version=metadata.get("prompt_version", "unknown"),
@@ -136,7 +133,6 @@ async def stream(
     from datetime import datetime, timezone as _tz
     stack = load_stack(STACK_NAME)
     metadata = metadata or {
-        "task_type": "retrieval_qa",
         "agent_name": AGENT_NAME,
         **stack.metadata(),
     }
@@ -153,7 +149,7 @@ async def stream(
             name="Retrieval Agent",
             start_time=agent_start,
             input_data={"messages": [{"role": "user", "content": user_message}]},
-            extra_metadata={"task_type": "retrieval_qa", "agent_name": AGENT_NAME},
+            extra_metadata={"agent_name": AGENT_NAME},
         )
 
     effective_prompt = task_prompt if task_prompt is not None else stack.contents
@@ -193,5 +189,5 @@ async def stream(
             end_time=datetime.now(_tz.utc),
             input_data={"messages": [{"role": "user", "content": user_message}]},
             output_data={"answer": "".join(answer_tokens), "sources": last_sources},
-            extra_metadata={"task_type": "retrieval_qa", "agent_name": AGENT_NAME},
+            extra_metadata={"agent_name": AGENT_NAME},
         )

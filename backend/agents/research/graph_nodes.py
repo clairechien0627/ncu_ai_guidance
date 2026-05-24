@@ -170,7 +170,6 @@ async def _run_single_slot(
         consecutive_empty=state.get("consecutive_no_new", 0),
         max_searches=_hard_max_searches(state),
         max_consecutive_empty=state["max_consecutive_no_new"],
-        task_type=str(state.get("metadata", {}).get("task_type") or "research"),
     )
     seed_keywords = _seed_keywords("\n".join(str(chunk.get("content", ""))[:1200] for chunk in chunks))
 
@@ -465,8 +464,8 @@ async def writer_node(state: ResearchGraphState, config: RunnableConfig) -> dict
             "writer_node: quality gate failed (%d chars), retrying: %s",
             len(writeup.answer or ""), feedback,
         )
-        # Quality gate failure → level=WARNING for the retry attempt
-        writeup = await write_summary(llm, rs, feedback=feedback, level="WARNING")
+        # Quality gate failure -> status=WARNING for the retry attempt
+        writeup = await write_summary(llm, rs, feedback=feedback, status="WARNING")
         llm_calls = 2
         if not _answer_ok(writeup):
             logger.warning("writer_node: retry also failed, using evidence fallback")

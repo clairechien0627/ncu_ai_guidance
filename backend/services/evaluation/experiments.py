@@ -83,7 +83,7 @@ def _normalize_generator_result(result: object) -> tuple[Any, dict, str | None]:
         output = {"answer": str(output or "")}
 
     context = result.get("context") if isinstance(result.get("context"), dict) else {}
-    for key in ["sources", "task_type", "agent_name", "prompt_name", "prompt_version"]:
+    for key in ["sources", "agent_name", "prompt_name", "prompt_version"]:
         if key in result and key not in context:
             context[key] = result[key]
     trace_id = result.get("trace_id") or result.get("agent_observation_id")
@@ -168,7 +168,6 @@ class RouterAgentCurrentAdapter(GeneratorAdapter):
             "output": {"answer": result.response},
             "context": {
                 "sources": result.sources,
-                "task_type": result.task_type,
                 "agent_name": result.agent_name,
                 "prompt_name": result.prompt_name,
                 "prompt_version": result.prompt_version,
@@ -568,7 +567,7 @@ class ExperimentRunService:
             answer = _answer_from_output(experiment_item.generated_output)
             sources = generated_context.get("sources") if isinstance(generated_context.get("sources"), list) else []
             trace_summary = generated_context.get("trace_summary") if isinstance(generated_context.get("trace_summary"), dict) else {}
-            task_type = generated_context.get("task_type") or dataset_context.get("task_type") or "experiment_eval"
+            agent_name = generated_context.get("agent_name") or dataset_context.get("agent_name") or "chat"
             experiment_run_id = experiment_item.experiment_run_id
             experiment_item_id = experiment_item.experiment_item_id
             dataset_id = eval_run.dataset_id
@@ -584,7 +583,7 @@ class ExperimentRunService:
             result = await evaluator(
                 user_task=user_task,
                 answer=answer,
-                task_type=task_type,
+                agent_name=agent_name,
                 sources=sources,
                 trace_summary=trace_summary,
                 extra_context={
@@ -602,7 +601,7 @@ class ExperimentRunService:
                 eval_item_id=eval_item_id_value,
                 trace_id=trace_id,
                 result=result,
-                task_type=task_type,
+                agent_name=agent_name,
                 dataset_id=dataset_id,
                 dataset_item_id=dataset_item_id,
             )
@@ -619,7 +618,7 @@ class ExperimentRunService:
                 if eval_item is None:
                     return
                 for payload in score_payloads:
-                    ScoreRepository.upsert_score(db, payload, sync_legacy_cache=False)
+                    ScoreRepository.upsert_score(db, payload)
                 now = _utcnow()
                 eval_item.status = "completed"
                 eval_item.score_ids = _json_text(score_ids)

@@ -30,9 +30,8 @@ import agents.steering as steering
 import agents.chat_jobs as chat_jobs
 from agents.request_context import set_user_id
 from api.dependencies import get_current_user
-from db import get_db, Conversation, Document, Trace
-from db.models import TraceV2
-from db.models import User
+from db import get_db, Conversation, Document
+from db.models import TraceV2, User
 from services.quota_service import check_quota
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -77,7 +76,7 @@ def _should_use_mini(model: str, agent_name: str, document_ids: list[int] | None
     if "mini" in (model or "").lower():
         return True
     # Pure conversation (no documents, chat agent) → mini is sufficient
-    if agent_name == "chat_agent" and not document_ids:
+    if agent_name == "chat" and not document_ids:
         return True
     return False
 
@@ -95,22 +94,17 @@ def _document_attachment_payload(db: Session, document_ids: list[int] | None) ->
 
 def _hydrate_message_attachments(thread_id: str, messages: list[dict], db: Session) -> list[dict]:
     """Attach document chips to user messages using root trace document_ids."""
-    traces = (
-        db.query(Trace.document_ids)
-        .filter(
-            Trace.agent_name == "router_agent",
-            Trace.thread_id == thread_id,
-            Trace.document_ids.isnot(None),
-        )
-        .order_by(Trace.start_time.asc())
-        .all()
-    )
     attachments_by_turn = []
-    for (raw_doc_ids,) in traces:
-        try:
-            doc_ids = json.loads(raw_doc_ids)
-        except Exception:
-            doc_ids = None
+    for row in (
+        db.query(TraceV2)
+        .filter(TraceV2.name == "router_agent", TraceV2.thread_id == thread_id)
+        .order_by(TraceV2.start_time.asc())
+        .all()
+    ):
+        meta = (json.loads(row.metadata_json) if isinstance(row.metadata_json, str) else row.metadata_json) or {}
+        if not isinstance(meta, dict):
+            continue
+        doc_ids = meta.get("document_ids")
         attachments_by_turn.append(_document_attachment_payload(db, doc_ids if isinstance(doc_ids, list) else None))
 
     hydrated = []
@@ -126,32 +120,13 @@ def _hydrate_message_attachments(thread_id: str, messages: list[dict], db: Sessi
 
 
 def _hydrate_assistant_meta(thread_id: str, messages: list[dict], db: Session) -> list[dict]:
-    """Attach route/trace metadata to assistant messages using router-level traces by turn."""
+    """Attach request trace id and routed agent name to assistant messages by turn."""
     traces = (
-        db.query(
-            Trace.observation_id,
-            Trace.task_type,
-            Trace.agent_name,
-            Trace.prompt_name,
-            Trace.prompt_version,
-        )
-        .filter(Trace.agent_name == "router_agent", Trace.thread_id == thread_id)
-        .order_by(Trace.start_time.asc())
-        .all()
-    )
-    # Supplement with routed agent_name from TraceV2 metadata
-    v2_rows = (
         db.query(TraceV2.trace_id, TraceV2.metadata_json)
         .filter(TraceV2.name == "router_agent", TraceV2.thread_id == thread_id)
         .order_by(TraceV2.start_time.asc())
         .all()
     )
-    v2_agent_by_trace: dict[str, str] = {}
-    for row in v2_rows:
-        if row.metadata_json:
-            meta = row.metadata_json if isinstance(row.metadata_json, dict) else json.loads(row.metadata_json)
-            if meta.get("agent_name"):
-                v2_agent_by_trace[row.trace_id] = meta["agent_name"]
 
     hydrated = []
     assistant_turn = 0
@@ -159,18 +134,12 @@ def _hydrate_assistant_meta(thread_id: str, messages: list[dict], db: Session) -
         item = dict(msg)
         if item.get("role") == "assistant":
             if assistant_turn < len(traces):
-                observation_id, task_type, agent_name, prompt_name, prompt_version = traces[assistant_turn]
-                if task_type:
-                    item["task_type"] = task_type
-                routed = v2_agent_by_trace.get(observation_id or "") or agent_name
-                if routed:
-                    item["agent_name"] = routed
-                if prompt_name:
-                    item["prompt_name"] = prompt_name
-                if prompt_version:
-                    item["prompt_version"] = prompt_version
-                if observation_id:
-                    item["trace_id"] = observation_id
+                trace_id, meta_json = traces[assistant_turn]
+                meta = (json.loads(meta_json) if isinstance(meta_json, str) else meta_json) or {}
+                if isinstance(meta, dict) and meta.get("agent_name"):
+                    item["agent_name"] = meta["agent_name"]
+                if trace_id:
+                    item["trace_id"] = trace_id
             assistant_turn += 1
         hydrated.append(item)
     return hydrated
@@ -225,7 +194,6 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db),
         "thread_id": conv.thread_id,
         "response": response,
         "sources": sources,
-        "task_type": result.task_type,
         "agent_name": result.agent_name,
         "prompt_name": result.prompt_name,
         "prompt_version": result.prompt_version,
@@ -291,7 +259,6 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
         sources = []
         full_response = ""
         route_payload = {
-            "task_type": "chat_turn",
             "agent_name": None,
             "prompt_name": None,
             "prompt_version": None,

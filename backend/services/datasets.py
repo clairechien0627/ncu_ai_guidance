@@ -10,7 +10,7 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from db import Dataset, DatasetItem, Trace
+from db import Dataset, DatasetItem
 from services.trace_read.service import TraceReadService
 
 
@@ -76,13 +76,22 @@ def _dataset_item_payload(row: DatasetItem) -> dict:
 
 
 def _answer_from_payload(detail: dict) -> Any:
-    display = detail.get("display") if isinstance(detail.get("display"), dict) else {}
-    if display and display.get("answer") is not None:
-        return display.get("answer")
     outputs = detail.get("outputs_raw")
     if isinstance(outputs, dict):
         return outputs.get("answer") or outputs.get("content") or outputs
     return outputs or detail.get("output")
+
+
+def _sources_from_payload(detail: dict) -> list:
+    outputs = detail.get("outputs_raw")
+    if isinstance(outputs, dict) and isinstance(outputs.get("sources"), list):
+        return outputs["sources"]
+    sources: list = []
+    for child in detail.get("children") or []:
+        child_output = child.get("outputs_raw") if isinstance(child, dict) else None
+        if isinstance(child_output, dict) and isinstance(child_output.get("sources"), list):
+            sources.extend(child_output["sources"])
+    return sources
 
 
 class DatasetService:
@@ -129,13 +138,8 @@ class DatasetService:
         context = {
             "trace_id": trace_id,
             "children": detail.get("children") or [],
-            "display": detail.get("display"),
-            "sources": (detail.get("display") or {}).get("sources") if isinstance(detail.get("display"), dict) else [],
-            "trace_summary": (detail.get("display") or {}).get("trace_summary") if isinstance(detail.get("display"), dict) else {},
-            "task_type": detail.get("task_type"),
+            "sources": _sources_from_payload(detail),
             "agent_name": detail.get("agent_name"),
-            "prompt_name": detail.get("prompt_name"),
-            "prompt_version": detail.get("prompt_version"),
             "quality_score": detail.get("quality_score"),
             "quality_detail": detail.get("quality_detail"),
         }
@@ -149,7 +153,7 @@ class DatasetService:
             source_trace_id=trace_id,
             source_observation_id=None,
             status="active",
-            tags=_json_text(tags or [value for value in [detail.get("task_type")] if value]),
+            tags=_json_text(tags or [value for value in [detail.get("agent_name")] if value]),
             metadata_json=_json_text({"source": "trace", "trace_id": trace_id}),
             valid_from=now,
             created_at=now,

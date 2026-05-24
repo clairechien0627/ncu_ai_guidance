@@ -31,7 +31,6 @@ function fmtDate(iso: string | null) {
 
 const COLS: ColDef[] = [
   { width: 180, resizable: true, minWidth: 150, maxWidth: 210 },
-  { width: 100, resizable: false },
   { width: 110, resizable: false },
   { width: 100, resizable: false },
   { width: 80,  resizable: false },
@@ -93,24 +92,22 @@ export default function ThreadsPage() {
           <thead>
             <tr>
               <th>Thread ID<span {...div(0)} /></th>
-              <th>Task Type<span {...div(1)} /></th>
-              <th {...sort.th('created_at')}>Created{sort.ind('created_at')}<span {...div(2)} /></th>
-              <th {...sort.th('duration_seconds')}>Duration{sort.ind('duration_seconds')}<span {...div(3)} /></th>
-              <th {...sort.th('trace_count')}>Traces{sort.ind('trace_count')}<span {...div(4)} /></th>
-              <th {...sort.th('total_tokens')}>Tokens{sort.ind('total_tokens')}<span {...div(5)} /></th>
-              <th {...sort.th('avg_quality_score')}>Avg Quality{sort.ind('avg_quality_score')}<span {...div(6)} /></th>
+              <th {...sort.th('created_at')}>Created{sort.ind('created_at')}<span {...div(1)} /></th>
+              <th {...sort.th('duration_seconds')}>Duration{sort.ind('duration_seconds')}<span {...div(2)} /></th>
+              <th {...sort.th('trace_count')}>Traces{sort.ind('trace_count')}<span {...div(3)} /></th>
+              <th {...sort.th('total_tokens')}>Tokens{sort.ind('total_tokens')}<span {...div(4)} /></th>
+              <th {...sort.th('avg_quality_score')}>Avg Quality{sort.ind('avg_quality_score')}<span {...div(5)} /></th>
               <th>Users</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={8} className="adm-table-empty"><div className="adm-spinner" style={{ margin: '0 auto' }} /></td></tr>
+              <tr><td colSpan={7} className="adm-table-empty"><div className="adm-spinner" style={{ margin: '0 auto' }} /></td></tr>
             ) : threads.length === 0 ? (
-              <tr><td colSpan={8} className="adm-table-empty">No threads found</td></tr>
+              <tr><td colSpan={7} className="adm-table-empty">No threads found</td></tr>
             ) : sort.apply(threads).map((s: SessionItem) => (
               <tr key={s.thread_id} className="adm-row--clickable" onClick={() => setDrawerThreadId(s.thread_id)}>
                 <td className="adm-cell-mono" title={s.thread_id}>{s.thread_id.length > 24 ? s.thread_id.slice(0, 24) + '…' : s.thread_id}</td>
-                <td>{s.task_type ? <span className="adm-badge adm-badge--info">{s.task_type}</span> : '—'}</td>
                 <td className="adm-cell-mono">{fmtDate(s.created_at)}</td>
                 <td style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{fmtDuration(s.duration_seconds)}</td>
                 <td style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{s.trace_count}</td>

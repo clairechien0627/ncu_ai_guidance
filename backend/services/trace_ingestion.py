@@ -206,10 +206,7 @@ class TraceIngestionWorker:
         elif event_type in {"observation-create", "observation-update"}:
             ObservationRepository.upsert_observation(db, body)
         elif event_type == "score-create":
-            # sync_legacy_cache=False: cache sync happens after all events in this
-            # batch are processed and the session is about to commit, avoiding
-            # stale reads on partial writes.
-            ScoreRepository.upsert_score(db, body, sync_legacy_cache=False)
+            ScoreRepository.upsert_score(db, body)
         else:
             raise ValueError(f"Unsupported trace event type: {event_type}")
 

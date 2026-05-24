@@ -7,12 +7,12 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from db import Dataset, DatasetItem, EvaluationRun, EvaluationRunItem, Trace, db_session
+from db import Dataset, DatasetItem, EvaluationRun, EvaluationRunItem, db_session
 from db.models import Score, TraceV2
-from services.trace_repositories import ScoreRepository, TraceRepository
+from services.trace_repositories import ScoreRepository
 
 
 EvaluatorFn = Callable[..., Awaitable[object]]
@@ -51,16 +51,6 @@ def _json_obj(value):
         return value
 
 
-def _agent_execution_root():
-    router_observation_ids = (
-        select(Trace.observation_id).where(Trace.agent_name == "router_agent").scalar_subquery()
-    )
-    return or_(
-        Trace.trace_id.in_(router_observation_ids),
-        and_(Trace.trace_id.is_(None), Trace.agent_name != "router_agent"),
-    )
-
-
 def _result_to_dict(result) -> dict:
     if isinstance(result, dict):
         return result
@@ -88,22 +78,27 @@ def _format_evaluation_comment(result: dict) -> str:
     )
 
 
-def _trace_payload(trace: Trace) -> tuple[str, str, list[str], dict, dict]:
-    display = _json_obj(trace.display) or {}
-    outputs = _json_obj(trace.outputs) or {}
-    inputs = _json_obj(trace.inputs) or {}
-    answer = str(display.get("answer") or outputs.get("answer") or outputs.get("content") or "")
-    sources = display.get("sources") if isinstance(display.get("sources"), list) else []
-    trace_summary = display.get("trace_summary") if isinstance(display.get("trace_summary"), dict) else {}
+def _trace_payload_from_v2(trace: TraceV2) -> tuple[str, str, list[str], dict, dict]:
+    meta = _json_obj(trace.metadata_json) or {}
+    input_obj = _json_obj(trace.input) or {}
+    output_obj = _json_obj(trace.output) or {}
+    answer = str(output_obj.get("answer") or output_obj.get("content") or "")
+    sources = output_obj.get("sources") if isinstance(output_obj.get("sources"), list) else []
+    trace_summary = output_obj.get("trace_summary") if isinstance(output_obj.get("trace_summary"), dict) else {}
     user_task = ""
-    messages = display.get("messages") if isinstance(display.get("messages"), list) else []
-    for msg in messages:
-        if isinstance(msg, dict) and msg.get("role") in ("human", "user"):
-            user_task = str(msg.get("content") or "")
+    for candidate in (input_obj.get("messages") if isinstance(input_obj, dict) else None,):
+        if not isinstance(candidate, list):
+            continue
+        for msg in candidate:
+            if isinstance(msg, dict) and msg.get("role") in ("human", "user"):
+                user_task = str(msg.get("content") or "")
+                break
+        if user_task:
             break
     if not user_task:
-        user_task = json.dumps(inputs, ensure_ascii=False)[:1200] if inputs else ""
-    extra_context = {"observation_id": trace.observation_id, "agent_name": trace.agent_name}
+        user_task = json.dumps(input_obj, ensure_ascii=False)[:1200] if input_obj else ""
+    agent_name = meta.get("agent_name") or trace.name or "chat"
+    extra_context = {"observation_id": trace.trace_id, "agent_name": agent_name}
     return user_task, answer, sources, trace_summary, extra_context
 
 
@@ -144,7 +139,7 @@ def evaluation_result_to_score_payloads(
     eval_item_id: str,
     trace_id: str,
     result,
-    task_type: str | None = None,
+    agent_name: str | None = None,
     dataset_id: str | None = None,
     dataset_item_id: str | None = None,
 ) -> list[dict]:
@@ -154,7 +149,7 @@ def evaluation_result_to_score_payloads(
     metadata = {
         "eval_run_id": eval_run_id,
         "eval_item_id": eval_item_id,
-        "task_type": task_type,
+        "agent_name": agent_name,
         "dataset_id": dataset_id,
         "dataset_item_id": dataset_item_id,
     }
@@ -249,7 +244,7 @@ class EvaluationRunService:
         name: str = "trace-batch-score",
         metadata: dict | None = None,
     ) -> EvaluationRun:
-        # v2-first: pick from traces_v2 that have no overall score yet
+        # Pick Trace v2 rows that have no overall score yet.
         scored_ids = select(Score.trace_id).where(Score.name == "overall", Score.trace_id.isnot(None))
         v2_traces = (
             db.query(TraceV2)
@@ -259,22 +254,6 @@ class EvaluationRunService:
             .all()
         )
         trace_ids = [t.trace_id for t in v2_traces]
-        # fallback: legacy traces not already covered by v2 or scored
-        if len(trace_ids) < limit:
-            already = set(trace_ids)
-            legacy = (
-                db.query(Trace)
-                .filter(
-                    _agent_execution_root(),
-                    Trace.quality_score.is_(None),
-                    Trace.error.is_(None),
-                    Trace.observation_id.notin_(already) if already else True,
-                )
-                .order_by(Trace.start_time.desc())
-                .limit(limit - len(trace_ids))
-                .all()
-            )
-            trace_ids += [t.observation_id for t in legacy]
         if not trace_ids:
             return None
         eval_run_id = f"eval-{new_id()}"
@@ -406,8 +385,8 @@ class EvaluationRunService:
         metadata: dict | None = None,
     ) -> object | None:
         with db_session() as db:
-            trace = db.query(Trace).filter(Trace.observation_id == trace_id).first()
-            if trace is None:
+            trace_v2 = db.query(TraceV2).filter(TraceV2.trace_id == trace_id).first() if trace_id else None
+            if trace_v2 is None:
                 return None
             run = EvaluationRunService.create_single_trace(
                 db,
@@ -491,11 +470,11 @@ class EvaluationRunService:
             if item.status == "completed":
                 return
             run = db.query(EvaluationRun).filter(EvaluationRun.eval_run_id == item.eval_run_id).first()
-            trace = db.query(Trace).filter(Trace.observation_id == item.trace_id).first()
+            trace_v2 = db.query(TraceV2).filter(TraceV2.trace_id == item.trace_id).first() if item.trace_id else None
             dataset_item = None
             if item.dataset_item_id:
                 dataset_item = db.query(DatasetItem).filter(DatasetItem.dataset_item_id == item.dataset_item_id).first()
-            if run is None or (trace is None and dataset_item is None):
+            if run is None or (trace_v2 is None and dataset_item is None):
                 now = _utcnow()
                 item.status = "skipped"
                 item.error = "source item not found" if run is not None else "evaluation run not found"
@@ -518,10 +497,10 @@ class EvaluationRunService:
             if dataset_item is not None:
                 user_task, answer, sources, trace_summary, extra_context = _dataset_item_payload(dataset_item)
                 context = _json_obj(dataset_item.context) or {}
-                task_type = context.get("task_type") or "dataset_eval"
-            else:
-                user_task, answer, sources, trace_summary, extra_context = _trace_payload(trace)
-                task_type = trace.task_type or "chat_turn"
+                agent_name = context.get("agent_name") or context.get("task_type") or "chat"
+            elif trace_v2 is not None:
+                user_task, answer, sources, trace_summary, extra_context = _trace_payload_from_v2(trace_v2)
+                agent_name = (_json_obj(trace_v2.metadata_json) or {}).get("agent_name") or trace_v2.name or "chat"
 
         try:
             import contextlib
@@ -534,11 +513,19 @@ class EvaluationRunService:
                 result = await evaluator(
                     user_task=user_task,
                     answer=answer,
-                    task_type=task_type,
+                    agent_name=agent_name,
                     sources=sources,
                     trace_summary=trace_summary,
                     extra_context=extra_context,
                 )
+            # Apply coverage correction for all evaluation paths (batch, single, dataset, experiment).
+            # coverage is a ceiling on completeness: if retrieval didn't find required content,
+            # a high completeness score from the LLM should be capped accordingly.
+            from agents.evaluation_agent import _completion_from_coverage, _weighted_overall
+            coverage_score = _completion_from_coverage(trace_summary)
+            if coverage_score is not None and hasattr(result, "model_copy"):
+                updated = result.model_copy(update={"completeness": min(result.completeness, coverage_score)})
+                result = updated.model_copy(update={"overall": _weighted_overall(updated, agent_name)})
             result_obj = result
             result_dict = _result_to_dict(result)
             score_payloads = evaluation_result_to_score_payloads(
@@ -546,7 +533,7 @@ class EvaluationRunService:
                 eval_item_id=eval_item_id,
                 trace_id=trace_id,
                 result=result_dict,
-                task_type=task_type,
+                agent_name=agent_name,
                 dataset_id=dataset_id,
                 dataset_item_id=dataset_item_id,
             )
@@ -554,29 +541,14 @@ class EvaluationRunService:
 
             with db_session() as db:
                 item = db.query(EvaluationRunItem).filter(EvaluationRunItem.eval_item_id == eval_item_id).first()
-                trace = db.query(Trace).filter(Trace.observation_id == item.trace_id).first() if item else None
-                if item is None or trace is None:
+                if item is None:
                     return
-                # Ensure the trace exists in traces_v2 before writing scores
-                # (FK constraint: scores.trace_id → traces_v2.trace_id)
-                if trace is not None and TraceRepository.get_trace(db, trace.observation_id) is None:
-                    TraceRepository.upsert_trace(db, {
-                        "trace_id": trace.observation_id,
-                        "name": trace.agent_name or trace.name or "trace",
-                        "thread_id": trace.thread_id,
-                        "user_id": trace.user_id,
-                        "environment": trace.environment or "default",
-                        "start_time": trace.start_time.isoformat() if trace.start_time else None,
-                        "end_time": trace.end_time.isoformat() if trace.end_time else None,
-                    })
+                trace_v2 = db.query(TraceV2).filter(TraceV2.trace_id == item.trace_id).first() if item.trace_id else None
+                if trace_v2 is None and dataset_item_id is None:
+                    return
                 for payload in score_payloads:
-                    ScoreRepository.upsert_score(db, payload, sync_legacy_cache=False)
-                if item.dataset_item_id is None and trace is not None:
-                    ScoreRepository.sync_legacy_trace_cache(db, trace.observation_id)
-                # Check whether trace is committed to traces_v2 (for observation enqueue after commit).
-                # Use current session so we see the upsert above, but do NOT enqueue yet —
-                # the outbox worker runs in a separate session and could race before db.commit().
-                _enqueue_obs = trace_id and TraceRepository.get_trace(db, trace_id) is not None
+                    ScoreRepository.upsert_score(db, payload)
+                _enqueue_obs = trace_id and trace_v2 is not None
                 now = _utcnow()
                 item.status = "completed"
                 item.score_ids = _json_text(score_ids)
@@ -602,13 +574,13 @@ class EvaluationRunService:
                             "end_time": now_iso,
                             "output": {k: v for k, v in result_dict.items()
                                        if k in ("overall", "grounding", "task_fit",
-                                                "completeness", "verdict", "issues")},
+                                                "completeness", "verdict", "failure_modes")},
                             "metadata": {
                                 "eval_run_id": eval_run_id,
                                 "eval_item_id": eval_item_id,
-                                "task_type": task_type,
+                                "agent_name": agent_name,
                             },
-                            "level": "DEFAULT",
+                            "status": "DEFAULT",
                         },
                     }])
                 except Exception:

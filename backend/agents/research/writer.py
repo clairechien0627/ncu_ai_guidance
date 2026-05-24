@@ -129,7 +129,7 @@ def _to_writeup(result: ResearchStructuredWriteup, state: ResearchState) -> Rese
     return ResearchWriteup(answer=answer, sources=sources)
 
 
-async def write_summary(llm, state: ResearchState, feedback: str = "", level: str = "DEFAULT") -> ResearchWriteup:
+async def write_summary(llm, state: ResearchState, feedback: str = "", status: str = "DEFAULT") -> ResearchWriteup:
     writer = llm.with_structured_output(ResearchStructuredWriteup, strict=True)
     instruction = "優先使用 evidence_details 中的 filename/page/quote/interpretation 產生有引用的報告。若某必要項目沒有直接證據，請明確說明，不要自行補充。"
     if feedback:
@@ -160,9 +160,8 @@ async def write_summary(llm, state: ResearchState, feedback: str = "", level: st
             messages,
             prompt_name="research_writer",
             metadata={
-                "task_type": "research_task",
-                "agent_name": "research_agent",
-                "level": level,
+                "agent_name": "research",
+                "status": status,
                 **research_node_stack_metadata("research_writer"),
             },
         )

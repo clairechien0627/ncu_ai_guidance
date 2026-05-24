@@ -555,7 +555,6 @@ async def answer(
     return AgentResult(
         response=result["answer"],
         sources=sources,
-        task_type="course_search",
         agent_name=AGENT_NAME,
         observation_id=observation_id or new_id(),
         status=AgentStatus(
@@ -582,7 +581,7 @@ async def answer(
 
 **新的 SSE 格式（來源系統，需對齊）：**
 ```json
-{"thread_id": "...", "agent_name": "course_search_agent", "task_type": "course_search"}
+{"thread_id": "...", "agent_name": "course_search_agent"}
 {"stage": "搜尋課程中"}
 {"token": "中央大學資訊工程學系..."}
 {"done": true, "sources": ["計算機概論（資訊工程學系）"], "session_id": "..."}

@@ -220,50 +220,6 @@ class Conversation(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
-class Trace(Base):
-    __tablename__ = "traces"
-    id = Column(Integer, primary_key=True, index=True)
-    observation_id = Column(String, unique=True, index=True, nullable=False)
-    trace_id = Column(String, nullable=True, index=True)
-    run_type = Column(String, nullable=False)          # 'llm' | 'tool' | 'chain'
-    name = Column(String, nullable=False)
-    inputs = Column(JsonColumn, nullable=True)          # JSON
-    outputs = Column(JsonColumn, nullable=True)         # JSON
-    error = Column(Text, nullable=True)
-    start_time = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    end_time = Column(DateTime, nullable=True)
-    prompt_tokens = Column(Integer, nullable=True)
-    completion_tokens = Column(Integer, nullable=True)
-    thread_id = Column(String, nullable=True, index=True)
-    document_ids = Column(JsonColumn, nullable=True)    # JSON array, e.g. "[1,2]"
-    task_type = Column(String, nullable=True, index=True)
-    agent_name = Column(String, nullable=True, index=True)
-    prompt_name = Column(String, nullable=True, index=True)
-    prompt_version = Column(String, nullable=True)
-    base_prompt_name = Column(String, nullable=True)
-    task_prompt_name = Column(String, nullable=True)
-    quality_prompt_name = Column(String, nullable=True)
-    base_prompt_hash = Column(String, nullable=True)
-    task_prompt_hash = Column(String, nullable=True)
-    quality_prompt_hash = Column(String, nullable=True)
-    prompt_stack_name = Column(String, nullable=True)
-    prompt_stack_json = Column(JsonColumn, nullable=True)
-    primary_prompt_json = Column(JsonColumn, nullable=True)
-    workflow_prompts_json = Column(JsonColumn, nullable=True)
-    prompt_stack_tokens = Column(Integer, nullable=True)
-    tool_count = Column(Integer, nullable=True)
-    llm_call_count = Column(Integer, nullable=True)
-    quality_score = Column(Float, nullable=True)
-    user_feedback = Column(Text, nullable=True)
-    display = Column(JsonColumn, nullable=True)
-    quality_detail = Column(JsonColumn, nullable=True)
-    environment = Column(String(40), nullable=False, default="default", index=True)
-    user_id = Column(String, nullable=True, index=True)
-
-    def __repr__(self) -> str:
-        return f"<Trace observation_id={self.observation_id!r} task_type={self.task_type!r} agent={self.agent_name!r}>"
-
-
 class TraceEventOutbox(Base):
     __tablename__ = "trace_events_outbox"
 
@@ -328,8 +284,7 @@ class Observation(Base):
     input = Column(JsonColumn, nullable=True)
     output = Column(JsonColumn, nullable=True)
     metadata_json = Column("metadata", JsonColumn, nullable=True)
-    status = Column(String(20), nullable=True, index=True)
-    level = Column(String(20), nullable=False, default="DEFAULT", index=True)
+    status = Column(String(20), nullable=False, default="DEFAULT", index=True)
     status_message = Column(Text, nullable=True)
     start_time = Column(DateTime, nullable=False, index=True)
     completion_start_time = Column(DateTime, nullable=True, index=True)

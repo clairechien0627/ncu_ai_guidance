@@ -211,7 +211,7 @@ async def _memory_prompt(request: ModelRequest) -> str:
         try:
             from services.agent_memory import build_memory_context
             cached = await build_memory_context(
-                agent_name=getattr(ctx, "agent_name", None) or "chat_agent",
+                agent_name=getattr(ctx, "agent_name", None) or "chat",
                 thread_id=thread_id,
                 user_id=user_id,
                 query=query,
@@ -559,21 +559,9 @@ def _build_tracer(
     return LocalTracer(
         thread_id=thread_id,
         document_ids=document_ids,
-        task_type=metadata.get("task_type"),
         agent_name=metadata.get("agent_name"),
         prompt_name=metadata.get("prompt_name"),
         prompt_version=metadata.get("prompt_version"),
-        base_prompt_name=metadata.get("base_prompt_name"),
-        task_prompt_name=metadata.get("task_prompt_name"),
-        quality_prompt_name=metadata.get("quality_prompt_name"),
-        base_prompt_hash=metadata.get("base_prompt_hash"),
-        task_prompt_hash=metadata.get("task_prompt_hash"),
-        quality_prompt_hash=metadata.get("quality_prompt_hash"),
-        prompt_stack_name=metadata.get("prompt_stack_name"),
-        prompt_stack_json=metadata.get("prompt_stack_json"),
-        primary_prompt_json=metadata.get("primary_prompt_json"),
-        workflow_prompts_json=metadata.get("workflow_prompts_json"),
-        prompt_stack_tokens=metadata.get("prompt_stack_tokens"),
         quality_score=metadata.get("quality_score"),
         user_feedback=metadata.get("user_feedback"),
         trace_id=trace_id,
@@ -623,7 +611,7 @@ async def run_tool_agent(
                 context=AgentContext(
                     document_ids=document_ids,
                     on_stage=on_stage,
-                    task_type=metadata.get("task_type"),
+
                     max_searches=max_searches,
                     max_consecutive_empty=max_consecutive_empty,
                     thread_id=thread_id,
@@ -731,7 +719,7 @@ async def run_tool_agent_stream(
                 context=AgentContext(
                     document_ids=document_ids,
                     on_stage=on_stage,
-                    task_type=metadata.get("task_type"),
+
                     max_searches=max_searches,
                     max_consecutive_empty=max_consecutive_empty,
                     thread_id=thread_id,

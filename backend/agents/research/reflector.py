@@ -297,8 +297,7 @@ async def reflect_results(
             messages,
             prompt_name="research_reflector",
             metadata={
-                "task_type": "research_task",
-                "agent_name": "research_agent",
+                "agent_name": "research",
                 **research_node_stack_metadata("research_reflector"),
             },
         )

@@ -17,7 +17,7 @@ function fmtTokens(p: number | null, c: number | null) {
   return ((p ?? 0) + (c ?? 0)).toLocaleString()
 }
 
-const TYPE_OPTIONS = ['all', 'llm', 'tool', 'chain', 'retriever']
+const TYPE_OPTIONS = ['all', 'GENERATION', 'TOOL', 'CHAIN', 'SPAN', 'RETRIEVER']
 
 // ── Column layout ─────────────────────────────────────────────────────────────
 const COLS: ColDef[] = [
@@ -33,7 +33,7 @@ const COLS: ColDef[] = [
 ]
 
 export default function ObservationsPage() {
-  const [runType, setRunType] = useState('all')
+  const [obsType, setObsType] = useState('all')
   const [drawerTraceId, setDrawerTraceId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
@@ -46,8 +46,8 @@ export default function ObservationsPage() {
 
   const { data: stats } = useQuery({ queryKey: ['obs-stats'], queryFn: getObservationStats })
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['observations', runType],
-    queryFn: () => getObservations(200, runType),
+    queryKey: ['observations', obsType],
+    queryFn: () => getObservations(200, obsType),
   })
 
   const byType = stats?.by_type ?? {}
@@ -58,8 +58,8 @@ export default function ObservationsPage() {
       <div className="adm-filters" style={{ marginBottom: 12 }}>
         {TYPE_OPTIONS.map(t => (
           <button key={t}
-            className={`adm-btn adm-btn-sm ${runType === t ? 'adm-btn-primary' : 'adm-btn-secondary'}`}
-            onClick={() => setRunType(t)}
+            className={`adm-btn adm-btn-sm ${obsType === t ? 'adm-btn-primary' : 'adm-btn-secondary'}`}
+            onClick={() => setObsType(t)}
           >
             {t === 'all' ? 'All' : t.toUpperCase()}
             {t !== 'all' && byType[t] ? ` (${byType[t].count})` : ''}
@@ -96,7 +96,7 @@ export default function ObservationsPage() {
               return (
                 <tr key={row.id} className={isErr ? 'adm-row--danger' : ''}>
                   <td className="adm-cell-mono">{fmtDate(row.start_time)}</td>
-                  <td><span className="adm-badge adm-badge--info" style={{ textTransform: 'uppercase', fontSize: 10 }}>{row.run_type ?? '?'}</span></td>
+                  <td><span className="adm-badge adm-badge--info" style={{ textTransform: 'uppercase', fontSize: 10 }}>{row.type ?? '?'}</span></td>
                   <td style={{ fontSize: 12, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }} title={row.name}>{row.name}</td>
                   <td style={{ fontSize: 11, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--adm-text-2)' }} title={row.input ?? undefined}>{row.input ?? '—'}</td>
                   <td style={{ fontSize: 11, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', color: isErr ? 'var(--adm-red)' : 'var(--adm-text-2)' }} title={(row.error ?? row.output) ?? undefined}>

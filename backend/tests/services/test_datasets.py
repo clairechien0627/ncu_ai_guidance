@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from db import Dataset, DatasetItem, EvaluationRun, EvaluationRunItem, Score, Trace
+from db import Dataset, DatasetItem, EvaluationRun, EvaluationRunItem, Score, TraceV2
 from db.session import Base
 from services.evaluation import runs as evaluation_runs
 from services.datasets import DatasetService
@@ -33,28 +33,28 @@ def _patch_db_session(monkeypatch, SessionLocal):
     monkeypatch.setattr(evaluation_runs, "db_session", _db_session)
 
 
-def _trace(observation_id: str, **kwargs) -> Trace:
+def _trace(trace_id: str, **kwargs) -> TraceV2:
     now = kwargs.pop("start_time", datetime(2026, 5, 18, 1, 0, 0))
-    return Trace(
-        observation_id=observation_id,
-        trace_id=kwargs.pop("trace_id", None),
-        run_type=kwargs.pop("run_type", "chain"),
-        name=kwargs.pop("name", observation_id),
-        start_time=now,
-        end_time=kwargs.pop("end_time", now + timedelta(seconds=2)),
-        agent_name=kwargs.pop("agent_name", "retrieval_agent"),
-        thread_id=kwargs.pop("thread_id", "thread-1"),
-        environment=kwargs.pop("environment", "test"),
-        task_type=kwargs.pop("task_type", "retrieval_qa"),
-        quality_score=kwargs.pop("quality_score", None),
-        inputs=kwargs.pop("inputs", json.dumps({"messages": [{"role": "human", "content": "question"}]})),
-        outputs=kwargs.pop("outputs", json.dumps({"answer": "answer"})),
-        display=kwargs.pop("display", json.dumps({
+    kwargs.pop("quality_score", None)
+    meta = {
+        "agent_name": kwargs.pop("agent_name", "retrieval"),
+        "display": kwargs.pop("display", {
             "answer": "answer",
             "messages": [{"role": "human", "content": "question"}],
             "sources": ["source-1"],
             "trace_summary": {"coverage": []},
-        })),
+        }),
+    }
+    return TraceV2(
+        trace_id=trace_id,
+        name=kwargs.pop("name", trace_id),
+        start_time=now,
+        end_time=kwargs.pop("end_time", now + timedelta(seconds=2)),
+        thread_id=kwargs.pop("thread_id", "thread-1"),
+        environment=kwargs.pop("environment", "test"),
+        input=kwargs.pop("input", json.dumps({"messages": [{"role": "human", "content": "question"}]})),
+        output=kwargs.pop("output", json.dumps({"answer": "answer"})),
+        metadata_json=json.dumps(meta, ensure_ascii=False),
         **kwargs,
     )
 
@@ -98,8 +98,13 @@ def test_add_low_quality_traces_uses_trace_read_service_filters():
     SessionLocal = _session_factory()
     db = SessionLocal()
     try:
-        db.add(_trace("low", quality_score=2.0))
-        db.add(_trace("high", quality_score=4.0))
+        low = _trace("low", quality_score=2.0)
+        high = _trace("high", quality_score=4.0)
+        db.add_all([low, high])
+        db.add_all([
+            Score(score_id="low:overall", trace_id="low", name="overall", value=2.0),
+            Score(score_id="high:overall", trace_id="high", name="overall", value=4.0),
+        ])
         db.commit()
         dataset = DatasetService.create_dataset(db, name="low-quality")
 
@@ -132,7 +137,6 @@ def test_dataset_eval_run_scores_snapshot_without_overwriting_trace(monkeypatch)
     try:
         run = db.query(EvaluationRun).filter(EvaluationRun.eval_run_id == eval_run_id).one()
         item = db.query(EvaluationRunItem).filter(EvaluationRunItem.eval_run_id == eval_run_id).one()
-        trace = db.query(Trace).filter(Trace.observation_id == "t1").one()
         score = db.query(Score).filter(Score.execution_trace_id == eval_run_id, Score.name == "overall").one()
         metadata = json.loads(score.metadata_json)
 
@@ -141,7 +145,6 @@ def test_dataset_eval_run_scores_snapshot_without_overwriting_trace(monkeypatch)
         assert run.dataset_item_count == 1
         assert item.dataset_item_id
         assert item.status == "completed"
-        assert trace.quality_score is None
         assert metadata["dataset_id"] == run.dataset_id
         assert metadata["dataset_item_id"] == item.dataset_item_id
     finally:

@@ -67,20 +67,3 @@ def get_queue_status(db: Session = Depends(get_db)) -> dict[str, Any]:
         },
     }
 
-
-@router.post("/api/system/backfill")
-def run_backfill(
-    dry_run: bool = True,
-    limit: int | None = None,
-) -> dict[str, Any]:
-    """Backfill legacy traces into traces_v2 / observations."""
-    try:
-        from db import db_session
-        from scripts.traces.backfill_trace_v2 import backfill
-
-        with db_session() as db:
-            result = backfill(db, dry_run=dry_run, limit=limit)
-        return {"ok": True, **result}
-    except Exception as exc:
-        logger.exception("Backfill failed")
-        return {"ok": False, "error": str(exc)}

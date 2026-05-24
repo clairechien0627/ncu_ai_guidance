@@ -158,7 +158,7 @@ def test_route_agent_stream_evaluate_after_passes_exclude_observation_id():
     from agents.types import AgentRoute
 
     fake_route = AgentRoute(
-        agent_name="chat_agent",
+        agent_name="chat",
         prompt_name="chat_mode",
         prompt_version="v1",
         evaluate_after=True,
@@ -174,8 +174,8 @@ def test_route_agent_stream_evaluate_after_passes_exclude_observation_id():
         eval_kwargs_captured.append({"thread_id": thread_id, **kwargs})
         from agents.types import AgentResult
         return AgentResult(
-            response="ok", sources=[], task_type="evaluation",
-            agent_name="evaluation_agent",
+            response="ok", sources=[],
+            agent_name="evaluation",
             prompt_name="eval", prompt_version="v1", observation_id="eval-obs",
         )
 

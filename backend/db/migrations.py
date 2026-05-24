@@ -11,7 +11,7 @@ from .session import Base, engine
 # Import all models so Base.metadata knows about every table.
 from .models import (  # noqa: F401
     User,
-    Document, DocumentExtraction, JobHistory, Conversation, Trace, PromptVersion,
+    Document, DocumentExtraction, JobHistory, Conversation, PromptVersion,
     TraceEventOutbox, TraceV2, Observation, Score, ScoreConfig,
     EvaluationRun, EvaluationRunItem, Dataset, DatasetItem,
     ExperimentRun, ExperimentRunItem,

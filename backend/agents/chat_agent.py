@@ -22,8 +22,7 @@ from .types import AgentResult, AgentStatus
 
 STACK_NAME = "chat_default"
 PROMPT_NAME = "chat_mode"
-AGENT_NAME = "chat_agent"
-COMPOSITION_TASK_TYPE = "response_composition"
+AGENT_NAME = "chat"
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,6 @@ async def _emit_stage(on_stage, msg: str) -> None:
 def trace_metadata() -> dict[str, str | int]:
     stack = load_stack(STACK_NAME)
     return {
-        "task_type": "chat_turn",
         "agent_name": AGENT_NAME,
         **stack.metadata(),
     }
@@ -74,9 +72,7 @@ def _write_composition_trace(
     output: dict | None = None,
     error: str | None = None,
 ) -> None:
-    """Persist the future router-controlled final composition step locally."""
-    import os
-    # Write observation to v2 when this run is a child of a router trace
+    """Persist the router-controlled final composition step as a Trace v2 observation."""
     if trace_id:
         try:
             from services.trace_ingestion import TraceEventIngestor
@@ -93,61 +89,13 @@ def _write_composition_trace(
                     "end_time": now_iso if (output or error) else None,
                     "input": inputs,
                     "output": output,
-                    "level": "ERROR" if error else "DEFAULT",
+                    "status": "ERROR" if error else "DEFAULT",
                     "status_message": error,
-                    "metadata": {k: metadata[k] for k in ("agent_name", "task_type", "prompt_name") if k in metadata and metadata[k]},
+                    "metadata": {k: metadata[k] for k in ("agent_name", "prompt_name") if k in metadata and metadata[k]},
                 },
             }])
         except Exception:
             pass
-
-    if os.environ.get("LEGACY_TRACE_WRITE", "true").lower() in ("0", "false", "no"):
-        return
-
-    from db import db_session, Trace
-
-    db = None
-    try:
-        with db_session() as db:
-            now = datetime.now(timezone.utc)
-            trace = db.query(Trace).filter(Trace.observation_id == observation_id).first()
-            if trace is None:
-                trace = Trace(
-                    observation_id=observation_id,
-                    trace_id=trace_id,
-                    run_type="llm",
-                    name="chat_agent.compose_final_response",
-                    start_time=now,
-                    thread_id=thread_id,
-                    document_ids=json.dumps(document_ids) if document_ids else None,
-                    task_type=COMPOSITION_TASK_TYPE,
-                    agent_name=AGENT_NAME,
-                    prompt_name=metadata.get("prompt_name"),
-                    prompt_version=metadata.get("prompt_version"),
-                    base_prompt_name=metadata.get("base_prompt_name"),
-                    task_prompt_name=metadata.get("task_prompt_name"),
-                    base_prompt_hash=metadata.get("base_prompt_hash"),
-                    task_prompt_hash=metadata.get("task_prompt_hash"),
-                    prompt_stack_name=metadata.get("prompt_stack_name"),
-                    prompt_stack_json=metadata.get("prompt_stack_json"),
-                    primary_prompt_json=metadata.get("primary_prompt_json"),
-                    workflow_prompts_json=metadata.get("workflow_prompts_json"),
-                    prompt_stack_tokens=metadata.get("prompt_stack_tokens"),
-                    inputs=json.dumps(inputs, ensure_ascii=False),
-                )
-                db.add(trace)
-            if output is not None:
-                trace.outputs = json.dumps(output, ensure_ascii=False)
-                trace.display = json.dumps(output, ensure_ascii=False)
-                trace.end_time = now
-            if error:
-                trace.error = error
-                trace.end_time = now
-            db.commit()
-    except Exception as exc:
-        logger.warning("Composition trace write failed: %s", exc)
-        if db is not None:
-            db.rollback()
 
 
 @observe(as_type="agent", name="Compose Final Response")
@@ -170,14 +118,12 @@ async def compose_final_response(
     observation_id = observation_id or new_id()
     stack = load_stack(STACK_NAME)
     metadata = {
-        "task_type": COMPOSITION_TASK_TYPE,
         "agent_name": AGENT_NAME,
         **stack.metadata(),
     }
     inputs = {
         "user_message": user_message,
         "task_agent": task_result.agent_name,
-        "task_type": task_result.task_type,
         "task_answer": task_result.response,
         "sources": task_result.sources,
     }
@@ -229,7 +175,6 @@ async def compose_final_response(
         return AgentResult(
             response=content,
             sources=task_result.sources,
-            task_type=COMPOSITION_TASK_TYPE,
             agent_name=AGENT_NAME,
             prompt_name=str(metadata.get("prompt_name", PROMPT_NAME)),
             prompt_version=str(metadata.get("prompt_version", "unknown")),
@@ -265,7 +210,6 @@ async def answer(
 ) -> AgentResult:
     stack = load_stack(STACK_NAME)
     meta = {
-        "task_type": "chat_turn",
         "agent_name": AGENT_NAME,
         **stack.metadata(),
     }
@@ -283,7 +227,7 @@ async def answer(
             name="Chat Agent",
             start_time=agent_start,
             input_data={"messages": [{"role": "user", "content": user_message}]},
-            extra_metadata={"task_type": "chat_turn", "agent_name": AGENT_NAME},
+            extra_metadata={"agent_name": AGENT_NAME},
         )
     response, sources, meta, observation_id = await run_no_tool_agent(
         user_message=user_message,
@@ -292,7 +236,6 @@ async def answer(
         stack_name=STACK_NAME,
         prompt_name=PROMPT_NAME,
         agent_name=AGENT_NAME,
-        task_type="chat_turn",
         observation_id=observation_id,
         trace_id=trace_id,
         use_mini=use_mini,
@@ -319,7 +262,7 @@ async def answer(
             end_time=datetime.now(_tz.utc),
             input_data={"messages": [{"role": "user", "content": user_message}]},
             output_data={"answer": response, "sources": sources},
-            extra_metadata={"task_type": "chat_turn", "agent_name": AGENT_NAME},
+            extra_metadata={"agent_name": AGENT_NAME},
         )
     update_current_observation_io(
         input={
@@ -329,7 +272,6 @@ async def answer(
         output={"answer": response, "sources": sources},
         metadata={
             "agent_name": AGENT_NAME,
-            "task_type": "chat_turn",
             "prompt_stack_name": meta.get("prompt_stack_name"),
             "prompt_name": meta.get("prompt_name"),
             "prompt_version": meta.get("prompt_version"),
@@ -338,7 +280,6 @@ async def answer(
     return AgentResult(
         response=response,
         sources=sources,
-        task_type="chat_turn",
         agent_name=AGENT_NAME,
         prompt_name=str(meta.get("prompt_name", PROMPT_NAME)),
         prompt_version=str(meta.get("prompt_version", "unknown")),
@@ -346,7 +287,7 @@ async def answer(
         status=AgentStatus(
             completed=not _insufficient,
             work_summary="直接從對話 context 回答。",
-            agent_limitation="chat_agent 無文件搜尋工具，現有 context 不足以充分回答" if _insufficient else "",
+            agent_limitation="chat 無文件搜尋工具，現有 context 不足以充分回答" if _insufficient else "",
         ),
     )
 
@@ -373,7 +314,7 @@ async def stream(
             name="Chat Agent",
             start_time=agent_start,
             input_data={"messages": [{"role": "user", "content": user_message}]},
-            extra_metadata={"task_type": "chat_turn", "agent_name": AGENT_NAME},
+            extra_metadata={"agent_name": AGENT_NAME},
         )
     await _emit_stage(on_stage, "組織回答中")
     content = ""
@@ -384,7 +325,6 @@ async def stream(
         stack_name=STACK_NAME,
         prompt_name=PROMPT_NAME,
         agent_name=AGENT_NAME,
-        task_type="chat_turn",
         observation_id=observation_id,
         trace_id=trace_id,
         use_mini=use_mini,
@@ -408,6 +348,6 @@ async def stream(
             end_time=datetime.now(timezone.utc),
             input_data={"messages": [{"role": "user", "content": user_message}]},
             output_data={"answer": content, "sources": []},
-            extra_metadata={"task_type": "chat_turn", "agent_name": AGENT_NAME},
+            extra_metadata={"agent_name": AGENT_NAME},
         )
     yield "", True, []

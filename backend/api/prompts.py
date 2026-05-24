@@ -5,7 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from db import get_db
-from db.models import PromptVersion, Trace
+from db.models import Observation, PromptVersion, Score
 
 from api.dependencies import require_admin
 router = APIRouter(dependencies=[Depends(require_admin)])
@@ -60,14 +60,22 @@ def list_prompts(db: Session = Depends(get_db)):
         .all()
     )
 
-    # Avg quality per prompt from traces
-    quality_rows = (
-        db.query(Trace.prompt_name, func.avg(Trace.quality_score))
-        .filter(Trace.prompt_name.isnot(None), Trace.quality_score.isnot(None))
-        .group_by(Trace.prompt_name)
+    quality_map: dict[str, float] = {}
+    v2_quality: dict[str, list[float]] = {}
+    seen_quality: set[tuple[str, str]] = set()
+    for trace_id, prompt_name, score_val in (
+        db.query(Observation.trace_id, Observation.prompt_name, Score.value)
+        .join(Score, Score.trace_id == Observation.trace_id)
+        .filter(Score.name == "overall", Score.value.isnot(None))
+        .filter(Observation.prompt_name.isnot(None))
         .all()
-    )
-    quality_map = {name: round(float(avg), 2) for name, avg in quality_rows if avg is not None}
+    ):
+        if not prompt_name or (trace_id, prompt_name) in seen_quality:
+            continue
+        seen_quality.add((trace_id, prompt_name))
+        v2_quality.setdefault(prompt_name, []).append(float(score_val))
+    for pname, vals in v2_quality.items():
+        quality_map[pname] = round(sum(vals) / len(vals), 2)
 
     result = []
     for name in local_names:

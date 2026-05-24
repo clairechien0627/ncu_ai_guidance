@@ -1,33 +1,9 @@
 import api from './client'
 
-export type TraceMessage =
-  | { role: 'system'; content: string }
-  | { role: 'human'; content: string }
-  | { role: 'ai'; content: string }
-  | { role: 'ai_tool_call'; tool_calls: Array<{ tool: string; call_id: string; args: Record<string, unknown> }> }
-  | { role: 'tool'; tool: string; call_id: string; chunks: Array<{ filename: string; page: number | null; content: string }>; raw: string | null }
-
-export interface TraceEvent {
-  type: 'user_message' | 'planner_message' | 'tool_call_args' | 'tool_result' | 'reflector_message' | 'writer_message'
-  round: number
-  slot_id: string | null
-  slot_label: string | null
-  display_intent: string | null
-  payload_summary: string | null
-  payload_debug: Record<string, unknown> | null
-}
-
-export interface TraceDisplay {
-  messages: TraceMessage[]
-  events?: TraceEvent[]
-  answer: string | null
-  sources: string[]
-}
-
 export interface TraceItem {
   id: string
   name: string
-  level: string
+  status: string
   start_time: string | null
   end_time?: string | null
   latency: number | null
@@ -35,7 +11,6 @@ export interface TraceItem {
   input?: string | null
   output?: string | null
   url: string | null
-  display: TraceDisplay | null
   tags?: string[] | null
   total_cost?: number | null
   input_cost?: number | null
@@ -45,22 +20,12 @@ export interface TraceItem {
   prompt_tokens?: number | null
   completion_tokens?: number | null
   observation_count?: number | null
-  obs_level_counts?: Record<string, number> | null
+  total_tokens?: number | null
+  obs_status_counts?: Record<string, number> | null
   metadata?: Record<string, unknown> | null
   user_id?: string | null
   mode?: string | null
   agent_name?: string | null
-  prompt_name?: string | null
-  prompt_version?: string | null
-  base_prompt_name?: string | null
-  task_prompt_name?: string | null
-  quality_prompt_name?: string | null
-  base_prompt_hash?: string | null
-  task_prompt_hash?: string | null
-  quality_prompt_hash?: string | null
-  prompt_stack_name?: string | null
-  prompt_stack_json?: Array<{ name: string; base_name?: string; source_name?: string; version: string }> | string | null
-  prompt_stack_tokens?: number | null
   tool_count?: number | null
   llm_call_count?: number | null
   quality_score?: number | null
@@ -75,7 +40,7 @@ export interface TraceItem {
 }
 
 export interface TraceDetail extends TraceItem {
-  run_type?: string
+  type?: string
   parent_observation_id?: string | null
   thread_id?: string | null
   document_ids?: number[] | null
@@ -100,7 +65,7 @@ export interface TraceGroupStats {
 }
 
 export interface TraceFilters {
-  prompt_name?: string; prompt_version?: string; level?: string
+  prompt_name?: string; prompt_version?: string; status?: string
   min_latency?: string; max_quality?: number; min_quality?: number; has_score?: boolean
   environment?: string
   date_from?: string; date_to?: string
@@ -111,7 +76,7 @@ export interface TraceFilters {
 }
 
 export interface SessionItem {
-  thread_id: string; task_type: string | null; created_at: string | null; ended_at: string | null
+  thread_id: string; created_at: string | null; ended_at: string | null
   duration_seconds: number | null; trace_count: number; input_tokens: number
   output_tokens: number; total_tokens: number; avg_quality_score: number | null; user_ids: string[]
 }
@@ -135,8 +100,9 @@ export interface VersionCompare {
 export interface VersionCompareResult { v1: VersionCompare; v2: VersionCompare }
 
 export interface ObservationItem {
-  id: string; run_type: string; name: string; parent_observation_id: string | null
+  id: string; type: string; name: string; parent_observation_id: string | null
   thread_id: string | null; start_time: string | null; latency: number | null
+  status?: string | null
   prompt_tokens: number | null; completion_tokens: number | null
   error: string | null; input: string | null; output: string | null
 }
@@ -249,9 +215,9 @@ export const compareTraceVersions = async (v1: string, v2: string): Promise<Vers
   const { data } = await api.get<VersionCompareResult>(`/traces/compare?v1=${encodeURIComponent(v1)}&v2=${encodeURIComponent(v2)}`)
   return data
 }
-export const getObservations = async (limit = 100, runType?: string, offset = 0): Promise<ObservationItem[]> => {
+export const getObservations = async (limit = 100, type?: string, offset = 0): Promise<ObservationItem[]> => {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
-  if (runType && runType !== 'all') params.set('run_type', runType)
+  if (type && type !== 'all') params.set('type', type)
   const { data } = await api.get<ObservationItem[]>(`/traces/observations?${params}`)
   return data
 }

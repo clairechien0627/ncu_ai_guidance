@@ -12,13 +12,12 @@ from .types import AgentResult, AgentStatus
 
 STACK_NAME = "question_default"
 PROMPT_NAME = "question_skill"
-AGENT_NAME = "question_agent"
+AGENT_NAME = "question"
 
 
 def trace_metadata(thread_id: str | None = None, document_ids: list[int] | None = None) -> dict[str, str | int]:
     stack = load_stack(STACK_NAME, _prompt_key(thread_id, document_ids))
     return {
-        "task_type": "question_generation",
         "agent_name": AGENT_NAME,
         **stack.metadata(),
     }
@@ -76,7 +75,7 @@ async def answer(
             name="Question Agent",
             start_time=agent_start,
             input_data={"messages": [{"role": "user", "content": user_message}]},
-            extra_metadata={"task_type": "question_generation", "agent_name": AGENT_NAME},
+            extra_metadata={"agent_name": AGENT_NAME},
         )
     response, sources, meta, observation_id = await run_no_tool_agent(
         user_message=user_message,
@@ -85,7 +84,6 @@ async def answer(
         stack_name=STACK_NAME,
         prompt_name=PROMPT_NAME,
         agent_name=AGENT_NAME,
-        task_type="question_generation",
         observation_id=observation_id,
         trace_id=trace_id,
         use_mini=use_mini,
@@ -104,7 +102,7 @@ async def answer(
             end_time=datetime.now(_tz.utc),
             input_data={"messages": [{"role": "user", "content": user_message}]},
             output_data={"answer": response, "sources": sources},
-            extra_metadata={"task_type": "question_generation", "agent_name": AGENT_NAME},
+            extra_metadata={"agent_name": AGENT_NAME},
         )
 
     if not _has_questions(response) or not _questions_have_varied_openings(response):
@@ -116,7 +114,6 @@ async def answer(
             stack_name=STACK_NAME,
             prompt_name=PROMPT_NAME,
             agent_name=AGENT_NAME,
-            task_type="question_generation",
             observation_id=retry_observation_id,
             trace_id=trace_id,
             use_mini=use_mini,
@@ -140,7 +137,6 @@ async def answer(
         output={"answer": response, "sources": sources},
         metadata={
             "agent_name": AGENT_NAME,
-            "task_type": "question_generation",
             "prompt_stack_name": meta.get("prompt_stack_name"),
             "prompt_name": meta.get("prompt_name"),
             "prompt_version": meta.get("prompt_version"),
@@ -151,7 +147,6 @@ async def answer(
     return AgentResult(
         response=response,
         sources=sources,
-        task_type="question_generation",
         agent_name=AGENT_NAME,
         prompt_name=str(meta.get("prompt_name", PROMPT_NAME)),
         prompt_version=str(meta.get("prompt_version", "unknown")),
@@ -201,7 +196,7 @@ async def stream(
             name="Question Agent",
             start_time=agent_start,
             input_data={"messages": [{"role": "user", "content": user_message}]},
-            extra_metadata={"task_type": "question_generation", "agent_name": AGENT_NAME},
+            extra_metadata={"agent_name": AGENT_NAME},
         )
     extra_system_messages = [
         "You do not have retrieval tools in this step. Generate tutoring or "
@@ -221,7 +216,6 @@ async def stream(
         stack_name=STACK_NAME,
         prompt_name=PROMPT_NAME,
         agent_name=AGENT_NAME,
-        task_type="question_generation",
         observation_id=observation_id,
         trace_id=trace_id,
         use_mini=use_mini,
@@ -242,6 +236,6 @@ async def stream(
             end_time=datetime.now(_tz.utc),
             input_data={"messages": [{"role": "user", "content": user_message}]},
             output_data={"answer": content, "sources": evidence_sources or []},
-            extra_metadata={"task_type": "question_generation", "agent_name": AGENT_NAME},
+            extra_metadata={"agent_name": AGENT_NAME},
         )
     yield "", True, evidence_sources or []

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from db import EvaluationRun, EvaluationRunItem, Score, Trace
+from db import EvaluationRun, EvaluationRunItem, Score, TraceV2
 from db.session import Base
 from services.evaluation import runs as evaluation_runs
 from services.evaluation.runs import EvaluationRunService
@@ -32,25 +32,28 @@ def _patch_db_session(monkeypatch, SessionLocal):
     monkeypatch.setattr(evaluation_runs, "db_session", _db_session)
 
 
-def _trace(observation_id: str, **kwargs) -> Trace:
+def _trace(trace_id: str, **kwargs) -> TraceV2:
     now = kwargs.pop("start_time", datetime(2026, 5, 18, 1, 0, 0))
-    return Trace(
-        observation_id=observation_id,
-        trace_id=kwargs.pop("trace_id", None),
-        run_type=kwargs.pop("run_type", "chain"),
-        name=kwargs.pop("name", observation_id),
-        start_time=now,
-        end_time=kwargs.pop("end_time", now + timedelta(seconds=2)),
-        agent_name=kwargs.pop("agent_name", "retrieval_agent"),
-        thread_id=kwargs.pop("thread_id", "thread-1"),
-        environment=kwargs.pop("environment", "test"),
-        task_type=kwargs.pop("task_type", "retrieval_qa"),
-        display=kwargs.pop("display", json.dumps({
+    meta = {
+        "agent_name": kwargs.pop("agent_name", "retrieval"),
+        "display": kwargs.pop("display", {
             "answer": "answer",
             "messages": [{"role": "human", "content": "question"}],
             "sources": ["source-1"],
-        })),
-        quality_score=kwargs.pop("quality_score", None),
+        }),
+    }
+    if kwargs.pop("quality_score", None) is not None:
+        meta["seed_quality_score"] = True
+    return TraceV2(
+        trace_id=trace_id,
+        name=kwargs.pop("name", trace_id),
+        start_time=now,
+        end_time=kwargs.pop("end_time", now + timedelta(seconds=2)),
+        thread_id=kwargs.pop("thread_id", "thread-1"),
+        environment=kwargs.pop("environment", "test"),
+        input=kwargs.pop("input", json.dumps({"messages": [{"role": "human", "content": "question"}]})),
+        output=kwargs.pop("output", json.dumps({"answer": "answer"})),
+        metadata_json=json.dumps(meta, ensure_ascii=False),
         **kwargs,
     )
 
@@ -123,17 +126,15 @@ def test_process_run_writes_scores_and_status(monkeypatch):
     try:
         run = db.query(EvaluationRun).filter(EvaluationRun.eval_run_id == eval_run_id).one()
         item = db.query(EvaluationRunItem).filter(EvaluationRunItem.eval_run_id == eval_run_id).one()
-        trace = db.query(Trace).filter(Trace.observation_id == "t1").one()
 
         assert run.status == "completed"
         assert run.succeeded_count == 1
         assert item.status == "completed"
         assert json.loads(item.score_ids)
-        assert trace.quality_score == 4.0
-        assert "overall" in json.loads(trace.quality_detail)
-        assert trace.user_feedback
         assert db.query(Score).filter(Score.execution_trace_id == eval_run_id).count() == 9
         score = db.query(Score).filter(Score.execution_trace_id == eval_run_id, Score.name == "overall").one()
+        assert score.value == 4.0
+        assert score.comment
         metadata = json.loads(score.metadata_json)
         assert metadata["eval_run_id"] == eval_run_id
         assert metadata["eval_item_id"] == item.eval_item_id

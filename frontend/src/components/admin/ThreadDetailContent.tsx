@@ -22,10 +22,8 @@ function fmtTs(iso: string | null) {
 }
 
 function IOPreview({ trace }: { trace: TraceItem }) {
-  const display  = trace.display
-  const humanMsg = display?.messages?.find((m: any) => m.role === 'human')
-  const userText = humanMsg && 'content' in humanMsg ? String(humanMsg.content ?? '') : (typeof trace.input === 'string' ? trace.input : '')
-  const answer   = display?.answer ? String(display.answer) : (typeof trace.output === 'string' ? trace.output : '')
+  const userText = typeof trace.input === 'string' ? trace.input : ''
+  const answer   = typeof trace.output === 'string' ? trace.output : ''
   if (!userText && !answer) return <p style={{ fontSize: 12, color: 'var(--adm-text-3)', margin: 0 }}>No I/O recorded</p>
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -46,7 +44,7 @@ function IOPreview({ trace }: { trace: TraceItem }) {
 }
 
 function TraceCard({ trace, idx, onOpenTrace }: { trace: TraceItem; idx: number; onOpenTrace: (id: string) => void }) {
-  const isErr = trace.level === 'ERROR'
+  const isErr = trace.status === 'ERROR'
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, padding: '14px 16px', background: isErr ? 'rgba(220,38,38,0.03)' : 'var(--adm-surface)', border: `1px solid ${isErr ? 'rgba(220,38,38,0.25)' : 'var(--adm-border)'}`, borderRadius: 'var(--adm-radius-lg)', marginBottom: 8 }}>
       <IOPreview trace={trace} />
@@ -56,7 +54,6 @@ function TraceCard({ trace, idx, onOpenTrace }: { trace: TraceItem; idx: number;
           {isErr && <span className="adm-badge adm-badge--error" style={{ fontSize: 10 }}>Error</span>}
         </div>
         {[
-          ['Prompt',  trace.prompt_name],
           ['Time',    fmtTs(trace.start_time)],
           ['Latency', trace.latency != null ? `${trace.latency.toFixed(1)}s` : null],
         ].filter(([, v]) => v).map(([label, value]) => (
@@ -104,7 +101,6 @@ export function ThreadDetailContent({ threadId }: Props) {
           `${fmtTokens(data.total_tokens)} tokens`,
           fmtDuration(data.duration_seconds),
         ].map(s => <span key={s} className="adm-badge adm-badge--info">{s}</span>)}
-        {data.task_type && <span className="adm-badge adm-badge--info">{data.task_type}</span>}
         {data.avg_quality_score != null && <ScoreBar value={data.avg_quality_score} />}
       </div>
 

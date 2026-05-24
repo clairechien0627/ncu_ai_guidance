@@ -64,8 +64,7 @@ def test_generation_prompt_metadata_includes_stack_and_primary_prompt():
             "prompt_stack_json": stack_json,
             "prompt_name": "chat_mode",
             "prompt_version": "sha256:chat",
-            "agent_name": "chat_agent",
-            "task_type": "chat_turn",
+            "agent_name": "chat",
         },
         prompt_name="chat_mode",
     )
@@ -73,4 +72,4 @@ def test_generation_prompt_metadata_includes_stack_and_primary_prompt():
     assert meta["prompt_stack_name"] == "chat_default"
     assert meta["primary_prompt"] == {"name": "chat_mode", "version": "sha256:chat"}
     assert meta["prompt_stack_json"][1]["base_name"] == "chat_mode"
-    assert meta["agent_name"] == "chat_agent"
+    assert meta["agent_name"] == "chat"

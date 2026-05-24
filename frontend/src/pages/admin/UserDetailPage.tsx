@@ -44,7 +44,6 @@ export default function UserDetailPage() {
           <thead>
             <tr>
               <th>Thread ID</th>
-              <th style={{ width: 100 }}>Task Type</th>
               <th className="adm-col-time">Created</th>
               <th style={{ width: 70 }}>Traces</th>
               <th style={{ width: 80 }}>Tokens</th>
@@ -53,11 +52,10 @@ export default function UserDetailPage() {
           </thead>
           <tbody>
             {sessions.length === 0 ? (
-              <tr><td colSpan={6} className="adm-table-empty">No sessions</td></tr>
+              <tr><td colSpan={5} className="adm-table-empty">No sessions</td></tr>
             ) : sessions.map((s: any) => (
               <tr key={s.thread_id} className="adm-row--clickable" onClick={() => navigate(`/admin/sessions/${encodeURIComponent(s.thread_id)}`)}>
                 <td className="adm-cell-mono" title={s.thread_id}>{s.thread_id.length > 28 ? s.thread_id.slice(0, 28) + '…' : s.thread_id}</td>
-                <td>{s.task_type ? <span className="adm-badge adm-badge--info">{s.task_type}</span> : '—'}</td>
                 <td className="adm-cell-mono">{fmtDate(s.created_at)}</td>
                 <td style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{s.trace_count}</td>
                 <td style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{fmtTokens(s.total_tokens)}</td>
