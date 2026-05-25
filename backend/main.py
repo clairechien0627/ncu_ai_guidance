@@ -140,7 +140,7 @@ async def auth_context_middleware(request: Request, call_next):
     if token:
         try:
             payload = decode_token(token)
-            set_user_id(str(payload["sub"]))
+            set_user_id(payload.get("pid") or str(payload["sub"]))
         except Exception as exc:
             logger.debug("auth middleware: token decode failed: %s", exc)
     return await call_next(request)

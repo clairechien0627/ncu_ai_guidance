@@ -166,7 +166,7 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db),
 
     conv = await asyncio.to_thread(_setup_conv)
     check_quota(current_user, db)
-    set_user_id(str(current_user.id))
+    set_user_id(current_user.public_id)
     try:
         prev_agent = await asyncio.to_thread(_get_previous_agent, db, conv.thread_id if req.thread_id else None)
         route = await route_request(req.message, req.document_ids, conv.thread_id, previous_agent_name=prev_agent)
@@ -246,7 +246,7 @@ async def chat_stream(req: ChatRequest, db: Session = Depends(get_db),
     asyncio.create_task(_push_jobs())
 
     is_new = req.thread_id is None
-    set_user_id(str(current_user.id))
+    set_user_id(current_user.public_id)
 
     prev_agent = await asyncio.to_thread(_get_previous_agent, db, conv.thread_id if req.thread_id else None)
     trace_id = new_id()

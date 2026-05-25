@@ -43,6 +43,8 @@ def _dataset_payload(row: Dataset, *, include_items: bool = False) -> dict:
         "description": row.description,
         "source": row.source,
         "metadata": _json_obj(row.metadata_json) or {},
+        "input_schema": _json_obj(row.input_schema),
+        "expected_output_schema": _json_obj(row.expected_output_schema),
         "is_archived": row.is_archived,
         "item_count": len(items),
         "created_at": row.created_at.isoformat() + "Z" if row.created_at else None,
@@ -59,6 +61,7 @@ def _dataset_item_payload(row: DatasetItem) -> dict:
         "dataset_id": row.dataset_id,
         "input": _json_obj(row.input),
         "output": _json_obj(row.output),
+        "reference_output": _json_obj(row.output),
         "expected_output": _json_obj(row.expected_output),
         "context": _json_obj(row.context),
         "source_trace_id": row.source_trace_id,
@@ -103,6 +106,8 @@ class DatasetService:
         description: str | None = None,
         source: str | None = None,
         metadata: dict | None = None,
+        input_schema: dict | None = None,
+        expected_output_schema: dict | None = None,
     ) -> Dataset:
         now = _utcnow()
         row = Dataset(
@@ -111,6 +116,8 @@ class DatasetService:
             description=description,
             source=source or "manual",
             metadata_json=_json_text(metadata or {}),
+            input_schema=_json_text(input_schema),
+            expected_output_schema=_json_text(expected_output_schema),
             created_at=now,
             updated_at=now,
         )

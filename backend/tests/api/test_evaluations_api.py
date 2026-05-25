@@ -51,8 +51,10 @@ def test_batch_score_creates_evaluation_run_and_keeps_response_shape(monkeypatch
         assert "message" in response
         assert queued == [2]
         assert runs["total"] == 1
+        assert runs["runs"][0]["evaluation_run_id"] == runs["runs"][0]["eval_run_id"]
         assert detail["total_count"] == 2
         assert len(detail["items"]) == 2
+        assert detail["items"][0]["target_trace_id"] in {"t1", "t2"}
     finally:
         db.close()
 

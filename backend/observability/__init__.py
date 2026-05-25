@@ -182,6 +182,29 @@ def generation_prompt_metadata(metadata: dict | None = None, *, prompt_name: str
     }
 
 
+def _collect_stream_meta(chunk, usage_ref: list, model_ref: list) -> None:
+    chunk_usage = getattr(chunk, "usage_metadata", None)
+    if chunk_usage:
+        usage_ref.clear()
+        usage_ref.append(chunk_usage)
+    chunk_meta = getattr(chunk, "response_metadata", None)
+    if isinstance(chunk_meta, dict) and chunk_meta.get("model_name"):
+        model_ref.clear()
+        model_ref.append(chunk_meta["model_name"])
+
+
+def _flush_stream_usage(usage_ref: list, model_ref: list, usage_holder: list | None) -> None:
+    if usage_holder is None:
+        return
+    data: dict = {}
+    if usage_ref:
+        data.update(usage_ref[0])
+    if model_ref:
+        data["model_name"] = model_ref[0]
+    if data:
+        usage_holder.append(data)
+
+
 def _serialize_generation_io(value):
     if isinstance(value, list):
         return [_serialize_generation_io(item) for item in value]
@@ -207,19 +230,27 @@ async def astream_traced_generation(
     prompt_name: str,
     name: str = "AzureChatOpenAI",
     metadata: dict | None = None,
+    usage_holder: list | None = None,
 ):
     """Stream a LangChain runnable as a Langfuse generation, yielding text tokens.
 
     Mirrors ainvoke_traced_generation but for streaming calls.
     The generation observation is opened before the first token and closed
     (with full output) after the stream completes.
+
+    usage_holder: if provided, a mutable list that will have usage metadata
+    appended after streaming completes: [{"input_tokens": N, "output_tokens": N}].
     """
     configure_langfuse_environment()
     if not langfuse_is_configured():
+        _u: list = []
+        _m: list = []
         async for chunk in runnable.astream(input_value):
             token = getattr(chunk, "content", None)
             if token:
                 yield str(token)
+            _collect_stream_meta(chunk, _u, _m)
+        _flush_stream_usage(_u, _m, usage_holder)
         return
 
     try:
@@ -236,13 +267,19 @@ async def astream_traced_generation(
         )
     except Exception as exc:
         logger.warning("Langfuse stream generation tracing setup failed for %s: %s", prompt_name, exc)
+        _u = []
+        _m = []
         async for chunk in runnable.astream(input_value):
             token = getattr(chunk, "content", None)
             if token:
                 yield str(token)
+            _collect_stream_meta(chunk, _u, _m)
+        _flush_stream_usage(_u, _m, usage_holder)
         return
 
     content = ""
+    _u = []
+    _m = []
     with observation as generation:
         async for chunk in runnable.astream(input_value):
             token = getattr(chunk, "content", None)
@@ -250,6 +287,8 @@ async def astream_traced_generation(
                 token_text = str(token)
                 content += token_text
                 yield token_text
+            _collect_stream_meta(chunk, _u, _m)
+        _flush_stream_usage(_u, _m, usage_holder)
         try:
             generation.update(
                 output=content,

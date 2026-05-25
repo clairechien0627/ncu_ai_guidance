@@ -67,7 +67,7 @@ async def answer(
     observation_id = observation_id or new_id()
     agent_start = datetime.now(_tz.utc)
     if trace_id:
-        write_agent_span(
+        await write_agent_span(
             observation_id=observation_id,
             trace_id=trace_id,
             thread_id=thread_id,
@@ -92,7 +92,7 @@ async def answer(
         sources=evidence_sources or [],
     )
     if trace_id:
-        write_agent_span(
+        await write_agent_span(
             observation_id=observation_id,
             trace_id=trace_id,
             thread_id=thread_id,
@@ -188,7 +188,7 @@ async def stream(
     observation_id = observation_id or new_id()
     agent_start = datetime.now(_tz.utc)
     if trace_id:
-        write_agent_span(
+        await write_agent_span(
             observation_id=observation_id,
             trace_id=trace_id,
             thread_id=thread_id,
@@ -226,7 +226,7 @@ async def stream(
         content += token
         yield token, False, []
     if trace_id:
-        write_agent_span(
+        await write_agent_span(
             observation_id=observation_id,
             trace_id=trace_id,
             thread_id=thread_id,

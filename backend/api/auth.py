@@ -47,7 +47,7 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
         user = db.query(User).filter(User.username == identifier, User.is_active == True).first()
     if user is None or not user.hashed_pw or not verify_password(req.password, user.hashed_pw):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="帳號或密碼錯誤")
-    token = create_access_token(user.id, user.username, user.role)
+    token = create_access_token(user.id, user.username, user.role, user.public_id)
     return _user_response(user, token)
 
 
@@ -85,7 +85,7 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
-    token = create_access_token(user.id, user.username, user.role)
+    token = create_access_token(user.id, user.username, user.role, user.public_id)
     return _user_response(user, token)
 
 
@@ -137,7 +137,7 @@ def google_login(req: GoogleAuthRequest, db: Session = Depends(get_db)):
     elif not user.is_active:
         raise HTTPException(403, "帳號已被停用")
 
-    token = create_access_token(user.id, user.username, user.role)
+    token = create_access_token(user.id, user.username, user.role, user.public_id)
     return _user_response(user, token)
 
 

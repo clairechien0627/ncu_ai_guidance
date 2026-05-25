@@ -11,11 +11,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   OctagonX, TriangleAlert, CircleCheck, SquareTerminal,
   RefreshCw, X, PanelLeftOpen, PanelLeftClose,
-  Search, ChevronDown, Columns,
+  Search, ChevronDown, Columns, Star, GripVertical,
 } from 'lucide-react'
 import {
   getTraces, getTraceStats, getPromptList, createEvalRun,
-  addTraceToDataset, getDatasets, deleteTraces,
+  addTraceToDataset, getDatasets, deleteTraces, updateTraceBookmark,
   getTraceTags, getTraceNames, getTraceUserIds,
   type TraceItem, type TraceFilters, type TraceStats,
   type PromptInfo, type DatasetData,
@@ -79,11 +79,16 @@ const COL_DEFAULTS: Record<string, boolean> = {
   obs_statuses: true, latency: true, tokens: true, total_cost: true,
   environment: true, tags: true, metadata: true,
   // Langfuse defaults OFF
-  score: false, session: false, user: false,
+  score: true, session: false, user: false,
   obs_count: false, status: false, trace_id: false,
   input_tokens: false, output_tokens: false,
   input_cost: false, output_cost: false,
 }
+
+// Keys of user-orderable columns (excludes fixed checkbox / time / actions)
+const NON_REQUIRED_KEYS = ALL_COLS
+  .filter(c => !c.required && c.key !== 'checkbox' && c.key !== 'actions')
+  .map(c => c.key)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -118,6 +123,7 @@ type FilterState = {
   max_quality: string
   min_tokens: string
   max_tokens: string
+  bookmarked: boolean
   search: string
   date_from: string
   date_to: string
@@ -127,7 +133,8 @@ type FilterState = {
 const FILTER_DEFAULT: FilterState = {
   statuses: [], tags: [], names: [], user_ids: [],
   prompt: 'all', latency: '', min_quality: '', max_quality: '',
-  min_tokens: '', max_tokens: '', search: '', date_from: '', date_to: '', datePreset: 14,
+  min_tokens: '', max_tokens: '', bookmarked: false,
+  search: '', date_from: '', date_to: '', datePreset: 14,
 }
 
 function filterReducer(s: FilterState, a: Partial<FilterState> | 'reset'): FilterState {
@@ -260,10 +267,6 @@ function StatsBar({ stats }: { stats: TraceStats | null | undefined }) {
   )
 }
 
-// ── Column Visibility Drawer ──────────────────────────────────────────────────
-
-
-// ── Column layout ─────────────────────────────────────────────────────────────
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function TracesPage() {
@@ -295,13 +298,76 @@ export default function TracesPage() {
     return next
   })
 
+  // ── Column order ─────────────────────────────────────────────────────────────
+
+  const [colOrder, setColOrder] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('adm-traces-col-order')
+      if (saved) {
+        const parsed = JSON.parse(saved) as string[]
+        const valid = parsed.filter(k => NON_REQUIRED_KEYS.includes(k))
+        const added = NON_REQUIRED_KEYS.filter(k => !valid.includes(k))
+        return [...valid, ...added]
+      }
+    } catch {}
+    return NON_REQUIRED_KEYS
+  })
+
+  const saveColOrder = (order: string[]) => {
+    setColOrder(order)
+    try { localStorage.setItem('adm-traces-col-order', JSON.stringify(order)) } catch {}
+  }
+
+  const [dragColKey,     setDragColKey]     = useState<string | null>(null)
+  const [dragOverColKey, setDragOverColKey] = useState<string | null>(null)
+
+  const handleGripMouseDown = (e: React.MouseEvent, key: string) => {
+    e.preventDefault()
+    document.documentElement.classList.add('adm-col-dragging')
+    setDragColKey(key)
+
+    const prevent = (ev: Event) => ev.preventDefault()
+    window.addEventListener('selectstart', prevent)
+    window.addEventListener('dragstart',   prevent)
+
+    const handleMouseUp = () => {
+      document.documentElement.classList.remove('adm-col-dragging')
+      window.removeEventListener('selectstart', prevent)
+      window.removeEventListener('dragstart',   prevent)
+      window.removeEventListener('mouseup', handleMouseUp)
+      setDragColKey(null)
+      setDragOverColKey(prev => {
+        if (prev && prev !== key) {
+          setColOrder(order => {
+            const from = order.indexOf(key)
+            const to   = order.indexOf(prev)
+            if (from !== -1 && to !== -1) {
+              const next = [...order]
+              next.splice(from, 1)
+              next.splice(to, 0, key)
+              try { localStorage.setItem('adm-traces-col-order', JSON.stringify(next)) } catch {}
+              return next
+            }
+            return order
+          })
+        }
+        return null
+      })
+    }
+    window.addEventListener('mouseup', handleMouseUp)
+  }
+
   // ── Column visibility ────────────────────────────────────────────────────────
 
   const { visible, toggle: toggleCol, reset: resetCols } = useColumnVisibility('adm-traces-col-visibility', COL_DEFAULTS)
-  const visibleCols = useMemo(() =>
-    ALL_COLS.filter(c => c.required || c.key === 'checkbox' || c.key === 'actions' || (visible[c.key] ?? true)),
-    [visible]
-  )
+  const visibleCols = useMemo(() => {
+    const fixedStart = ALL_COLS.filter(c => c.required && c.key !== 'actions') // checkbox + time
+    const fixedEnd   = ALL_COLS.filter(c => c.key === 'actions')
+    const optional   = colOrder
+      .map(key => ALL_COLS.find(c => c.key === key)!)
+      .filter(c => c && (visible[c.key] ?? true))
+    return [...fixedStart, ...optional, ...fixedEnd]
+  }, [visible, colOrder])
   const { widths, div } = useLinkedColumnResize(visibleCols as ColDef[], 'adm-traces-col-widths')
 
   // ── Distribute extra container space to resizable columns only ───────────
@@ -355,8 +421,6 @@ export default function TracesPage() {
     return result
   }, [widths, wrapWidth, visibleCols])
 
-  const colIdx = useCallback((key: string) => visibleCols.findIndex(c => c.key === key), [visibleCols])
-
   // ── Queries ──────────────────────────────────────────────────────────────────
 
   const { data: promptList = [] }  = useQuery<PromptInfo[]>({ queryKey: ['prompt-list'], queryFn: getPromptList })
@@ -375,6 +439,7 @@ export default function TracesPage() {
     max_quality: filters.max_quality ? parseFloat(filters.max_quality) : undefined,
     min_tokens:  filters.min_tokens ? parseInt(filters.min_tokens) : undefined,
     max_tokens:  filters.max_tokens ? parseInt(filters.max_tokens) : undefined,
+    bookmarked:  filters.bookmarked ? true : undefined,
     date_from:   filters.date_from || undefined,
     date_to:     filters.date_to || undefined,
     environment: environment ?? undefined,
@@ -438,6 +503,14 @@ export default function TracesPage() {
   const allSelected = traces.length > 0 && traces.every(t => selected.has(t.id))
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(traces.map(t => t.id)))
   const toggleSelect = (id: string) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const toggleBookmark = async (trace: TraceItem) => {
+    try {
+      await updateTraceBookmark(trace.id, !trace.bookmarked)
+      refetch()
+    } catch {
+      showToast('更新收藏失敗')
+    }
+  }
 
   const promptNames = useMemo(() => Array.from(new Set(promptList.map((p: PromptInfo) => p.name))).sort(), [promptList])
 
@@ -457,6 +530,141 @@ export default function TracesPage() {
     return 'Custom range'
   }, [filters.datePreset])
 
+  // ── Cell renderer ─────────────────────────────────────────────────────────────
+
+  function renderCell(c: ColEntry, trace: TraceItem, isErr: boolean, inP: string, outP: string) {
+    const isSel = selected.has(trace.id)
+    const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+    const mono11: React.CSSProperties = { fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }
+
+    switch (c.key) {
+      case 'checkbox':
+        return (
+          <td key="checkbox" className="adm-col-checkbox" onClick={e => e.stopPropagation()}>
+            <input type="checkbox" className="adm-checkbox" checked={isSel}
+              onChange={() => toggleSelect(trace.id)} onClick={e => e.stopPropagation()} />
+          </td>
+        )
+      case 'time':
+        return <td key="time" className="adm-cell-mono" style={{ fontSize: 11 }}>{fmtTime(trace.start_time)}</td>
+      case 'name':
+        return <td key="name" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis' }}>{trace.name || '—'}</td>
+      case 'input':
+        return <td key="input" style={{ fontSize: 11, color: 'var(--adm-text-2)', overflow: 'hidden', textOverflow: 'ellipsis' }} title={inP}>{inP || '—'}</td>
+      case 'output':
+        return (
+          <td key="output"
+            style={{ fontSize: 11, color: isErr ? 'var(--adm-red)' : 'var(--adm-text-2)', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            title={isErr ? (trace.error ?? undefined) : outP}>
+            {isErr ? (trace.error?.slice(0, 80) ?? 'Error') : (outP || '—')}
+          </td>
+        )
+      case 'obs_statuses':
+        return (
+          <td key="obs_statuses">
+            {trace.obs_status_counts
+              ? <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {Object.entries(trace.obs_status_counts).map(([s, n]) => (
+                    <span key={s} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 10, fontWeight: 600, color: s === 'ERROR' ? 'var(--adm-red)' : 'var(--adm-amber)' }}>
+                      {s === 'ERROR' ? <OctagonX size={11} /> : s === 'WARNING' ? <TriangleAlert size={11} /> : <SquareTerminal size={11} />}
+                      {n}
+                    </span>
+                  ))}
+                </div>
+              : <span style={{ fontSize: 10, color: 'var(--adm-text-3)' }}>—</span>}
+          </td>
+        )
+      case 'latency':
+        return <td key="latency" style={mono11}>{trace.latency != null ? `${trace.latency.toFixed(1)}s` : '—'}</td>
+      case 'tokens': {
+        const inp = trace.prompt_tokens ?? 0
+        const out = trace.completion_tokens ?? 0
+        const total = inp + out
+        return (
+          <td key="tokens" style={{ fontVariantNumeric: 'tabular-nums' }}>
+            {total > 0
+              ? <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <span style={{ fontSize: 11, color: 'var(--adm-text-2)', fontWeight: 500 }}>{fmt(total)}</span>
+                  <span style={{ fontSize: 10, color: 'var(--adm-text-3)' }}>↑{fmt(inp)} ↓{fmt(out)}</span>
+                </div>
+              : <span style={{ fontSize: 11, color: 'var(--adm-text-3)' }}>—</span>}
+          </td>
+        )
+      }
+      case 'input_tokens':
+        return <td key="input_tokens" style={mono11}>{trace.prompt_tokens != null && trace.prompt_tokens > 0 ? fmt(trace.prompt_tokens) : '—'}</td>
+      case 'output_tokens':
+        return <td key="output_tokens" style={mono11}>{trace.completion_tokens != null && trace.completion_tokens > 0 ? fmt(trace.completion_tokens) : '—'}</td>
+      case 'total_cost':
+        return <td key="total_cost" style={mono11}>{trace.total_cost != null ? `$${trace.total_cost.toFixed(4)}` : '—'}</td>
+      case 'input_cost':
+        return <td key="input_cost" style={mono11}>{trace.input_cost != null ? `$${trace.input_cost.toFixed(4)}` : '—'}</td>
+      case 'output_cost':
+        return <td key="output_cost" style={mono11}>{trace.output_cost != null ? `$${trace.output_cost.toFixed(4)}` : '—'}</td>
+      case 'environment':
+        return (
+          <td key="environment">
+            {trace.environment
+              ? <span className="adm-badge adm-badge--neutral" style={{ fontSize: 10 }}>{trace.environment}</span>
+              : <span style={{ fontSize: 11, color: 'var(--adm-text-3)' }}>—</span>}
+          </td>
+        )
+      case 'tags':
+        return (
+          <td key="tags" style={{ overflow: 'hidden' }}>
+            {trace.tags?.length
+              ? <div style={{ display: 'flex', gap: 3, flexWrap: 'nowrap', overflow: 'hidden' }}>
+                  {trace.tags.slice(0, 3).map(t => (
+                    <span key={t} className="adm-badge adm-badge--info" style={{ fontSize: 10, whiteSpace: 'nowrap' }}>{t}</span>
+                  ))}
+                </div>
+              : <span style={{ fontSize: 11, color: 'var(--adm-text-3)' }}>—</span>}
+          </td>
+        )
+      case 'metadata':
+        return (
+          <td key="metadata" style={{ fontSize: 11, color: 'var(--adm-text-3)' }}>
+            {trace.metadata ? `{${Object.keys(trace.metadata).length} keys}` : '—'}
+          </td>
+        )
+      case 'score':
+        return <td key="score"><ScoreBar value={trace.quality_score} /></td>
+      case 'session':
+        return <td key="session" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--adm-text-2)' }}>{trace.thread_id ? trace.thread_id.slice(-8) : '—'}</td>
+      case 'user':
+        return <td key="user" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--adm-text-2)' }}>{trace.user_id || '—'}</td>
+      case 'obs_count':
+        return <td key="obs_count" style={mono11}>{trace.observation_count ?? '—'}</td>
+      case 'status': {
+        const lvlColor = trace.status === 'ERROR' ? 'var(--adm-red)' : trace.status === 'WARNING' ? 'var(--adm-amber)' : trace.status === 'DEBUG' ? 'var(--adm-text-3)' : 'var(--adm-green)'
+        const lvlLabel = trace.status === 'ERROR' ? 'Error' : trace.status === 'WARNING' ? 'Warning' : trace.status === 'DEBUG' ? 'Debug' : 'Default'
+        return (
+          <td key="status">
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: lvlColor, fontSize: 11, fontWeight: 500 }}>
+              {trace.status === 'ERROR' ? <OctagonX size={12} /> : trace.status === 'WARNING' ? <TriangleAlert size={12} /> : trace.status === 'DEBUG' ? <SquareTerminal size={12} /> : <CircleCheck size={12} />}
+              {lvlLabel}
+            </span>
+          </td>
+        )
+      }
+      case 'trace_id':
+        return <td key="trace_id" className="adm-cell-mono" style={{ fontSize: 10, color: 'var(--adm-text-3)', overflow: 'hidden', textOverflow: 'ellipsis' }} title={trace.id}>{trace.id.slice(-12)}</td>
+      case 'actions':
+        return (
+          <td key="actions" onClick={e => e.stopPropagation()}>
+            <div className="adm-action-row">
+              <button className="adm-btn-icon" title={trace.bookmarked ? '取消收藏' : '收藏'} onClick={() => toggleBookmark(trace)}>
+                <Star size={12} fill={trace.bookmarked ? 'currentColor' : 'none'} />
+              </button>
+              <button className="adm-btn-icon" title="加入 Dataset" onClick={() => setAddDatasetId(trace.id)}>⊕</button>
+            </div>
+          </td>
+        )
+      default:
+        return <td key={c.key} />
+    }
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
@@ -469,7 +677,8 @@ export default function TracesPage() {
           {/* clear all */}
           {(filters.statuses.length > 0 || filters.tags.length > 0 || filters.names.length > 0 ||
             filters.user_ids.length > 0 || filters.prompt !== 'all' || filters.latency ||
-            filters.min_quality || filters.max_quality || filters.min_tokens || filters.max_tokens) && (
+            filters.min_quality || filters.max_quality || filters.min_tokens || filters.max_tokens ||
+            filters.bookmarked) && (
             <button className="adm-btn adm-btn-ghost adm-btn-sm" style={{ fontSize: 11, padding: '1px 6px' }}
               onClick={() => { dispatch('reset'); setPage(1) }}>Clear</button>
           )}
@@ -523,6 +732,14 @@ export default function TracesPage() {
                 }}
               />
             ))}
+          </FilterSection>
+
+          <FilterSection title="Bookmark" defaultOpen={false}>
+            <CheckItem
+              label="Bookmarked"
+              checked={filters.bookmarked}
+              onChange={() => { dispatch({ bookmarked: !filters.bookmarked }); setPage(1) }}
+            />
           </FilterSection>
 
           {/* Prompt */}
@@ -721,171 +938,14 @@ export default function TracesPage() {
                 <tr><td colSpan={visibleCols.length} className="adm-table-empty">沒有符合條件的 trace</td></tr>
               ) : sort.apply(traces).map(trace => {
                 const isErr = trace.status === 'ERROR'
-                const isSel = selected.has(trace.id)
                 const inP   = inputPreview(trace)
                 const outP  = outputPreview(trace)
                 return (
                   <tr key={trace.id}
-                    className={`adm-row--clickable${isSel ? ' adm-row--selected' : ''}${isErr ? ' adm-row--danger' : ''}`}
+                    className={`adm-row--clickable${selected.has(trace.id) ? ' adm-row--selected' : ''}${isErr ? ' adm-row--danger' : ''}`}
                     onClick={() => setDrawerTraceId(trace.id)}
                   >
-                    {visibleCols.map(c => {
-                      if (c.key === 'checkbox') return (
-                        <td key="checkbox" className="adm-col-checkbox" onClick={e => e.stopPropagation()}>
-                          <input type="checkbox" className="adm-checkbox" checked={isSel}
-                            onChange={() => toggleSelect(trace.id)} onClick={e => e.stopPropagation()} />
-                        </td>
-                      )
-                      if (c.key === 'time') return <td key="time" className="adm-cell-mono" style={{ fontSize: 11 }}>{fmtTime(trace.start_time)}</td>
-                      if (c.key === 'name') return <td key="name" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis' }}>{trace.name || '—'}</td>
-                      if (c.key === 'input') return <td key="input" style={{ fontSize: 11, color: 'var(--adm-text-2)', overflow: 'hidden', textOverflow: 'ellipsis' }} title={inP}>{inP || '—'}</td>
-                      if (c.key === 'output') return (
-                        <td key="output" style={{ fontSize: 11, color: isErr ? 'var(--adm-red)' : 'var(--adm-text-2)', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                          title={isErr ? (trace.error ?? undefined) : outP}>
-                          {isErr ? (trace.error?.slice(0, 80) ?? 'Error') : (outP || '—')}
-                        </td>
-                      )
-                      if (c.key === 'obs_statuses') return (
-                        <td key="obs_statuses">
-                          {trace.obs_status_counts
-                            ? <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                {Object.entries(trace.obs_status_counts).map(([status, n]) => (
-                                  <span key={status} style={{
-                                    display: 'inline-flex', alignItems: 'center', gap: 2,
-                                    fontSize: 10, fontWeight: 600,
-                                    color: status === 'ERROR' ? 'var(--adm-red)' : 'var(--adm-amber)',
-                                  }}>
-                                    {status === 'ERROR'
-                                      ? <OctagonX size={11} />
-                                      : status === 'WARNING'
-                                      ? <TriangleAlert size={11} />
-                                      : <SquareTerminal size={11} />}
-                                    {n}
-                                  </span>
-                                ))}
-                              </div>
-                            : <span style={{ fontSize: 10, color: 'var(--adm-text-3)' }}>—</span>}
-                        </td>
-                      )
-                      if (c.key === 'latency') return <td key="latency" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>{trace.latency != null ? `${trace.latency.toFixed(1)}s` : '—'}</td>
-                      if (c.key === 'tokens') {
-                        const inp = trace.prompt_tokens ?? 0
-                        const out = trace.completion_tokens ?? 0
-                        const total = inp + out
-                        const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
-                        return (
-                          <td key="tokens" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                            {total > 0 ? (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                <span style={{ fontSize: 11, color: 'var(--adm-text-2)', fontWeight: 500 }}>{fmt(total)}</span>
-                                <span style={{ fontSize: 10, color: 'var(--adm-text-3)' }}>↑{fmt(inp)} ↓{fmt(out)}</span>
-                              </div>
-                            ) : <span style={{ fontSize: 11, color: 'var(--adm-text-3)' }}>—</span>}
-                          </td>
-                        )
-                      }
-                      if (c.key === 'input_tokens') {
-                        const n = trace.prompt_tokens
-                        const fmt = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)
-                        return <td key="input_tokens" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>{n != null && n > 0 ? fmt(n) : '—'}</td>
-                      }
-                      if (c.key === 'output_tokens') {
-                        const n = trace.completion_tokens
-                        const fmt = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)
-                        return <td key="output_tokens" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>{n != null && n > 0 ? fmt(n) : '—'}</td>
-                      }
-                      if (c.key === 'total_cost') return (
-                        <td key="total_cost" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>
-                          {trace.total_cost != null ? `$${trace.total_cost.toFixed(4)}` : '—'}
-                        </td>
-                      )
-                      if (c.key === 'input_cost') return (
-                        <td key="input_cost" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>
-                          {trace.input_cost != null ? `$${trace.input_cost.toFixed(4)}` : '—'}
-                        </td>
-                      )
-                      if (c.key === 'output_cost') return (
-                        <td key="output_cost" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>
-                          {trace.output_cost != null ? `$${trace.output_cost.toFixed(4)}` : '—'}
-                        </td>
-                      )
-                      if (c.key === 'environment') return (
-                        <td key="environment">
-                          {trace.environment
-                            ? <span className="adm-badge adm-badge--neutral" style={{ fontSize: 10 }}>{trace.environment}</span>
-                            : <span style={{ fontSize: 11, color: 'var(--adm-text-3)' }}>—</span>}
-                        </td>
-                      )
-                      if (c.key === 'tags') return (
-                        <td key="tags" style={{ overflow: 'hidden' }}>
-                          {trace.tags?.length
-                            ? <div style={{ display: 'flex', gap: 3, flexWrap: 'nowrap', overflow: 'hidden' }}>
-                                {trace.tags.slice(0, 3).map(t => (
-                                  <span key={t} className="adm-badge adm-badge--info" style={{ fontSize: 10, whiteSpace: 'nowrap' }}>{t}</span>
-                                ))}
-                              </div>
-                            : <span style={{ fontSize: 11, color: 'var(--adm-text-3)' }}>—</span>}
-                        </td>
-                      )
-                      if (c.key === 'metadata') return (
-                        <td key="metadata" style={{ fontSize: 11, color: 'var(--adm-text-3)' }}>
-                          {trace.metadata
-                            ? `{${Object.keys(trace.metadata).length} keys}`
-                            : '—'}
-                        </td>
-                      )
-                      if (c.key === 'score') return <td key="score"><ScoreBar value={trace.quality_score} /></td>
-                      if (c.key === 'session') return (
-                        <td key="session" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--adm-text-2)' }}>
-                          {trace.thread_id ? trace.thread_id.slice(-8) : '—'}
-                        </td>
-                      )
-                      if (c.key === 'user') return (
-                        <td key="user" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--adm-text-2)' }}>
-                          {trace.user_id || '—'}
-                        </td>
-                      )
-                      if (c.key === 'obs_count') return (
-                        <td key="obs_count" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--adm-text-2)' }}>
-                          {trace.observation_count ?? '—'}
-                        </td>
-                      )
-                      if (c.key === 'status') {
-                        const lvlColor = trace.status === 'ERROR' ? 'var(--adm-red)'
-                          : trace.status === 'WARNING' ? 'var(--adm-amber)'
-                          : trace.status === 'DEBUG'   ? 'var(--adm-text-3)'
-                          : 'var(--adm-green)'
-                        const lvlLabel = trace.status === 'ERROR' ? 'Error'
-                          : trace.status === 'WARNING' ? 'Warning'
-                          : trace.status === 'DEBUG'   ? 'Debug'
-                          : 'Default'
-                        return (
-                          <td key="status">
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: lvlColor, fontSize: 11, fontWeight: 500 }}>
-                              {trace.status === 'ERROR'   ? <OctagonX size={12} />
-                               : trace.status === 'WARNING' ? <TriangleAlert size={12} />
-                               : trace.status === 'DEBUG'   ? <SquareTerminal size={12} />
-                               : <CircleCheck size={12} />}
-                              {lvlLabel}
-                            </span>
-                          </td>
-                        )
-                      }
-                      if (c.key === 'trace_id') return (
-                        <td key="trace_id" className="adm-cell-mono" style={{ fontSize: 10, color: 'var(--adm-text-3)', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                          title={trace.id}>
-                          {trace.id.slice(-12)}
-                        </td>
-                      )
-                      if (c.key === 'actions') return (
-                        <td key="actions" onClick={e => e.stopPropagation()}>
-                          <div className="adm-action-row">
-                            <button className="adm-btn-icon" title="加入 Dataset" onClick={() => setAddDatasetId(trace.id)}>⊕</button>
-                          </div>
-                        </td>
-                      )
-                      return <td key={c.key} />
-                    })}
+                    {visibleCols.map(c => renderCell(c, trace, isErr, inP, outP))}
                   </tr>
                 )
               })}
@@ -911,17 +971,35 @@ export default function TracesPage() {
         </div>
         <div className="adm-filter-sidebar-body">
           <div style={{ padding: '6px 10px 8px', borderBottom: '1px solid var(--adm-border)' }}>
-            <button className="adm-tb-btn" style={{ width: '100%' }} onClick={resetCols}>
+            <button className="adm-tb-btn" style={{ width: '100%' }}
+              onClick={() => { resetCols(); saveColOrder(NON_REQUIRED_KEYS) }}>
               Restore Defaults
             </button>
           </div>
           <div className="adm-filter-section-body">
-            {ALL_COLS.filter(c => !c.required && c.key !== 'checkbox' && c.key !== 'actions').map(c => (
-              <label key={c.key} className="adm-filter-check-item">
-                <input type="checkbox" checked={visible[c.key] ?? true} onChange={() => toggleCol(c.key)} />
-                <span style={{ flex: 1 }}>{c.label}</span>
-              </label>
-            ))}
+            {colOrder.map(key => {
+              const c = ALL_COLS.find(col => col.key === key)
+              if (!c) return null
+              const isDragging  = dragColKey === c.key
+              const isDropTarget = dragOverColKey === c.key && !isDragging
+              return (
+                <label key={c.key} className="adm-filter-check-item"
+                  onMouseEnter={() => dragColKey && setDragOverColKey(c.key)}
+                  onDragStart={e => e.preventDefault()}
+                  style={{
+                    opacity: isDragging ? 0.4 : 1,
+                    borderTop: isDropTarget ? '2px solid var(--adm-blue)' : undefined,
+                    userSelect: 'none',
+                  }}
+                >
+                  <GripVertical size={12}
+                    onMouseDown={e => handleGripMouseDown(e, c.key)}
+                    style={{ color: 'var(--adm-text-3)', flexShrink: 0, cursor: 'grab' }} />
+                  <input type="checkbox" checked={visible[c.key] ?? true} onChange={() => toggleCol(c.key)} />
+                  <span style={{ flex: 1 }}>{c.label}</span>
+                </label>
+              )
+            })}
           </div>
         </div>
       </aside>

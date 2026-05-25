@@ -562,6 +562,7 @@ def _build_tracer(
         agent_name=metadata.get("agent_name"),
         prompt_name=metadata.get("prompt_name"),
         prompt_version=metadata.get("prompt_version"),
+        prompt_id=metadata.get("prompt_id"),
         quality_score=metadata.get("quality_score"),
         user_feedback=metadata.get("user_feedback"),
         trace_id=trace_id,

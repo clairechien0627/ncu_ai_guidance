@@ -29,6 +29,7 @@ class _TraceReadCore:
         include_raw: bool = False,
     ) -> list[dict]:
         payloads: list[dict] = []
+        cleaned = {k: _clean(v) if isinstance(v, str) else v for k, v in filters.items()}
         if self.has_v2():
             v2_rows = self._v2_filtered(filters)
             if v2_rows:
@@ -46,7 +47,6 @@ class _TraceReadCore:
                 for o in all_obs:
                     obs_by_trace.setdefault(o.trace_id, []).append(o)
 
-                cleaned = {k: _clean(v) if isinstance(v, str) else v for k, v in filters.items()}
                 for row in v2_rows:
                     payload = _build_v2_payload(
                         row,
@@ -58,24 +58,19 @@ class _TraceReadCore:
                         status_list = [s.strip().upper() for s in str(filters["status"]).split(",") if s.strip()]
                         if status_list and (payload.get("status") or "DEFAULT") not in status_list:
                             continue
-                    if cleaned.get("min_latency") is not None and (payload["latency"] or 0) < float(cleaned["min_latency"]):
+                    if cleaned.get("min_latency") is not None and (payload.get("latency") is None or payload["latency"] < float(cleaned["min_latency"])):
                         continue
-                    if cleaned.get("max_quality") is not None:
-                        qs = payload["quality_score"]
-                        if qs is None or qs >= float(cleaned["max_quality"]):
-                            continue
-                    if cleaned.get("min_quality") is not None:
-                        qs = payload["quality_score"]
-                        if qs is None or qs < float(cleaned["min_quality"]):
-                            continue
-                    if cleaned.get("has_score") is True and payload["quality_score"] is None:
+                    if cleaned.get("max_quality") is not None and (payload.get("quality_score") is None or payload["quality_score"] >= float(cleaned["max_quality"])):
                         continue
-                    if cleaned.get("has_score") is False and payload["quality_score"] is not None:
+                    if cleaned.get("min_quality") is not None and (payload.get("quality_score") is None or payload["quality_score"] < float(cleaned["min_quality"])):
                         continue
-                    total_tok = (payload.get("prompt_tokens") or 0) + (payload.get("completion_tokens") or 0)
-                    if cleaned.get("min_tokens") is not None and total_tok < float(cleaned["min_tokens"]):
+                    if cleaned.get("has_score") is True and payload.get("quality_score") is None:
                         continue
-                    if cleaned.get("max_tokens") is not None and total_tok > float(cleaned["max_tokens"]):
+                    if cleaned.get("has_score") is False and payload.get("quality_score") is not None:
+                        continue
+                    if cleaned.get("min_tokens") is not None and (payload.get("total_tokens") or 0) < float(cleaned["min_tokens"]):
+                        continue
+                    if cleaned.get("max_tokens") is not None and (payload.get("total_tokens") or 0) > float(cleaned["max_tokens"]):
                         continue
                     if cleaned.get("min_input_tokens") is not None and (payload.get("prompt_tokens") or 0) < float(cleaned["min_input_tokens"]):
                         continue
@@ -102,6 +97,11 @@ class _TraceReadCore:
                 q = q.filter(TraceV2.name.in_(name_list))
         elif _clean(filters.get("name")):
             q = q.filter(TraceV2.name == _clean(filters.get("name")))
+        if filters.get("bookmarked") is not None:
+            bookmarked = filters.get("bookmarked")
+            if isinstance(bookmarked, str):
+                bookmarked = bookmarked.strip().lower() in {"1", "true", "yes", "on"}
+            q = q.filter(TraceV2.bookmarked == bool(bookmarked))
         if filters.get("tags"):
             tag_list = [t.strip() for t in str(filters["tags"]).split(",") if t.strip()]
             if tag_list:
@@ -125,6 +125,7 @@ class _TraceReadCore:
             if not trace_ids:
                 return []
             q = q.filter(TraceV2.trace_id.in_(trace_ids))
+
         return q.order_by(TraceV2.start_time.desc()).all()
 
 

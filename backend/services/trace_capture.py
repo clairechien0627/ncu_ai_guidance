@@ -48,6 +48,48 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _prompt_id_from_metadata(metadata: dict | None) -> str | None:
+    if not isinstance(metadata, dict):
+        return None
+    prompt_id = metadata.get("prompt_id")
+    if prompt_id:
+        return str(prompt_id)
+    prompt_name = metadata.get("prompt_name")
+    prompt_version = metadata.get("prompt_version")
+    if prompt_name and prompt_version:
+        return f"{prompt_name}:{prompt_version}"
+    return None
+
+
+def _tool_call_names(tool_calls) -> list[str]:
+    names: list[str] = []
+    if not isinstance(tool_calls, list):
+        return names
+    for call in tool_calls:
+        name = None
+        if isinstance(call, dict):
+            name = call.get("name") or call.get("function", {}).get("name")
+        else:
+            name = getattr(call, "name", None)
+        if name:
+            names.append(str(name))
+    return names
+
+
+def _generation_tool_calls(gen) -> list | None:
+    message = getattr(gen, "message", None)
+    calls = getattr(message, "tool_calls", None) if message is not None else None
+    if calls:
+        return calls
+    generation_info = getattr(gen, "generation_info", None) or {}
+    message_dict = generation_info.get("message") if isinstance(generation_info, dict) else None
+    if isinstance(message_dict, dict):
+        calls = message_dict.get("tool_calls")
+        if calls:
+            return calls
+    return None
+
+
 # ── Tracer ─────────────────────────────────────────────────────────────────────
 
 class LocalTracer(BaseCallbackHandler):
@@ -66,6 +108,7 @@ class LocalTracer(BaseCallbackHandler):
         agent_name: str | None = None,
         prompt_name: str | None = None,
         prompt_version: str | None = None,
+        prompt_id: str | None = None,
         quality_score: float | None = None,
         user_feedback: str | None = None,
         trace_id: str | None = None,
@@ -80,6 +123,7 @@ class LocalTracer(BaseCallbackHandler):
         self.agent_name = agent_name
         self.prompt_name = prompt_name
         self.prompt_version = prompt_version
+        self.prompt_id = prompt_id
         self.quality_score = quality_score
         self.user_feedback = user_feedback
         self.trace_id = trace_id
@@ -94,6 +138,7 @@ class LocalTracer(BaseCallbackHandler):
         self.agent_name = self.agent_name or metadata.get("agent_name")
         self.prompt_name = self.prompt_name or metadata.get("prompt_name")
         self.prompt_version = self.prompt_version or metadata.get("prompt_version")
+        self.prompt_id = self.prompt_id or _prompt_id_from_metadata(metadata)
         self.quality_score = self.quality_score if self.quality_score is not None else metadata.get("quality_score")
         self.user_feedback = self.user_feedback or metadata.get("user_feedback")
 
@@ -123,6 +168,10 @@ class LocalTracer(BaseCallbackHandler):
             "name": name,
             "inputs": _safe_json(inputs),
             "start_time": _utcnow(),
+            "metadata": kwargs.get("metadata") or {},
+            "prompt_name": (kwargs.get("metadata") or {}).get("prompt_name"),
+            "prompt_version": (kwargs.get("metadata") or {}).get("prompt_version"),
+            "prompt_id": _prompt_id_from_metadata(kwargs.get("metadata")),
         })
 
     def on_chain_end(self, outputs, *, run_id, **kwargs):
@@ -148,6 +197,7 @@ class LocalTracer(BaseCallbackHandler):
     # ── LLM ────────────────────────────────────────────────────────────────────
 
     def on_chat_model_start(self, serialized, messages, *, run_id, parent_run_id=None, **kwargs):
+        metadata = kwargs.get("metadata") or {}
         rid = str(run_id)
         msg_data = []
         for batch in messages:
@@ -164,6 +214,10 @@ class LocalTracer(BaseCallbackHandler):
             "name": (serialized or {}).get("name", "LLM"),
             "inputs": json.dumps({"messages": msg_data}, ensure_ascii=False),
             "start_time": _utcnow(),
+            "metadata": metadata,
+            "prompt_name": metadata.get("prompt_name"),
+            "prompt_version": metadata.get("prompt_version"),
+            "prompt_id": _prompt_id_from_metadata(metadata),
         })
 
     def on_llm_end(self, response: LLMResult, *, run_id, **kwargs):
@@ -175,6 +229,10 @@ class LocalTracer(BaseCallbackHandler):
             gen = response.generations[0][0] if response.generations[0] else None
             if gen:
                 content = getattr(gen, "text", None) or str(gen)
+                tool_calls = _generation_tool_calls(gen)
+                if tool_calls:
+                    ev["tool_calls"] = tool_calls
+                    ev["tool_call_names"] = _tool_call_names(tool_calls)
         ev.update({
             "outputs": json.dumps({"content": content}, ensure_ascii=False),
             "end_time": _utcnow(),
@@ -188,15 +246,20 @@ class LocalTracer(BaseCallbackHandler):
     # ── Tool ───────────────────────────────────────────────────────────────────
 
     def on_tool_start(self, serialized, input_str, *, run_id, parent_run_id=None, **kwargs):
+        metadata = kwargs.get("metadata") or {}
         rid = str(run_id)
+        name = (serialized or {}).get("name", "tool")
         ev = self._ev(rid)
         ev.update({
             "run_id": rid,
             "parent_observation_id": str(parent_run_id) if parent_run_id else None,
             "type": "TOOL",
-            "name": (serialized or {}).get("name", "tool"),
+            "name": name,
             "inputs": json.dumps({"input": str(input_str)}, ensure_ascii=False),
             "start_time": _utcnow(),
+            "metadata": metadata,
+            "tool_definitions": serialized,
+            "tool_call_names": [str(name)] if name else [],
         })
 
     def on_tool_end(self, output, *, run_id, **kwargs):
@@ -280,8 +343,12 @@ class LocalTracer(BaseCallbackHandler):
                 "document_ids": doc_ids_json,
                 "event_metadata": ev.get("metadata") or {},
                 "agent_name": self.agent_name,
-                "prompt_name": self.prompt_name,
-                "prompt_version": self.prompt_version,
+                "prompt_name": ev.get("prompt_name") or self.prompt_name,
+                "prompt_version": ev.get("prompt_version") or self.prompt_version,
+                "prompt_id": ev.get("prompt_id") or self.prompt_id,
+                "tool_calls": ev.get("tool_calls"),
+                "tool_definitions": ev.get("tool_definitions"),
+                "tool_call_names": ev.get("tool_call_names"),
                 "quality_score": self.quality_score if is_root else None,
                 "user_feedback": self.user_feedback if is_root else None,
                 "environment": self.environment,
@@ -334,9 +401,14 @@ class LocalTracer(BaseCallbackHandler):
                 "parent_observation_id": parent_observation_id,
                 "type": row.get("type") or "SPAN",
                 "name": row.get("name") or "observation",
+                "environment": self.environment,
                 "usage": usage or None,
+                "prompt_id": row.get("prompt_id") or row.get("event_metadata", {}).get("prompt_id"),
                 "prompt_name": row.get("prompt_name"),
                 "prompt_version": row.get("prompt_version"),
+                "tool_calls": row.get("tool_calls") or row.get("event_metadata", {}).get("tool_calls"),
+                "tool_definitions": row.get("tool_definitions") or row.get("event_metadata", {}).get("tool_definitions"),
+                "tool_call_names": row.get("tool_call_names") or row.get("event_metadata", {}).get("tool_call_names"),
                 "input": _loads(row.get("inputs")),
                 "output": _loads(row.get("outputs")),
                 "metadata": row.get("event_metadata") or None,

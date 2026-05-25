@@ -49,16 +49,21 @@ def test_v2_trace_detail_returns_children_and_scores():
     SessionLocal = _session_factory()
     db = SessionLocal()
     try:
-        db.add(_trace_v2("v2-1"))
+        db.add(_trace_v2("v2-1", bookmarked=True))
         db.add(Observation(
             observation_id="obs-1",
             trace_id="v2-1",
             type="GENERATION",
             name="LLM",
+            environment="test",
+            prompt_id="prompt-1",
             prompt_tokens=7,
             completion_tokens=3,
             prompt_name="retrieval",
             prompt_version="v1",
+            tool_calls=json.dumps([{"name": "search"}]),
+            tool_definitions=json.dumps([{"name": "search"}]),
+            tool_call_names=json.dumps(["search"]),
             start_time=datetime(2026, 5, 18, 1, 0, 0),
             end_time=datetime(2026, 5, 18, 1, 0, 1),
         ))
@@ -68,6 +73,7 @@ def test_v2_trace_detail_returns_children_and_scores():
         detail = TraceReadService(db).trace_detail("v2-1")
 
         assert detail["id"] == "v2-1"
+        assert detail["bookmarked"] is True
         assert detail["quality_score"] == 4.0
         assert detail["prompt_tokens"] == 7
         assert detail["completion_tokens"] == 3
@@ -81,8 +87,16 @@ def test_v2_trace_detail_returns_children_and_scores():
         assert "prompt_version" not in detail
         assert detail["metadata"] is None
         assert detail["children"][0]["id"] == "obs-1"
+        assert detail["children"][0]["trace_id"] == "v2-1"
         assert detail["children"][0]["type"] == "GENERATION"
+        assert detail["children"][0]["environment"] == "test"
+        assert detail["children"][0]["prompt_id"] == "prompt-1"
+        assert detail["children"][0]["tool_calls"] == [{"name": "search"}]
+        assert detail["children"][0]["tool_definitions"] == [{"name": "search"}]
+        assert detail["children"][0]["tool_call_names"] == ["search"]
         assert "run_type" not in detail["children"][0]
+        assert TraceReadService(db).list_traces(bookmarked=True)[0]["id"] == "v2-1"
+        assert TraceReadService(db).list_traces(bookmarked=False) == []
         assert TraceReadService(db).observations(obs_type="GENERATION")[0]["id"] == "obs-1"
         assert TraceReadService(db).observations(obs_type="TOOL") == []
     finally:

@@ -16,6 +16,10 @@ function fmtTokens(p: number | null, c: number | null) {
   if (p == null && c == null) return '—'
   return ((p ?? 0) + (c ?? 0)).toLocaleString()
 }
+function promptLabel(row: ObservationItem): string | null {
+  if (row.prompt_name && row.prompt_version) return `${row.prompt_name}@${row.prompt_version}`
+  return row.prompt_name ?? row.prompt_id ?? null
+}
 
 const TYPE_OPTIONS = ['all', 'GENERATION', 'TOOL', 'CHAIN', 'SPAN', 'RETRIEVER']
 
@@ -96,8 +100,20 @@ export default function ObservationsPage() {
               return (
                 <tr key={row.id} className={isErr ? 'adm-row--danger' : ''}>
                   <td className="adm-cell-mono">{fmtDate(row.start_time)}</td>
-                  <td><span className="adm-badge adm-badge--info" style={{ textTransform: 'uppercase', fontSize: 10 }}>{row.type ?? '?'}</span></td>
-                  <td style={{ fontSize: 12, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }} title={row.name}>{row.name}</td>
+                  <td>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                      <span className="adm-badge adm-badge--info" style={{ textTransform: 'uppercase', fontSize: 10 }}>{row.type ?? '?'}</span>
+                      {row.environment && <span className="adm-badge adm-badge--neutral" style={{ fontSize: 9 }}>{row.environment}</span>}
+                    </div>
+                  </td>
+                  <td style={{ fontSize: 12, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }} title={[row.name, promptLabel(row), row.tool_call_names?.join(', ')].filter(Boolean).join(' · ')}>
+                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</div>
+                    {(promptLabel(row) || row.tool_call_names?.length) && (
+                      <div style={{ marginTop: 2, fontSize: 10, color: 'var(--adm-text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {[promptLabel(row), row.tool_call_names?.length ? `tools: ${row.tool_call_names.join(', ')}` : null].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
+                  </td>
                   <td style={{ fontSize: 11, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--adm-text-2)' }} title={row.input ?? undefined}>{row.input ?? '—'}</td>
                   <td style={{ fontSize: 11, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', color: isErr ? 'var(--adm-red)' : 'var(--adm-text-2)' }} title={(row.error ?? row.output) ?? undefined}>
                     {row.error ?? row.output ?? '—'}
@@ -114,14 +130,14 @@ export default function ObservationsPage() {
                   </td>
                   {/* Trace link — 點擊開側欄，不跳轉 */}
                   <td>
-                    {row.parent_observation_id
+                    {row.trace_id
                       ? <button
                           className="adm-cell-link"
                           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 11, fontFamily: 'var(--adm-font-mono)' }}
-                          onClick={() => setDrawerTraceId(row.parent_observation_id!)}
-                          title={row.parent_observation_id}
+                          onClick={() => setDrawerTraceId(row.trace_id!)}
+                          title={row.trace_id}
                         >
-                          {row.parent_observation_id.slice(-8)} ↗
+                          {row.trace_id.slice(-8)} ↗
                         </button>
                       : <span style={{ color: 'var(--adm-text-3)' }}>—</span>
                     }

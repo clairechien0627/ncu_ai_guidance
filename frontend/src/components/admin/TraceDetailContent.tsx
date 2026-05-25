@@ -4,8 +4,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ChevronDown, ChevronRight, ExternalLink, Save } from 'lucide-react'
-import { getTraceDetail, updateTraceFeedback, type TraceDetail } from '../../api'
+import { AlertTriangle, ChevronDown, ChevronRight, ExternalLink, Save, Star } from 'lucide-react'
+import { getTraceDetail, updateTraceBookmark, updateTraceFeedback, type TraceDetail } from '../../api'
 import LatencyWaterfall from '../viewer/LatencyWaterfall'
 import { ScoreBar } from './ScoreBar'
 import { DimensionGrid } from './DimensionGrid'
@@ -210,6 +210,7 @@ interface Props {
 
 export function TraceDetailContent({ traceId, compact = false }: Props) {
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const [tab,   setTab]   = useState<Tab>('overview')
   const [trace, setTrace] = useState<TraceDetail | null>(null)
 
@@ -219,6 +220,17 @@ export function TraceDetailContent({ traceId, compact = false }: Props) {
     enabled:  !!traceId,
   })
   useEffect(() => { if (fetchedTrace) setTrace(fetchedTrace) }, [fetchedTrace])
+  const bookmarkMutation = useMutation({
+    mutationFn: () => {
+      if (!trace) throw new Error('Trace not loaded')
+      return updateTraceBookmark(trace.id, !trace.bookmarked)
+    },
+    onSuccess: (next) => {
+      setTrace(next)
+      qc.invalidateQueries({ queryKey: ['traces'] })
+      qc.invalidateQueries({ queryKey: ['trace-detail', next.id] })
+    },
+  })
 
   if (isLoading) return <div style={{ padding: 32, textAlign: 'center', color: 'var(--adm-text-3)' }}><div className="adm-spinner" style={{ margin: '0 auto 8px' }} />載入中…</div>
   if (!trace) return <div style={{ padding: 32, color: 'var(--adm-red)' }}>Trace 不存在</div>
@@ -254,6 +266,13 @@ export function TraceDetailContent({ traceId, compact = false }: Props) {
             {isErr ? 'Error' : 'OK'}
           </span>
           {trace.quality_score != null && <ScoreBar value={trace.quality_score} />}
+          <button
+            className="adm-btn-icon"
+            title={trace.bookmarked ? '取消收藏' : '收藏'}
+            onClick={() => bookmarkMutation.mutate()}
+          >
+            <Star size={13} fill={trace.bookmarked ? 'currentColor' : 'none'} />
+          </button>
           <span style={{ fontSize: 10, color: 'var(--adm-text-3)', fontFamily: 'var(--adm-font-mono)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {traceId}
           </span>

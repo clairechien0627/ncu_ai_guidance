@@ -56,6 +56,13 @@
   --adm-font-mono: 'SF Mono','Fira Code','Cascadia Code',monospace;
 }
 
+/* ── Column drag cursor override ────────────────────────────── */
+html.adm-col-dragging,
+html.adm-col-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
 /* ── Reset / base ────────────────────────────────────────────── */
 .admin-layout *,
 .admin-layout *::before,

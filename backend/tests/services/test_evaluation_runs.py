@@ -131,6 +131,11 @@ def test_process_run_writes_scores_and_status(monkeypatch):
         assert run.succeeded_count == 1
         assert item.status == "completed"
         assert json.loads(item.score_ids)
+        detail = EvaluationRunService.get_run_detail(db, eval_run_id)
+        assert detail["evaluation_run_id"] == eval_run_id
+        assert detail["items"][0]["evaluation_item_id"] == item.eval_item_id
+        assert detail["items"][0]["evaluation_run_id"] == eval_run_id
+        assert detail["items"][0]["target_trace_id"] == "t1"
         assert db.query(Score).filter(Score.execution_trace_id == eval_run_id).count() == 9
         score = db.query(Score).filter(Score.execution_trace_id == eval_run_id, Score.name == "overall").one()
         assert score.value == 4.0

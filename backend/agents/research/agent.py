@@ -368,7 +368,7 @@ async def run_research_task(
     started_at = _utcnow()
 
     if trace_id:
-        write_agent_span(
+        await write_agent_span(
             observation_id=observation_id,
             trace_id=trace_id,
             thread_id=thread_id,
@@ -515,7 +515,7 @@ async def run_research_task(
 
         ended_at = _utcnow()
         if trace_id:
-            write_agent_span(
+            await write_agent_span(
                 observation_id=observation_id,
                 trace_id=trace_id,
                 thread_id=thread_id,
@@ -560,7 +560,7 @@ async def run_research_task(
         logger.exception("run_research_task failed (observation_id=%s)", observation_id)
         err_ended_at = _utcnow()
         if trace_id:
-            write_agent_span(
+            await write_agent_span(
                 observation_id=observation_id,
                 trace_id=trace_id,
                 thread_id=thread_id,

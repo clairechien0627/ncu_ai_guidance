@@ -38,7 +38,7 @@ def _llm(use_mini: bool = False) -> AzureChatOpenAI:
     )
 
 
-def write_agent_span(
+async def write_agent_span(
     *,
     observation_id: str,
     trace_id: str,
@@ -51,6 +51,7 @@ def write_agent_span(
     output_data: dict | None = None,
     error: str | None = None,
     extra_metadata: dict | None = None,
+    environment: str | None = None,
 ) -> None:
     """Write an agent-level SPAN observation. Called by each agent before running no_tool."""
     try:
@@ -62,6 +63,7 @@ def write_agent_span(
             "parent_observation_id": parent_observation_id,
             "type": "SPAN",
             "name": name,
+            "environment": environment or "default",
             "start_time": start_time.isoformat(),
             "status": "ERROR" if error else "DEFAULT",
             "status_message": error,
@@ -74,26 +76,9 @@ def write_agent_span(
             body["output"] = output_data
         if extra_metadata:
             body["metadata"] = extra_metadata
-        TraceEventIngestor.enqueue_sync([{"event_type": "observation-create", "body": body}])
+        await TraceEventIngestor.enqueue([{"event_type": "observation-create", "body": body}])
     except Exception as exc:
         logger.debug("write_agent_span enqueue failed (best-effort): %s", exc)
-
-
-def _write_trace(
-    *,
-    observation_id: str,
-    trace_id: str | None,
-    thread_id: str,
-    document_ids: list[int] | None,
-    name: str,
-    metadata: dict,
-    inputs: dict,
-    output: dict | None = None,
-    error: str | None = None,
-) -> None:
-    # Agent SPAN and GENERATION observations are written through Trace v2 outbox
-    # by write_agent_span() and the explicit GENERATION enqueue calls below.
-    return
 
 
 def _get_document_abstracts(document_ids: list[int]) -> list[dict]:
@@ -117,18 +102,13 @@ def _prepare_no_tool_call(
     extra_system_messages: list[str] | None = None,
     payload: dict | None = None,
     sources: list[str] | None = None,
-) -> tuple[list, dict, dict]:
+) -> tuple[list, dict]:
     stack = load_stack(stack_name)
     metadata = {
         "agent_name": agent_name,
         **stack.metadata(),
     }
 
-    inputs = {
-        "user_message": user_message,
-        "payload": payload or {},
-        "sources": sources or [],
-    }
     messages = [SystemMessage(content=content) for content in stack.contents]
     if document_ids:
         abstracts = _get_document_abstracts(document_ids)
@@ -144,7 +124,7 @@ def _prepare_no_tool_call(
         "user_message": user_message,
         **(payload or {}),
     }, ensure_ascii=False)))
-    return messages, metadata, inputs
+    return messages, metadata
 
 
 async def run_no_tool_agent(
@@ -164,7 +144,7 @@ async def run_no_tool_agent(
 ) -> tuple[str, list[str], dict, str]:
     """Run one no-tool LLM call and persist a local trace row."""
     observation_id = observation_id or new_id()
-    messages, metadata, inputs = _prepare_no_tool_call(
+    messages, metadata = _prepare_no_tool_call(
         user_message=user_message,
         stack_name=stack_name,
         agent_name=agent_name,
@@ -173,90 +153,65 @@ async def run_no_tool_agent(
         payload=payload,
         sources=sources,
     )
-    _write_trace(
-        observation_id=observation_id,
-        trace_id=trace_id,
-        thread_id=thread_id,
-        document_ids=document_ids,
-        name=metadata.get("agent_name", agent_name).replace("_", " ").title(),
-        metadata=metadata,
-        inputs=inputs,
+
+    llm_start = datetime.now(timezone.utc)
+    _llm_instance = _llm(use_mini=use_mini)
+    with propagate_attributes(
+        session_id=thread_id,
+        user_id=get_user_id(),
+        version=metadata.get("prompt_version"),
+    ) if thread_id else contextlib.nullcontext():
+        response = await ainvoke_traced_generation(
+            _llm_instance,
+            messages,
+            prompt_name=prompt_name,
+            name=f"AzureChatOpenAI {agent_name}",
+            metadata=metadata,
+        )
+    llm_end = datetime.now(timezone.utc)
+    content = str(getattr(response, "content", response)).strip()
+    result_sources = sources or []
+
+    token_usage = getattr(response, "response_metadata", {}).get("token_usage", {})
+    if not token_usage:
+        token_usage = getattr(response, "usage_metadata", {}) or {}
+    prompt_tokens = token_usage.get("prompt_tokens") or token_usage.get("input_tokens")
+    completion_tokens = token_usage.get("completion_tokens") or token_usage.get("output_tokens")
+    _model_name = (
+        getattr(response, "response_metadata", {}).get("model_name")
+        or (settings.azure_mini_deployment if use_mini else settings.azure_chat_deployment)
     )
+    if trace_id and (prompt_tokens or completion_tokens):
+        try:
+            from services.trace_ingestion import TraceEventIngestor as _TEI
+            _TEI.enqueue_sync([{
+                "event_type": "observation-create",
+                "body": {
+                    "observation_id": new_id(),
+                    "trace_id": trace_id,
+                    "thread_id": thread_id,
+                    "environment": metadata.get("environment") or "default",
+                    "parent_observation_id": observation_id,
+                    "type": "GENERATION",
+                    "name": f"AzureChatOpenAI {agent_name}",
+                    "model": _model_name,
+                    "model_parameters": {"temperature": _llm_instance.temperature},
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": (prompt_tokens or 0) + (completion_tokens or 0),
+                    "start_time": llm_start.isoformat(),
+                    "end_time": llm_end.isoformat(),
+                    "status": "DEFAULT",
+                    "prompt_id": metadata.get("prompt_id"),
+                    "prompt_name": metadata.get("prompt_name") or prompt_name,
+                    "prompt_version": metadata.get("prompt_version"),
+                    "metadata": {"prompt_name": prompt_name},
+                },
+            }])
+        except Exception as exc:
+            logger.debug("GENERATION observation enqueue failed (best-effort): %s", exc)
 
-    try:
-        llm_start = datetime.now(timezone.utc)
-        _llm_instance = _llm(use_mini=use_mini)
-        with propagate_attributes(
-            session_id=thread_id,
-            user_id=get_user_id(),
-            version=metadata.get("prompt_version"),
-        ) if thread_id else contextlib.nullcontext():
-            response = await ainvoke_traced_generation(
-                _llm_instance,
-                messages,
-                prompt_name=prompt_name,
-                name=f"AzureChatOpenAI {agent_name}",
-                metadata=metadata,
-            )
-        llm_end = datetime.now(timezone.utc)
-        content = str(getattr(response, "content", response)).strip()
-        result_sources = sources or []
-        output = {"answer": content, "sources": result_sources}
-
-        token_usage = getattr(response, "response_metadata", {}).get("token_usage", {})
-        if not token_usage:
-            token_usage = getattr(response, "usage_metadata", {}) or {}
-        prompt_tokens = token_usage.get("prompt_tokens") or token_usage.get("input_tokens")
-        completion_tokens = token_usage.get("completion_tokens") or token_usage.get("output_tokens")
-        if trace_id and (prompt_tokens or completion_tokens):
-            try:
-                from services.trace_ingestion import TraceEventIngestor as _TEI
-                _TEI.enqueue_sync([{
-                    "event_type": "observation-create",
-                    "body": {
-                        "observation_id": new_id(),
-                        "trace_id": trace_id,
-                        "thread_id": thread_id,
-                        "parent_observation_id": observation_id,
-                        "type": "GENERATION",
-                        "name": f"AzureChatOpenAI {agent_name}",
-                        "model": settings.azure_mini_deployment if use_mini else settings.azure_chat_deployment,
-                        "model_parameters": {"temperature": _llm_instance.temperature},
-                        "prompt_tokens": prompt_tokens,
-                        "completion_tokens": completion_tokens,
-                        "total_tokens": (prompt_tokens or 0) + (completion_tokens or 0),
-                        "start_time": llm_start.isoformat(),
-                        "end_time": llm_end.isoformat(),
-                        "status": "DEFAULT",
-                        "metadata": {"prompt_name": prompt_name},
-                    },
-                }])
-            except Exception as exc:
-                logger.debug("GENERATION observation enqueue failed (best-effort): %s", exc)
-
-        _write_trace(
-            observation_id=observation_id,
-            trace_id=trace_id,
-            thread_id=thread_id,
-            document_ids=document_ids,
-            name=metadata.get("agent_name", agent_name).replace("_", " ").title(),
-            metadata=metadata,
-            inputs=inputs,
-            output=output,
-        )
-        return content, result_sources, metadata, observation_id
-    except Exception as exc:
-        _write_trace(
-            observation_id=observation_id,
-            trace_id=trace_id,
-            thread_id=thread_id,
-            document_ids=document_ids,
-            name=metadata.get("agent_name", agent_name).replace("_", " ").title(),
-            metadata=metadata,
-            inputs=inputs,
-            error=str(exc),
-        )
-        raise
+    return content, result_sources, metadata, observation_id
 
 
 async def stream_no_tool_agent(
@@ -276,7 +231,7 @@ async def stream_no_tool_agent(
 ) -> AsyncIterator[str]:
     """Stream one no-tool LLM call token-by-token and persist a local trace row."""
     observation_id = observation_id or new_id()
-    messages, metadata, inputs = _prepare_no_tool_call(
+    messages, metadata = _prepare_no_tool_call(
         user_message=user_message,
         stack_name=stack_name,
         agent_name=agent_name,
@@ -285,21 +240,13 @@ async def stream_no_tool_agent(
         payload=payload,
         sources=sources,
     )
-    _write_trace(
-        observation_id=observation_id,
-        trace_id=trace_id,
-        thread_id=thread_id,
-        document_ids=document_ids,
-        name=metadata.get("agent_name", agent_name).replace("_", " ").title(),
-        metadata=metadata,
-        inputs=inputs,
-    )
 
     content = ""
     stream_start = datetime.now(timezone.utc)
     completion_start_time: datetime | None = None
     try:
         llm_instance = _llm(use_mini=use_mini)
+        _usage_holder: list = []
         with propagate_attributes(
             session_id=thread_id,
             user_id=get_user_id(),
@@ -310,6 +257,7 @@ async def stream_no_tool_agent(
                 prompt_name=prompt_name,
                 name=f"AzureChatOpenAI {agent_name}",
                 metadata=metadata,
+                usage_holder=_usage_holder,
             ):
                 if completion_start_time is None:
                     completion_start_time = datetime.now(timezone.utc)
@@ -317,48 +265,41 @@ async def stream_no_tool_agent(
                 yield token_text
         stream_end = datetime.now(timezone.utc)
         result_sources = sources or []
-        _write_trace(
-            observation_id=observation_id,
-            trace_id=trace_id,
-            thread_id=thread_id,
-            document_ids=document_ids,
-            name=metadata.get("agent_name", agent_name).replace("_", " ").title(),
-            metadata=metadata,
-            inputs=inputs,
-            output={"answer": content.strip(), "sources": result_sources},
-        )
         if trace_id:
             try:
                 from services.trace_ingestion import TraceEventIngestor as _TEI
-                _TEI.enqueue_sync([{
-                    "event_type": "observation-create",
-                    "body": {
-                        "observation_id": new_id(),
-                        "trace_id": trace_id,
-                        "thread_id": thread_id,
-                        "parent_observation_id": observation_id,
-                        "type": "GENERATION",
-                        "name": f"AzureChatOpenAI {agent_name}",
-                        "model": settings.azure_mini_deployment if use_mini else settings.azure_chat_deployment,
-                        "model_parameters": {"temperature": llm_instance.temperature},
-                        "start_time": stream_start.isoformat(),
-                        "completion_start_time": completion_start_time.isoformat() if completion_start_time else None,
-                        "end_time": stream_end.isoformat(),
-                        "status": "DEFAULT",
-                        "metadata": {"prompt_name": prompt_name},
-                    },
-                }])
+                _stream_usage = _usage_holder[0] if _usage_holder else {}
+                _prompt_tokens = _stream_usage.get("input_tokens") or _stream_usage.get("prompt_tokens")
+                _completion_tokens = _stream_usage.get("output_tokens") or _stream_usage.get("completion_tokens")
+                _stream_model = (
+                    _stream_usage.get("model_name")
+                    or (settings.azure_mini_deployment if use_mini else settings.azure_chat_deployment)
+                )
+                _gen_body: dict = {
+                    "observation_id": new_id(),
+                    "trace_id": trace_id,
+                    "thread_id": thread_id,
+                    "environment": metadata.get("environment") or "default",
+                    "parent_observation_id": observation_id,
+                    "type": "GENERATION",
+                    "name": f"AzureChatOpenAI {agent_name}",
+                    "model": _stream_model,
+                    "model_parameters": {"temperature": llm_instance.temperature},
+                    "start_time": stream_start.isoformat(),
+                    "completion_start_time": completion_start_time.isoformat() if completion_start_time else None,
+                    "end_time": stream_end.isoformat(),
+                    "status": "DEFAULT",
+                    "prompt_id": metadata.get("prompt_id"),
+                    "prompt_name": metadata.get("prompt_name") or prompt_name,
+                    "prompt_version": metadata.get("prompt_version"),
+                    "metadata": {"prompt_name": prompt_name},
+                }
+                if _prompt_tokens or _completion_tokens:
+                    _gen_body["prompt_tokens"] = _prompt_tokens
+                    _gen_body["completion_tokens"] = _completion_tokens
+                    _gen_body["total_tokens"] = (_prompt_tokens or 0) + (_completion_tokens or 0)
+                _TEI.enqueue_sync([{"event_type": "observation-create", "body": _gen_body}])
             except Exception as exc:
                 logger.debug("streaming GENERATION observation enqueue failed (best-effort): %s", exc)
-    except Exception as exc:
-        _write_trace(
-            observation_id=observation_id,
-            trace_id=trace_id,
-            thread_id=thread_id,
-            document_ids=document_ids,
-            name=metadata.get("agent_name", agent_name).replace("_", " ").title(),
-            metadata=metadata,
-            inputs=inputs,
-            error=str(exc),
-        )
+    except Exception:
         raise

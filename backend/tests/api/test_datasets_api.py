@@ -44,7 +44,11 @@ def test_dataset_api_create_detail_and_add_trace():
         db.add(_trace("t1"))
         db.commit()
 
-        dataset = traces_api.create_dataset(DatasetCreateRequest(name="regression"), db=db)
+        dataset = traces_api.create_dataset(DatasetCreateRequest(
+            name="regression",
+            input_schema={"type": "object"},
+            expected_output_schema={"type": "string"},
+        ), db=db)
         dataset_id = dataset["dataset_id"]
         after_add = traces_api.add_dataset_item_from_trace(
             dataset_id,
@@ -55,8 +59,13 @@ def test_dataset_api_create_detail_and_add_trace():
         detail = traces_api.get_dataset(dataset_id, db=db)
 
         assert listed["total"] == 1
+        assert listed["datasets"][0]["input_schema"] == {"type": "object"}
+        assert listed["datasets"][0]["expected_output_schema"] == {"type": "string"}
         assert after_add["item_count"] == 1
+        assert after_add["input_schema"] == {"type": "object"}
+        assert after_add["expected_output_schema"] == {"type": "string"}
         assert detail["items"][0]["source_trace_id"] == "t1"
+        assert detail["items"][0]["reference_output"] == {"answer": "answer"}
     finally:
         db.close()
 

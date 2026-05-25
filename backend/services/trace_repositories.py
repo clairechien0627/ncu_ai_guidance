@@ -43,6 +43,7 @@ _ROOT_TRACE_METADATA_DROP_KEYS = {
     "llm_call_count",
     "prompt_name",
     "prompt_version",
+    "prompt_id",
     "base_prompt_name",
     "task_prompt_name",
     "quality_prompt_name",
@@ -194,6 +195,8 @@ class TraceRepository:
         row.thread_id = body.get("thread_id")
         row.user_id = body.get("user_id")
         row.environment = body.get("environment") or "default"
+        if "bookmarked" in body:
+            row.bookmarked = bool(body.get("bookmarked"))
         # Only overwrite input/output if explicitly provided — preserves values from earlier upsert
         if body.get("input") is not None:
             row.input = _json_text(body["input"])
@@ -228,6 +231,7 @@ class ObservationRepository:
 
         row.trace_id = body.get("trace_id") or row.trace_id
         row.thread_id = body.get("thread_id") or row.thread_id
+        row.environment = body.get("environment") or row.environment or "default"
         row.parent_observation_id = body.get("parent_observation_id")
         row.type = _normalize_observation_type(body.get("type") or row.type)
         row.name = body.get("name") or row.name or "observation"
@@ -264,8 +268,18 @@ class ObservationRepository:
                 row.input_cost = round((row.prompt_tokens or 0) * in_price / 1_000_000, 8)
                 row.output_cost = round((row.completion_tokens or 0) * out_price / 1_000_000, 8)
                 row.total_cost = round(row.input_cost + row.output_cost, 8)
-        row.prompt_name = body.get("prompt_name")
-        row.prompt_version = body.get("prompt_version")
+        if "prompt_id" in body:
+            row.prompt_id = body.get("prompt_id")
+        if "prompt_name" in body:
+            row.prompt_name = body.get("prompt_name")
+        if "prompt_version" in body:
+            row.prompt_version = body.get("prompt_version")
+        if "tool_calls" in body:
+            row.tool_calls = _json_text(body.get("tool_calls"))
+        if "tool_definitions" in body:
+            row.tool_definitions = _json_text(body.get("tool_definitions"))
+        if "tool_call_names" in body:
+            row.tool_call_names = _json_text(body.get("tool_call_names"))
         if "input" in body:
             row.input = _json_text(body["input"])
         if "output" in body:
@@ -421,6 +435,20 @@ class ScoreRepository:
         row.source = body.get("source") or "API"
         row.comment = body.get("comment")
         row.metadata_json = _json_text(body.get("metadata"))
+        trace_env = None
+        trace_thread_id = None
+        if body.get("trace_id") and (not body.get("environment") or not body.get("thread_id")):
+            trace = db.query(TraceV2.environment, TraceV2.thread_id).filter(TraceV2.trace_id == body["trace_id"]).first()
+            if trace:
+                trace_env, trace_thread_id = trace
+        row.environment = body.get("environment") or metadata.get("environment") or trace_env or "default"
+        row.thread_id = (
+            body.get("thread_id")
+            or metadata.get("thread_id")
+            or body.get("session_id")
+            or metadata.get("session_id")
+            or trace_thread_id
+        )
         row.execution_trace_id = body.get("execution_trace_id")
         row.eval_run_id = body.get("eval_run_id") or metadata.get("eval_run_id") or row.execution_trace_id
         row.eval_item_id = body.get("eval_item_id") or metadata.get("eval_item_id")
@@ -495,10 +523,12 @@ def observation_to_trace_payload(obs: Observation) -> dict:
     usage = _json_obj(obs.usage) or {}
     return {
         "id": obs.observation_id,
+        "trace_id": obs.trace_id,
         "type": obs.type,
         "name": obs.name,
         "parent_observation_id": obs.parent_observation_id,
-        "thread_id": None,
+        "thread_id": obs.thread_id,
+        "environment": obs.environment,
         "start_time": obs.start_time.isoformat() + "Z" if obs.start_time else None,
         "end_time": obs.end_time.isoformat() + "Z" if obs.end_time else None,
         "latency": round((obs.end_time - obs.start_time).total_seconds(), 2) if obs.start_time and obs.end_time else None,
@@ -507,6 +537,12 @@ def observation_to_trace_payload(obs: Observation) -> dict:
         "total_tokens": obs.total_tokens,
         "status": obs.status,
         "error": obs.status_message if obs.status == "ERROR" else None,
+        "prompt_id": obs.prompt_id,
+        "prompt_name": obs.prompt_name,
+        "prompt_version": obs.prompt_version,
+        "tool_calls": _json_obj(obs.tool_calls),
+        "tool_definitions": _json_obj(obs.tool_definitions),
+        "tool_call_names": _json_obj(obs.tool_call_names) or [],
         "input": str(_json_obj(obs.input) or "")[:120] if obs.input else None,
         "output": str(_json_obj(obs.output) or "")[:120] if obs.output else None,
         "inputs_raw": _json_obj(obs.input),

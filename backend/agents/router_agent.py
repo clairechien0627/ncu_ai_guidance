@@ -63,6 +63,7 @@ def _write_router_trace(
             "thread_id": thread_id,
             "user_id": user_id,
             "environment": env,
+            "tags": [route.agent_name],
             "start_time": now.isoformat(),
             "metadata": {
                 "agent_name": route.agent_name,

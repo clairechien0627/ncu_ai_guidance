@@ -12,6 +12,7 @@ export interface TraceItem {
   output?: string | null
   url: string | null
   tags?: string[] | null
+  bookmarked?: boolean
   total_cost?: number | null
   input_cost?: number | null
   output_cost?: number | null
@@ -68,6 +69,7 @@ export interface TraceFilters {
   prompt_name?: string; prompt_version?: string; status?: string
   min_latency?: string; max_quality?: number; min_quality?: number; has_score?: boolean
   environment?: string
+  bookmarked?: boolean
   date_from?: string; date_to?: string
   tags?: string; names?: string; user_ids?: string
   tag?: string; name?: string; user_id?: string
@@ -100,10 +102,13 @@ export interface VersionCompare {
 export interface VersionCompareResult { v1: VersionCompare; v2: VersionCompare }
 
 export interface ObservationItem {
-  id: string; type: string; name: string; parent_observation_id: string | null
+  id: string; trace_id?: string | null; type: string; name: string; parent_observation_id: string | null
   thread_id: string | null; start_time: string | null; latency: number | null
   status?: string | null
   prompt_tokens: number | null; completion_tokens: number | null
+  environment?: string | null
+  prompt_id?: string | null; prompt_name?: string | null; prompt_version?: string | null
+  tool_calls?: unknown[] | null; tool_definitions?: Record<string, unknown> | unknown[] | null; tool_call_names?: string[] | null
   error: string | null; input: string | null; output: string | null
 }
 
@@ -186,6 +191,10 @@ export const updateTraceFeedback = async (
   payload: { quality_score: number | null; user_feedback: string | null },
 ): Promise<TraceDetail> => {
   const { data } = await api.patch<TraceDetail>(`/traces/${runId}/feedback`, payload)
+  return data
+}
+export const updateTraceBookmark = async (runId: string, bookmarked: boolean): Promise<TraceDetail> => {
+  const { data } = await api.patch<TraceDetail>(`/traces/${runId}/bookmark`, { bookmarked })
   return data
 }
 export const getSessions = async (limit = 50, filters: SessionFilters = {}): Promise<SessionsResponse> => {

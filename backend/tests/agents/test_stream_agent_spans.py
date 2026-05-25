@@ -12,7 +12,7 @@ the token stream, because LocalTracer only handles LangChain-level children.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ async def _fake_run_agent_stream(*args, **kwargs):
 # ── chat_agent.stream ────────────────────────────────────────────────────────
 
 def test_chat_stream_writes_agent_span_with_trace_id_parent():
-    with patch("agents.chat_agent.write_agent_span") as mock_span, \
+    with patch("agents.chat_agent.write_agent_span", new_callable=AsyncMock) as mock_span, \
          patch("agents.chat_agent.stream_no_tool_agent", side_effect=_fake_stream_no_tool):
         from agents import chat_agent
         items = run(_collect(chat_agent.stream(
@@ -62,7 +62,7 @@ def test_chat_stream_writes_agent_span_with_trace_id_parent():
 
 
 def test_chat_stream_no_span_without_trace_id():
-    with patch("agents.chat_agent.write_agent_span") as mock_span, \
+    with patch("agents.chat_agent.write_agent_span", new_callable=AsyncMock) as mock_span, \
          patch("agents.chat_agent.stream_no_tool_agent", side_effect=_fake_stream_no_tool):
         from agents import chat_agent
         run(_collect(chat_agent.stream("hello", "thread-1")))
@@ -72,7 +72,7 @@ def test_chat_stream_no_span_without_trace_id():
 # ── question_agent.stream ────────────────────────────────────────────────────
 
 def test_question_stream_writes_agent_span_with_trace_id_parent():
-    with patch("agents.question_agent.write_agent_span") as mock_span, \
+    with patch("agents.question_agent.write_agent_span", new_callable=AsyncMock) as mock_span, \
          patch("agents.question_agent.stream_no_tool_agent", side_effect=_fake_stream_no_tool):
         from agents import question_agent
         run(_collect(question_agent.stream(
@@ -87,7 +87,7 @@ def test_question_stream_writes_agent_span_with_trace_id_parent():
 
 
 def test_question_stream_no_span_without_trace_id():
-    with patch("agents.question_agent.write_agent_span") as mock_span, \
+    with patch("agents.question_agent.write_agent_span", new_callable=AsyncMock) as mock_span, \
          patch("agents.question_agent.stream_no_tool_agent", side_effect=_fake_stream_no_tool):
         from agents import question_agent
         run(_collect(question_agent.stream("hello", "thread-1")))
@@ -98,7 +98,7 @@ def test_question_stream_no_span_without_trace_id():
 
 def test_retrieval_stream_agent_span_parent_is_trace_id_not_self():
     """Agent SPAN parent must be trace_id — self-parent is the bug being fixed."""
-    with patch("agents.retrieval_agent.write_agent_span") as mock_span, \
+    with patch("agents.retrieval_agent.write_agent_span", new_callable=AsyncMock) as mock_span, \
          patch("agents.retrieval_agent._run_agent_stream", side_effect=_fake_run_agent_stream):
         from agents import retrieval_agent
         run(_collect(retrieval_agent.stream(
@@ -125,7 +125,7 @@ def test_retrieval_stream_langchain_runs_parent_is_observation_id():
         yield ("tok", False, [])
         yield ("", True, [])
 
-    with patch("agents.retrieval_agent.write_agent_span"), \
+    with patch("agents.retrieval_agent.write_agent_span", new_callable=AsyncMock), \
          patch("agents.retrieval_agent._run_agent_stream", side_effect=capture_stream):
         from agents import retrieval_agent
         run(_collect(retrieval_agent.stream(
@@ -138,7 +138,7 @@ def test_retrieval_stream_langchain_runs_parent_is_observation_id():
 
 
 def test_retrieval_stream_no_span_without_trace_id():
-    with patch("agents.retrieval_agent.write_agent_span") as mock_span, \
+    with patch("agents.retrieval_agent.write_agent_span", new_callable=AsyncMock) as mock_span, \
          patch("agents.retrieval_agent._run_agent_stream", side_effect=_fake_run_agent_stream):
         from agents import retrieval_agent
         run(_collect(retrieval_agent.stream("hello", "thread-1")))

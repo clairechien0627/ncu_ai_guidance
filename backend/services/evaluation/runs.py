@@ -195,6 +195,7 @@ def evaluation_result_to_score_payloads(
 def _run_payload(row: EvaluationRun, *, include_items: bool = False) -> dict:
     payload = {
         "eval_run_id": row.eval_run_id,
+        "evaluation_run_id": row.eval_run_id,
         "name": row.name,
         "status": row.status,
         "scope": row.scope,
@@ -222,8 +223,11 @@ def _run_payload(row: EvaluationRun, *, include_items: bool = False) -> dict:
 def _item_payload(row: EvaluationRunItem) -> dict:
     return {
         "eval_item_id": row.eval_item_id,
+        "evaluation_item_id": row.eval_item_id,
         "eval_run_id": row.eval_run_id,
+        "evaluation_run_id": row.eval_run_id,
         "trace_id": row.trace_id,
+        "target_trace_id": row.trace_id,
         "dataset_item_id": row.dataset_item_id,
         "status": row.status,
         "score_ids": _json_obj(row.score_ids) or [],

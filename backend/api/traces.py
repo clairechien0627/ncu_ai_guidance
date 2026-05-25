@@ -26,6 +26,10 @@ class TraceFeedbackRequest(BaseModel):
     user_feedback: str | None = None
 
 
+class TraceBookmarkRequest(BaseModel):
+    bookmarked: bool
+
+
 @router.get("/api/documents/{doc_id}/traces")
 def get_document_traces(doc_id: int, db: Session = Depends(get_db)):
     return TraceReadService(db).document_traces(doc_id)
@@ -54,6 +58,16 @@ def batch_delete_traces(
     deleted = db.query(TraceV2).filter(TraceV2.trace_id.in_(trace_ids)).delete(synchronize_session=False)
     db.commit()
     return {"deleted": deleted}
+
+
+@router.patch("/api/traces/{trace_id}/bookmark")
+def update_trace_bookmark(trace_id: str, body: TraceBookmarkRequest, db: Session = Depends(get_db)):
+    row = db.query(TraceV2).filter(TraceV2.trace_id == trace_id).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Trace not found")
+    row.bookmarked = bool(body.bookmarked)
+    db.commit()
+    return TraceReadService(db).trace_detail(trace_id)
 
 
 @router.get("/api/traces/names")
@@ -123,6 +137,7 @@ def list_traces(
     names: str | None = None,
     user_id: str | None = None,
     user_ids: str | None = None,
+    bookmarked: bool | None = None,
     min_quality: float | None = None,
     min_tokens: int | None = None,
     max_tokens: int | None = None,
@@ -150,6 +165,7 @@ def list_traces(
         names=names,
         user_id=user_id,
         user_ids=user_ids,
+        bookmarked=bookmarked,
         min_tokens=min_tokens,
         max_tokens=max_tokens,
         min_input_tokens=min_input_tokens,
@@ -242,6 +258,8 @@ class DatasetCreateRequest(BaseModel):
     description: str | None = None
     source: str | None = None
     metadata: dict | None = None
+    input_schema: dict | None = None
+    expected_output_schema: dict | None = None
 
 
 class DatasetManualItemRequest(BaseModel):
@@ -450,6 +468,8 @@ def create_dataset(body: DatasetCreateRequest, db: Session = Depends(get_db)):
         description=body.description,
         source=body.source,
         metadata=body.metadata,
+        input_schema=body.input_schema,
+        expected_output_schema=body.expected_output_schema,
     )
     return DatasetService.get_dataset_detail(db, row.dataset_id)
 
@@ -627,6 +647,8 @@ def update_trace_feedback(observation_id: str, body: TraceFeedbackRequest, db: S
             "data_type": "NUMERIC",
             "source": "ANNOTATION",
             "comment": feedback_text,
+            "environment": trace_v2.environment,
+            "thread_id": trace_v2.thread_id,
             "metadata": {"source": "trace_feedback"},
         })
     if feedback_text:
@@ -638,6 +660,8 @@ def update_trace_feedback(observation_id: str, body: TraceFeedbackRequest, db: S
             "data_type": "TEXT",
             "source": "ANNOTATION",
             "comment": feedback_text,
+            "environment": trace_v2.environment,
+            "thread_id": trace_v2.thread_id,
             "metadata": {"source": "trace_feedback"},
         })
     db.commit()

@@ -85,6 +85,7 @@ class PromptStack:
             data["base_prompt_hash"] = self.prompts[0].version
             data["prompt_name"] = primary.name
             data["prompt_version"] = primary.version
+            data["prompt_id"] = f"{primary.source_name}:{primary.version}"
             data["primary_prompt_json"] = json.dumps(
                 {
                     "name": primary.name,

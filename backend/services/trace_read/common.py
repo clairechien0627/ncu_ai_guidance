@@ -132,7 +132,7 @@ def _status_info(observations: list[Observation]) -> tuple[str | None, dict | No
 
 
 _STANDARD_META_KEYS = {
-    "agent_name", "prompt_name", "prompt_version",
+    "agent_name", "prompt_name", "prompt_version", "prompt_id",
     "base_prompt_name", "task_prompt_name", "quality_prompt_name",
     "base_prompt_hash", "task_prompt_hash", "quality_prompt_hash",
     "prompt_stack_name", "prompt_stack_json", "primary_prompt_json",
@@ -207,6 +207,7 @@ def _build_v2_payload(
         "latency": _latency(trace.start_time, trace.end_time),
         "error": error,
         "user_id": trace.user_id,
+        "bookmarked": bool(getattr(trace, "bookmarked", False)),
         "input": input_text,
         "output": _truncate(answer if answer is not None else output_obj),
         "url": None,

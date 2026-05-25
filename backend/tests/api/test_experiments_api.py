@@ -97,6 +97,7 @@ def test_experiment_api_create_list_detail_eval_and_stats(monkeypatch):
         assert replay["queued"] == 1
         assert runs["total"] == 1
         assert detail["items"][0]["dataset_item_id"] == "item-1"
+        assert detail["items"][0]["output_trace_id"] == "generated-trace"
         assert eval_response["queued"] == 1
         assert stats["avg_score"] == 4.0
         assert report["worst_items"][0]["dataset_item_id"] == "item-1"

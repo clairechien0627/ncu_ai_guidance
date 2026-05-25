@@ -56,7 +56,7 @@ async def answer(
     await _emit_stage(on_stage, "搜尋相關段落中")
     agent_start = datetime.now(_tz.utc)
     if trace_id:
-        write_agent_span(
+        await write_agent_span(
             observation_id=observation_id,
             trace_id=trace_id,
             thread_id=thread_id,
@@ -86,7 +86,7 @@ async def answer(
         use_mini=use_mini,
     )
     if trace_id:
-        write_agent_span(
+        await write_agent_span(
             observation_id=observation_id,
             trace_id=trace_id,
             thread_id=thread_id,
@@ -141,7 +141,7 @@ async def stream(
     await _emit_stage(on_stage, "搜尋相關段落中")
     agent_start = datetime.now(_tz.utc)
     if trace_id:
-        write_agent_span(
+        await write_agent_span(
             observation_id=observation_id,
             trace_id=trace_id,
             thread_id=thread_id,
@@ -179,7 +179,7 @@ async def stream(
         yield item
 
     if trace_id:
-        write_agent_span(
+        await write_agent_span(
             observation_id=observation_id,
             trace_id=trace_id,
             thread_id=thread_id,

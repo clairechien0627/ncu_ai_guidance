@@ -80,16 +80,25 @@ def test_create_dataset_and_add_trace_item_idempotently():
         db.add(_trace("t1"))
         db.commit()
 
-        dataset = DatasetService.create_dataset(db, name="regression", description="cases")
+        dataset = DatasetService.create_dataset(
+            db,
+            name="regression",
+            description="cases",
+            input_schema={"type": "object"},
+            expected_output_schema={"type": "string"},
+        )
         first = DatasetService.add_trace_item(db, dataset.dataset_id, "t1")
         second = DatasetService.add_trace_item(db, dataset.dataset_id, "t1")
         detail = DatasetService.get_dataset_detail(db, dataset.dataset_id)
 
+        assert detail["input_schema"] == {"type": "object"}
+        assert detail["expected_output_schema"] == {"type": "string"}
         assert first.dataset_item_id == second.dataset_item_id
         assert db.query(DatasetItem).count() == 1
         assert detail["item_count"] == 1
         assert detail["items"][0]["source_trace_id"] == "t1"
         assert detail["items"][0]["expected_output"] == "answer"
+        assert detail["items"][0]["reference_output"] == {"answer": "answer"}
     finally:
         db.close()
 

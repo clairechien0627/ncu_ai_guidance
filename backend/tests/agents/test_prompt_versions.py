@@ -53,6 +53,7 @@ def test_all_prompt_stacks_load_nonempty_content():
         assert stack.contents
         assert stack.metadata()["prompt_stack_name"] == stack_name
         assert stack.metadata()["prompt_stack_tokens"] > 0
+        assert stack.metadata()["prompt_id"].startswith(f"{stack.metadata()['prompt_name']}:")
 
 
 def test_router_reports_prompt_hash_version():

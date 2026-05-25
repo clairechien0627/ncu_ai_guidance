@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from api.traces import TraceFeedbackRequest, update_trace_feedback
+from api.traces import TraceBookmarkRequest, TraceFeedbackRequest, update_trace_bookmark, update_trace_feedback
 from db import Observation, Score, TraceV2
 from db.session import Base
 from services.trace_read.service import TraceReadService
@@ -113,7 +113,28 @@ def test_update_trace_feedback_persists_scores_and_trimmed_text():
         assert payload["quality_score"] == 4.5
         assert payload["user_feedback"] == "good answer"
         assert db.query(Score).filter(Score.trace_id == "run-1").count() == 2
-        assert db.query(Score).filter(Score.name == "overall").one().value == 4.5
-        assert db.query(Score).filter(Score.name == "feedback").one().string_value == "good answer"
+        overall = db.query(Score).filter(Score.name == "overall").one()
+        feedback = db.query(Score).filter(Score.name == "feedback").one()
+        assert overall.value == 4.5
+        assert overall.environment == "test"
+        assert overall.thread_id == "thread-1"
+        assert feedback.string_value == "good answer"
+        assert feedback.environment == "test"
+        assert feedback.thread_id == "thread-1"
+    finally:
+        db.close()
+
+
+def test_update_trace_bookmark_persists_and_returns_detail():
+    SessionLocal = _session_factory()
+    db = SessionLocal()
+    try:
+        db.add(_trace("run-1"))
+        db.commit()
+
+        payload = update_trace_bookmark("run-1", TraceBookmarkRequest(bookmarked=True), db=db)
+
+        assert payload["bookmarked"] is True
+        assert db.query(TraceV2).filter(TraceV2.trace_id == "run-1").one().bookmarked is True
     finally:
         db.close()

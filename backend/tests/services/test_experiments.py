@@ -143,6 +143,9 @@ def test_process_run_saves_generated_outputs(monkeypatch):
         assert all(item.status == "completed" for item in items)
         assert json.loads(items[0].generated_output)["answer"].startswith("new answer")
         assert items[0].trace_id.startswith("generated-")
+        detail = ExperimentRunService.get_run_detail(db, experiment_run_id)
+        assert detail["items"][0]["output_trace_id"].startswith("generated-")
+        assert detail["items"][0]["evaluation_run_id"] is None
     finally:
         db.close()
 
