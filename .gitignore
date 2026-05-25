@@ -48,6 +48,8 @@ data-package/
 Thumbs.db
 .idea/
 .vscode/
+.cursor/
+.codegraph/
 
 # Runtime crash artifacts
 *.stackdump
