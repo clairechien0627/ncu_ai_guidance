@@ -1,33 +1,61 @@
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from api.trace_router import router
+from api.trace_models import (
+    BatchDeleteTracesRequest,
+    BatchScoreResponse,
+    DatasetCreateRequest,
+    DatasetEvalRunRequest,
+    DatasetLowQualityRequest,
+    DatasetManualItemRequest,
+    DatasetTraceItemRequest,
+    ExperimentEvalRequest,
+    ExperimentReplayRequest,
+    TraceBookmarkRequest,
+    TraceFeedbackRequest,
+)
 from db import get_db, Observation, Score, TraceV2
-from services.datasets import DatasetService
-from services.evaluation.analytics import EvaluationAnalyticsService
-from services.evaluation.reports import EvaluationReportService
-from services.evaluation.runs import EvaluationRunService
 from services.evaluation.worker import EvaluationWorker
-from services.evaluation.experiments import ExperimentRunService
 from services.trace_repositories import ScoreRepository
 from services.trace_read.service import TraceReadService
+from api.trace_evaluation_routes import (
+    batch_score_traces,
+    compare_evaluation_runs,
+    get_evaluation_run,
+    get_evaluation_run_score_stats,
+    list_evaluation_runs,
+    retry_evaluation_run,
+)
+from api.trace_experiment_routes import (
+    compare_experiment_runs,
+    compare_experiment_runs_report,
+    create_dataset_replay,
+    create_experiment_eval_run,
+    get_experiment_report,
+    get_experiment_run,
+    get_experiment_score_stats,
+    list_experiment_runs,
+)
+from api.trace_dataset_routes import (
+    add_dataset_item_from_trace,
+    add_dataset_item_manual,
+    add_dataset_items_from_low_quality,
+    create_dataset,
+    create_dataset_eval_run,
+    delete_dataset_item,
+    get_dataset,
+    get_dataset_eval_runs,
+    get_dataset_item_scores,
+    get_dataset_regression_cases,
+    get_dataset_score_stats,
+    list_datasets,
+)
 
 logger = logging.getLogger(__name__)
-
-from api.dependencies import require_admin
-router = APIRouter(dependencies=[Depends(require_admin)])
-
-
-class TraceFeedbackRequest(BaseModel):
-    quality_score: float | None = None
-    user_feedback: str | None = None
-
-
-class TraceBookmarkRequest(BaseModel):
-    bookmarked: bool
 
 
 @router.get("/api/documents/{doc_id}/traces")
@@ -39,10 +67,6 @@ def get_document_traces(doc_id: int, db: Session = Depends(get_db)):
 def list_environments(db: Session = Depends(get_db)):
     """Return distinct environment values present in root traces."""
     return TraceReadService(db).environments()
-
-
-class BatchDeleteTracesRequest(BaseModel):
-    ids: list[str]  # trace_ids to delete
 
 
 @router.delete("/api/traces/batch")
@@ -246,316 +270,6 @@ def compare_prompt_versions(
 ):
     """比較兩個 prompt_version 的品質、延遲、錯誤率。"""
     return TraceReadService(db).compare_prompt_versions(v1, v2, limit=limit)
-
-
-class BatchScoreResponse(BaseModel):
-    queued: int
-    message: str
-
-
-class DatasetCreateRequest(BaseModel):
-    name: str
-    description: str | None = None
-    source: str | None = None
-    metadata: dict | None = None
-    input_schema: dict | None = None
-    expected_output_schema: dict | None = None
-
-
-class DatasetManualItemRequest(BaseModel):
-    input: dict | None = None
-    output: dict | str | None = None
-    expected_output: dict | str | None = None
-    context: dict | None = None
-    tags: list[str] | None = None
-    metadata: dict | None = None
-
-
-class DatasetTraceItemRequest(BaseModel):
-    trace_id: str
-    tags: list[str] | None = None
-
-
-class DatasetLowQualityRequest(BaseModel):
-    max_quality: float = 3.0
-    limit: int = 50
-
-
-class DatasetEvalRunRequest(BaseModel):
-    name: str | None = None
-    metadata: dict | None = None
-
-
-class ExperimentReplayRequest(BaseModel):
-    dataset_id: str
-    name: str | None = None
-    target_agent: str | None = None
-    model: str | None = None
-    prompt_name: str | None = None
-    prompt_version: str | None = None
-    runtime_config: dict | None = None
-    metadata: dict | None = None
-
-
-class ExperimentEvalRequest(BaseModel):
-    name: str | None = None
-    metadata: dict | None = None
-
-
-@router.post("/api/traces/batch-score")
-async def batch_score_traces(
-    limit: int = 50,
-    db: Session = Depends(get_db),
-):
-    """對最近 limit 條未評分 root trace 建立 evaluation run 並背景執行。"""
-    run = EvaluationRunService.create_trace_batch(db, limit=limit)
-    if run is None:
-        return {"queued": 0, "message": "沒有需要自動評分的追蹤記錄。"}
-    await EvaluationWorker.wakeup(run.total_count)
-    return {"queued": run.total_count, "message": f"已排入 {run.total_count} 條追蹤記錄的自動評分。"}
-
-
-@router.get("/api/evaluations/runs")
-def list_evaluation_runs(
-    limit: int = 50,
-    offset: int = 0,
-    status: str | None = None,
-    name: str | None = None,
-    scope: str | None = None,
-    db: Session = Depends(get_db),
-):
-    return EvaluationRunService.list_runs(
-        db,
-        limit=limit,
-        offset=offset,
-        status=status,
-        name=name,
-        scope=scope,
-    )
-
-
-@router.get("/api/evaluations/compare")
-def compare_evaluation_runs(left: str, right: str, db: Session = Depends(get_db)):
-    return EvaluationAnalyticsService.compare_eval_runs(db, left, right)
-
-
-@router.get("/api/evaluations/runs/{eval_run_id}/score-stats")
-def get_evaluation_run_score_stats(eval_run_id: str, db: Session = Depends(get_db)):
-    return EvaluationAnalyticsService.eval_run_score_stats(db, eval_run_id)
-
-
-@router.get("/api/evaluations/runs/{eval_run_id}")
-def get_evaluation_run(eval_run_id: str, db: Session = Depends(get_db)):
-    return EvaluationRunService.get_run_detail(db, eval_run_id)
-
-
-@router.post("/api/evaluations/runs/{eval_run_id}/retry")
-async def retry_evaluation_run(eval_run_id: str, db: Session = Depends(get_db)):
-    """把指定 eval run 裡的 failed items 重設為 pending 並觸發 worker。"""
-    retried = EvaluationRunService.retry_failed_items(db, eval_run_id)
-    if retried == 0:
-        return {"retried": 0, "message": "沒有可重試的失敗項目。"}
-    await EvaluationWorker.wakeup(retried)
-    return {"retried": retried, "message": f"已重排 {retried} 個失敗項目。"}
-
-
-@router.post("/api/experiments/dataset-replays")
-async def create_dataset_replay(body: ExperimentReplayRequest, db: Session = Depends(get_db)):
-    run = ExperimentRunService.create_dataset_replay(
-        db,
-        dataset_id=body.dataset_id,
-        name=body.name or "dataset-replay",
-        target_agent=body.target_agent,
-        model=body.model,
-        prompt_name=body.prompt_name,
-        prompt_version=body.prompt_version,
-        runtime_config=body.runtime_config,
-        metadata=body.metadata,
-    )
-    if run is None:
-        return {"queued": 0, "experiment_run_id": None, "message": "Dataset 沒有可 replay 的樣本。"}
-    await EvaluationWorker.wakeup(run.total_count)
-    return {
-        "queued": run.total_count,
-        "experiment_run_id": run.experiment_run_id,
-        "message": f"已排入 {run.total_count} 筆 dataset items 的 replay。",
-    }
-
-
-@router.get("/api/experiments/runs")
-def list_experiment_runs(
-    limit: int = 50,
-    offset: int = 0,
-    status: str | None = None,
-    dataset_id: str | None = None,
-    name: str | None = None,
-    db: Session = Depends(get_db),
-):
-    return ExperimentRunService.list_runs(
-        db,
-        limit=limit,
-        offset=offset,
-        status=status,
-        dataset_id=dataset_id,
-        name=name,
-    )
-
-
-@router.get("/api/experiments/runs/{experiment_run_id}/score-stats")
-def get_experiment_score_stats(experiment_run_id: str, db: Session = Depends(get_db)):
-    return EvaluationAnalyticsService.experiment_score_stats(db, experiment_run_id)
-
-
-@router.get("/api/experiments/runs/{experiment_run_id}/report")
-def get_experiment_report(experiment_run_id: str, limit: int = 50, db: Session = Depends(get_db)):
-    return EvaluationReportService.experiment_report(db, experiment_run_id, limit=limit)
-
-
-@router.post("/api/experiments/runs/{experiment_run_id}/eval")
-async def create_experiment_eval_run(
-    experiment_run_id: str,
-    body: ExperimentEvalRequest | None = None,
-    db: Session = Depends(get_db),
-):
-    body = body or ExperimentEvalRequest()
-    run = ExperimentRunService.create_eval_run_for_experiment(
-        db,
-        experiment_run_id,
-        name=body.name or "experiment-evaluation",
-        metadata=body.metadata,
-    )
-    if run is None:
-        return {"queued": 0, "eval_run_id": None, "message": "Experiment 沒有已完成的 replay item 可評估。"}
-    await EvaluationWorker.wakeup(run.total_count)
-    return {
-        "queued": run.total_count,
-        "eval_run_id": run.eval_run_id,
-        "message": f"已排入 {run.total_count} 筆 experiment outputs 的評估。",
-    }
-
-
-@router.get("/api/experiments/compare")
-def compare_experiment_runs(a: str, b: str, db: Session = Depends(get_db)):
-    """Compare two experiment runs item-by-item. ?a=exp-xxx&b=exp-yyy"""
-    return ExperimentRunService.compare_runs(db, a, b)
-
-
-@router.get("/api/experiments/compare/report")
-def compare_experiment_runs_report(left: str, right: str, limit: int = 50, db: Session = Depends(get_db)):
-    return EvaluationReportService.experiment_comparison_report(db, left, right, limit=limit)
-
-
-@router.get("/api/experiments/runs/{experiment_run_id}")
-def get_experiment_run(experiment_run_id: str, db: Session = Depends(get_db)):
-    return ExperimentRunService.get_run_detail(db, experiment_run_id)
-
-
-@router.get("/api/datasets")
-def list_datasets(
-    limit: int = 50,
-    offset: int = 0,
-    include_archived: bool = False,
-    db: Session = Depends(get_db),
-):
-    return DatasetService.list_datasets(db, limit=limit, offset=offset, include_archived=include_archived)
-
-
-@router.post("/api/datasets")
-def create_dataset(body: DatasetCreateRequest, db: Session = Depends(get_db)):
-    row = DatasetService.create_dataset(
-        db,
-        name=body.name,
-        description=body.description,
-        source=body.source,
-        metadata=body.metadata,
-        input_schema=body.input_schema,
-        expected_output_schema=body.expected_output_schema,
-    )
-    return DatasetService.get_dataset_detail(db, row.dataset_id)
-
-
-@router.get("/api/datasets/{dataset_id}/score-stats")
-def get_dataset_score_stats(dataset_id: str, db: Session = Depends(get_db)):
-    return EvaluationAnalyticsService.dataset_score_stats(db, dataset_id)
-
-
-@router.get("/api/datasets/{dataset_id}/regression-cases")
-def get_dataset_regression_cases(dataset_id: str, limit: int = 50, threshold: float = 3.0, db: Session = Depends(get_db)):
-    return EvaluationReportService.dataset_regression_cases(db, dataset_id, limit=limit, threshold=threshold)
-
-
-@router.get("/api/datasets/{dataset_id}/eval-runs")
-def get_dataset_eval_runs(
-    dataset_id: str,
-    limit: int = 50,
-    offset: int = 0,
-    db: Session = Depends(get_db),
-):
-    return EvaluationAnalyticsService.dataset_eval_runs(db, dataset_id, limit=limit, offset=offset)
-
-
-@router.get("/api/datasets/{dataset_id}/items/{dataset_item_id}/scores")
-def get_dataset_item_scores(dataset_id: str, dataset_item_id: str, db: Session = Depends(get_db)):
-    return EvaluationAnalyticsService.dataset_item_score_history(db, dataset_id, dataset_item_id)
-
-
-@router.get("/api/datasets/{dataset_id}")
-def get_dataset(dataset_id: str, db: Session = Depends(get_db)):
-    return DatasetService.get_dataset_detail(db, dataset_id)
-
-
-@router.post("/api/datasets/{dataset_id}/items/from-trace")
-def add_dataset_item_from_trace(dataset_id: str, body: DatasetTraceItemRequest, db: Session = Depends(get_db)):
-    item = DatasetService.add_trace_item(db, dataset_id, body.trace_id, tags=body.tags)
-    return DatasetService.get_dataset_detail(db, item.dataset_id)
-
-
-@router.post("/api/datasets/{dataset_id}/items/from-low-quality")
-def add_dataset_items_from_low_quality(dataset_id: str, body: DatasetLowQualityRequest, db: Session = Depends(get_db)):
-    return DatasetService.add_low_quality_traces(
-        db,
-        dataset_id,
-        max_quality=body.max_quality,
-        limit=body.limit,
-    )
-
-
-@router.post("/api/datasets/{dataset_id}/items")
-def add_dataset_item_manual(dataset_id: str, body: DatasetManualItemRequest, db: Session = Depends(get_db)):
-    """手動新增 dataset item（不需要 source trace）。"""
-    DatasetService.add_manual_item(
-        db,
-        dataset_id,
-        input=body.input,
-        output=body.output,
-        expected_output=body.expected_output,
-        context=body.context,
-        tags=body.tags,
-        metadata=body.metadata,
-    )
-    return DatasetService.get_dataset_detail(db, dataset_id)
-
-
-@router.delete("/api/datasets/{dataset_id}/items/{item_id}")
-def delete_dataset_item(dataset_id: str, item_id: str, db: Session = Depends(get_db)):
-    """Archive a dataset item (soft delete)."""
-    DatasetService.archive_item(db, dataset_id, item_id)
-    return {"deleted": item_id}
-
-
-@router.post("/api/datasets/{dataset_id}/eval-runs")
-async def create_dataset_eval_run(dataset_id: str, body: DatasetEvalRunRequest | None = None, db: Session = Depends(get_db)):
-    body = body or DatasetEvalRunRequest()
-    run = EvaluationRunService.create_dataset_run(
-        db,
-        dataset_id=dataset_id,
-        name=body.name or "dataset-evaluation",
-        metadata=body.metadata,
-    )
-    if run is None:
-        return {"queued": 0, "eval_run_id": None, "message": "Dataset 沒有可評估的樣本。"}
-    await EvaluationWorker.wakeup(run.total_count)
-    return {"queued": run.total_count, "eval_run_id": run.eval_run_id, "message": f"已排入 {run.total_count} 筆 dataset items 的評估。"}
 
 
 @router.get("/api/traces/score-stats")

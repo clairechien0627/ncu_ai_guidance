@@ -203,9 +203,10 @@ def upgrade():
    - 在 `route_agent_stream` / `route_agent_message` 的執行區加入對應的 agent 呼叫
    - 保留 compose_after 邏輯（course_search_agent 也需要彙整）
 
-3. **`_write_router_trace` 的 DB session**：
-   - 來源使用 `db.db_session`（自有模組），目標需改為目標系統的 session factory
-   - 目標系統使用 `get_db()` 依賴，需改成 `with SessionLocal() as db:`
+3. **移除 `_write_router_trace` 及所有 tracing 呼叫**：
+   - tracing 不遷移，`_write_router_trace()` 函式整個刪除
+   - 刪除 `route_agent_stream` / `route_agent_message` 內所有 `await asyncio.to_thread(_write_router_trace, ...)` 呼叫
+   - 同時刪除 `from services.trace_capture import _get_default_environment` 等 tracing import
 
 4. **移除文件相關依賴**：
    - 移除所有 `document_ids` 傳給 research graph 的邏輯
@@ -245,9 +246,13 @@ def upgrade():
 
 1. **`_get_document_abstracts()`**：這個函式讀文件 DB；課程場景改為 `_get_student_context(college, dept, year)` 回傳學生背景 SystemMessage
 
-2. **`_prepare_no_tool_call()`**：改為注入學生背景而非文件摘要
+2. **`_prepare_no_tool_call()`**：改為注入學生背景而非文件摘要；回傳 `tuple[list, dict]`（messages, metadata），不含第三個 `inputs` 元素
 
-3. **`astream_traced_generation` import**：確認 `observability/__init__.py` 有正確 export
+3. **`write_agent_span` 已改為 `async def`**：呼叫時需 `await write_agent_span(...)`，來源舊版為同步；遷移時直接使用現行版本
+
+4. **串流路徑的 token 捕捉**：`stream_no_tool_agent()` 透過 `_usage_holder: list = []` 收集最終 usage metadata，無需額外修改；但 `astream_traced_generation` 需支援 `usage_holder` 參數（確認 `observability/__init__.py` export 版本一致）
+
+5. **`astream_traced_generation` / `ainvoke_traced_generation` import**：tracing 不遷移，這兩個 observability 函式也需要移除或替換為空操作（直接呼叫 `llm_instance.ainvoke(messages)` / `llm_instance.astream(messages)`）
 
 #### §2.2.6 `agents/runner.py` 修改點
 
@@ -484,7 +489,7 @@ async def lifespan(app: FastAPI):
 | | 來源 | 目標 |
 |---|------|------|
 | 機制 | JWT（自管 users 表） | Firebase Auth（Google OAuth） |
-| user_id | PostgreSQL users.id | Firebase UID（字串） |
+| user_id | PostgreSQL users.public_id（UUID 字串，2026-05-24 起；舊版為 users.id 整數） | Firebase UID（字串） |
 | token 格式 | `Bearer <JWT>` | `Bearer <Firebase ID Token>` |
 | 驗證 | `jose.decode()` | Firebase Admin SDK `verify_id_token()` |
 
@@ -497,16 +502,24 @@ async def lifespan(app: FastAPI):
 **需修改的依賴呼叫：**
 
 ```python
-# 來源
+# 來源（舊）
 from api.dependencies import get_current_user
 current_user: User = Depends(get_current_user)
-user_id = str(current_user.id)  # 整數 ID
+user_id = str(current_user.id)  # 整數 ID（已棄用）
+
+# 來源（現行，2026-05-24 起）
+from api.dependencies import get_current_user
+current_user: User = Depends(get_current_user)
+user_id = current_user.public_id  # UUID 字串（users.public_id 欄位）
+# JWT payload 現在帶 "pid" 欄位，middleware: set_user_id(payload.get("pid") or str(payload["sub"]))
 
 # 目標（改為）
 from app.services.auth_service import get_optional_user
 current_user: AuthUser | None = Depends(get_optional_user)
 user_id = current_user.user_id if current_user else None  # Firebase UID 字串
 ```
+
+> **遷移提示**：來源的 `public_id` 是 UUID 字串，Firebase UID 也是字串，兩者格式相容，`user_id` 欄位類型（VARCHAR）不需要調整。
 
 **`agents/request_context.py` 不需修改**（存取 contextvars，與 auth 無關）。
 
@@ -694,7 +707,7 @@ python-jose[cryptography]>=3.3.0  # 若需要 JWT 支援
 
 1. 在目標系統引入 Alembic（`alembic init`，配置 `alembic.ini` 指向 Render DB）
 2. 執行 migration 001（conversations + agent_messages）
-3. 執行 migration 002（traces_v2 + observations + scores + outbox）[選用]
+3. ~~執行 migration 002（traces_v2 + observations + scores + outbox）~~ **不需要**（tracing 已完整排除，見範圍說明）
 4. 確認 PostgreSQL 表格建立正確
 
 ### 階段二：服務層（1-2 天）
@@ -754,7 +767,7 @@ python-jose[cryptography]>=3.3.0  # 若需要 JWT 支援
 - [ ] `course_search_agent` 對課程查詢觸發工具呼叫（`tool_search_courses` 等）
 - [ ] `[INSUFFICIENT_CONTEXT]` 觸發升級到 `course_search_agent`
 - [ ] `question_agent` 對「出題」需求生成題目附來源
-- [ ] `evaluation_agent` 評估回答品質並寫入 `scores` 表
+- [ ] `evaluation_agent` 評估回答品質並將結果寫入 `agent_messages.trace_summary`（不寫 `scores` 表，tracing 已排除）
 - [ ] SSE streaming 事件格式正確（stage → token → done）
 - [ ] 取消功能正常（cancel endpoint → cancel signal → generator 停止）
 - [ ] 對話歷史正確存入 `conversations` + `agent_messages`

@@ -1,12 +1,18 @@
 import asyncio
-import datetime
 import json
 import logging
 import os
 import threading
 import time
-from uuid import uuid4
 
+from services.job_utils import (
+    dt_to_iso as _dt_to_iso,
+    is_active_status as _is_active_status_impl,
+    iso as _iso,
+    new_job_id as _new_job_id,
+    restore_stage_log as _restore_stage_log,
+    utcnow as _utcnow,
+)
 from services.redis_service import (
     BROADCAST_CHANNEL, EVENTS_CHANNEL,
     QUEUE_REINDEX, QUEUE_EXTRACT, QUEUE_PARSE,
@@ -56,49 +62,8 @@ _parse_condition: asyncio.Condition | None = None
 _TERMINAL_STATUSES = {"done", "error", "cancelled"}
 
 
-def _restore_stage_log(row) -> list[str]:
-    """Restore stage_log from DB row; fall back to [row.stage] for old rows."""
-    raw = getattr(row, "stage_log", None)
-    if raw:
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, list) and parsed:
-                return parsed
-        except Exception:
-            pass
-    return [row.stage] if row.stage else []
-
-
-def _utcnow() -> datetime.datetime:
-    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
-
-
-def _iso(dt: datetime.datetime | None = None) -> str:
-    return (dt or _utcnow()).isoformat() + "Z"
-
-
-def _dt_to_iso(dt: datetime.datetime | None) -> str | None:
-    """Convert a DB datetime (naive UTC or timezone-aware) to a UTC ISO 'Z' string.
-
-    PostgreSQL may return timezone-aware datetimes if the column is TIMESTAMPTZ
-    or if the server TimeZone is set to a non-UTC zone.  Normalise everything
-    to a plain UTC value before serialising so the frontend always sees UTC.
-    """
-    if dt is None:
-        return None
-    if dt.tzinfo is not None:
-        # Convert any tz-aware datetime to UTC, then strip tzinfo
-        import datetime as _dt
-        dt = dt.astimezone(_dt.timezone.utc).replace(tzinfo=None)
-    return dt.isoformat() + "Z"
-
-
-def _new_job_id(job_type: str, doc_id: int) -> str:
-    return f"{job_type}:{doc_id}:{uuid4().hex[:10]}"
-
-
 def _is_active_status(status: str | None) -> bool:
-    return (status or "queued") not in _TERMINAL_STATUSES
+    return _is_active_status_impl(status, _TERMINAL_STATUSES)
 
 
 def _persist_job(job: dict, *, final_status: str | None = None) -> None:

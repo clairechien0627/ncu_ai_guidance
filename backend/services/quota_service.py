@@ -17,7 +17,7 @@ def _today_start() -> datetime:
 
 def check_quota(user: User, db: Session) -> None:
     """Raise HTTP 429 if the user has exceeded their daily quota."""
-    user_id_str = str(user.id)
+    user_id_str = user.public_id
 
     if user.quota_requests_per_day is not None:
         today_requests = (

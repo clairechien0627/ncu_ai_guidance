@@ -84,12 +84,12 @@ def _load_summary(thread_id: str) -> dict:
     try:
         with db_session() as db:
             row = db.query(Conversation.context_summary).filter(
-                Conversation.id == int(thread_id)
+                Conversation.thread_id == thread_id
             ).first()
             if row and row[0]:
                 return json.loads(row[0])
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("_load_summary(%s) failed: %s", thread_id, exc)
     return {"version": 2, "findings": [], "user_focus": ""}
 
 

@@ -56,7 +56,13 @@ def test_all_prompt_stacks_load_nonempty_content():
         assert stack.metadata()["prompt_id"].startswith(f"{stack.metadata()['prompt_name']}:")
 
 
-def test_router_reports_prompt_hash_version():
+def test_router_reports_prompt_hash_version(monkeypatch):
+    from agents.router_agent import RouterDecision
+
+    async def fake_orchestrate(*args, **kwargs):
+        return RouterDecision(agent_name="research", evaluate_after=False, reason="test")
+
+    monkeypatch.setattr("agents.router_agent._orchestrate", fake_orchestrate)
     route = asyncio.run(route_request("summary this document", [1]))
     assert route.prompt_version.startswith("sha256:")
 
